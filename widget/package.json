@@ -1,0 +1,11 @@
+{
+  "name": "botiga-widget",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --minify --outfile=dist/n.js --format=iife --target=es2017",
+    "dev": "esbuild src/index.js --bundle --outfile=dist/n.js --format=iife --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.1"
+  }
+}
