@@ -2,9 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const supabase = require('../lib/supabase');
-const { dashboardCors } = require('../middleware/cors');
+const { widgetCors } = require('../middleware/cors');
 
-router.use(dashboardCors);
+router.use(widgetCors);
 
 // Create merchant (called after Supabase auth signup)
 router.post('/merchants', async (req, res) => {
