@@ -5,7 +5,7 @@ import AdminLayoutClient from './AdminLayoutClient';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect('/login');

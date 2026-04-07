@@ -5,7 +5,7 @@ import DashboardLayout from '../../components/DashboardLayout';
 export const dynamic = 'force-dynamic';
 
 export default async function Layout({ children }) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session) {
