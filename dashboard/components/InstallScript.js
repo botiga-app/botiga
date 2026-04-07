@@ -8,11 +8,13 @@ export default function InstallScript({ apiKey }) {
   const [platform, setPlatform] = useState('Any Website');
   const [testMode, setTestMode] = useState(false);
 
-  const widgetUrl = process.env.NEXT_PUBLIC_WIDGET_URL || process.env.NEXT_PUBLIC_API_URL || 'https://botiga-dashboard-gamma.vercel.app';
-  const scriptTag = `<script src="${widgetUrl}/n.js?k=${apiKey}${testMode ? '&test=1' : ''}"></script>`;
+  const widgetUrl = process.env.NEXT_PUBLIC_WIDGET_URL || 'https://botiga-dashboard-gamma.vercel.app';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
+  const scriptTag = `<script src="${widgetUrl}/n.js?k=${apiKey}${testMode ? '&test=1' : ''}" data-api="${apiUrl}"></script>`;
 
   const fullScript = `<script
   src="${widgetUrl}/n.js?k=${apiKey}${testMode ? '&test=1' : ''}"
+  data-api="${apiUrl}"
   data-label="Make an offer"
   data-position="below-cart">
 </script>`;
