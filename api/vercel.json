@@ -21,23 +21,5 @@
       "path": "/api/cron/alerts",
       "schedule": "0 * * * *"
     }
-  ],
-  "env": {
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_SERVICE_KEY": "@supabase_service_key",
-    "GROQ_API_KEY": "@groq_api_key",
-    "GEMINI_API_KEY": "@gemini_api_key",
-    "STRIPE_SECRET_KEY": "@stripe_secret_key",
-    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
-    "TWILIO_ACCOUNT_SID": "@twilio_account_sid",
-    "TWILIO_AUTH_TOKEN": "@twilio_auth_token",
-    "TWILIO_WHATSAPP_FROM": "@twilio_whatsapp_from",
-    "RESEND_API_KEY": "@resend_api_key",
-    "POSTHOG_API_KEY": "@posthog_api_key",
-    "SENTRY_DSN": "@sentry_dsn",
-    "ADMIN_SECRET": "@admin_secret",
-    "SHOPIFY_CLIENT_ID": "@shopify_client_id",
-    "SHOPIFY_CLIENT_SECRET": "@shopify_client_secret",
-    "CRON_SECRET": "@cron_secret"
-  }
+  ]
 }
