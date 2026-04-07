@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '../../lib/supabase';
 import DashboardLayout from '../../components/DashboardLayout';
 
+export const dynamic = 'force-dynamic';
+
 export default async function Layout({ children }) {
   const supabase = createServerClient();
   const { data: { session } } = await supabase.auth.getSession();

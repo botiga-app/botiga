@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '../../lib/supabase';
 import AdminLayoutClient from './AdminLayoutClient';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminLayout({ children }) {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
