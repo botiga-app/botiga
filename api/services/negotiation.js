@@ -185,34 +185,38 @@ async function processNegotiation({
   }
 
   // Whether bot has already asked for contact this negotiation
-  const alreadyAskedContact = messages.some(m => m.role === 'assistant' && m.asked_contact);
   const hasContact = !!(negotiation.customer_whatsapp || negotiation.customer_email || contactUpdates.customer_whatsapp || contactUpdates.customer_email);
-  // Ask for contact on the first real bot reply (after opening), but only once and only if we don't have it
-  const botRepliesCount = messages.filter(m => m.role === 'assistant').length;
-  const needsLeadCapture = !hasContact && !alreadyAskedContact && botRepliesCount >= 1;
+  // Count how many times we've already asked
+  const timesAskedContact = messages.filter(m => m.role === 'assistant' && m.asked_contact).length;
+  // Ask on step 1 (second bot message, first customer reply) and once more on step 4 if still no contact
+  // Never ask more than twice total
+  const currentStepForLead = negotiation.current_step || 0;
+  const needsLeadCapture = !hasContact && timesAskedContact < 2 && (timesAskedContact === 0 || currentStepForLead >= 3);
 
   // ── OPENING MOVE ────────────────────────────────────────────────────────────
   if (isOpening) {
     const nextPrice = priceLadder[0];
     const brandStatement = pickBrandStatement(brandStatements, 0, usedStatements);
-    const lastBotMessages = [];
-
+    const hasContactAlready = !!(negotiation.customer_whatsapp || negotiation.customer_email);
     const systemPrompt = buildSystemPrompt({
       tone: merchantSettings.tone, productName, nextPrice,
       brandStatement, customerInsight: null,
-      stepIndex: 0, isOpening: true, isLowball: false, lastBotMessages
+      stepIndex: 0, isOpening: true, isLowball: false, isEscalating: false,
+      lastBotMessages: [], needsLeadCapture: !hasContactAlready
     });
 
     const { reply } = await callLLM({
       systemPrompt, messages: [], customerMessage: null,
       negotiationId: negotiation.id, merchantId,
-      nextPrice, brandStatement, isOpening: true
+      nextPrice, brandStatement, isOpening: true, tone: merchantSettings.tone
     });
 
-    const updatedMessages = [{ role: 'assistant', content: reply, brand_statement: brandStatement }];
+    // Mark opening as asked_contact:true so step 2 knows to ask for contact
+    const updatedMessages = [{ role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: true }];
     await supabase.from('negotiations').update({
       messages: updatedMessages,
       bot_last_offered_price: nextPrice,
+      current_step: 0,  // ← CRITICAL: persist step 0 so subsequent messages advance correctly
       updated_at: new Date().toISOString()
     }).eq('id', negotiation.id);
 
