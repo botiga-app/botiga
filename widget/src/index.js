@@ -132,7 +132,7 @@
       * { box-sizing: border-box; margin: 0; padding: 0; }
       #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 2147483646; display: flex; align-items: flex-end; justify-content: center; }
       #panel { background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px; height: 580px;
-        display: flex; flex-direction: column; font-family: ${fontFamily}; overflow: hidden; box-shadow: 0 -8px 40px rgba(0,0,0,0.18); }
+        display: flex; flex-direction: column; font-family: ${fontFamily}; overflow: hidden; box-shadow: 0 -8px 40px rgba(0,0,0,0.18); position: relative; }
       .hdr { padding: 16px 20px; background: ${bg}; color: ${fg}; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
       .hdr h3 { font-size: 15px; font-weight: 600; }
       .hdr p { font-size: 11px; opacity: 0.8; margin-top: 2px; }
@@ -153,14 +153,27 @@
       .inp:focus { border-color: ${bg}; }
       .send { background: ${bg}; color: ${fg}; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
       .send:disabled { opacity: 0.5; cursor: default; }
-      .deal-banner { padding: 16px; background: #f0fff4; border-top: 1px solid #d1fae5; flex-shrink: 0; }
-      .deal-title { font-size: 14px; font-weight: 600; color: #065f46; margin-bottom: 6px; }
-      .deal-prices { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
-      .deal-price { font-size: 24px; font-weight: 700; color: #047857; }
-      .deal-orig { font-size: 13px; color: #9ca3af; text-decoration: line-through; }
-      .deal-code { display: inline-block; font-size: 11px; color: #065f46; background: #d1fae5; border-radius: 6px; padding: 3px 10px; margin-bottom: 6px; letter-spacing: 0.05em; font-weight: 600; }
-      .deal-timer { font-size: 11px; color: #6b7280; margin-bottom: 10px; }
-      .checkout-btn { display: block; width: 100%; padding: 12px; background: #047857; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; }
+      .deal-screen { position: absolute; inset: 0; background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; z-index: 20; transform: translateY(100%); transition: transform 0.5s ease-out; overflow: hidden; border-radius: 16px 16px 0 0; }
+      .deal-screen.visible { transform: translateY(0); }
+      .deal-check { margin-bottom: 18px; }
+      .deal-check circle { opacity: 0; animation: circlein 0.3s ease-out 0.2s forwards; }
+      @keyframes circlein { to { opacity: 1; } }
+      .checkmark { animation: draw 0.4s ease-out 0.2s forwards; }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      .deal-product { font-size: 12px; color: #888; margin-bottom: 10px; text-align: center; padding: 0 24px; }
+      .deal-price-wrap { position: relative; text-align: center; margin-bottom: 6px; }
+      .deal-price-num { font-size: 52px; font-weight: 800; color: #fff; line-height: 1; font-family: system-ui, sans-serif; }
+      .deal-orig-num { font-size: 16px; color: #555; text-decoration: line-through; margin-bottom: 4px; text-align: center; }
+      .deal-savings { display: inline-block; background: #1a472a; color: #7dcc99; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 18px; opacity: 0; transition: opacity 0.4s ease; }
+      .deal-savings.show { opacity: 1; }
+      .deal-code-line { font-size: 11px; color: #555; margin-bottom: 20px; letter-spacing: 0.02em; }
+      .deal-timer-wrap { text-align: center; margin-bottom: 8px; }
+      .deal-timer-digits { font-size: 28px; font-weight: 700; color: #fff; font-family: monospace; letter-spacing: 4px; transition: color 0.3s; }
+      .deal-timer-digits.urgent { color: #e8534a; }
+      .deal-timer-label { font-size: 11px; color: #555; margin-top: 2px; }
+      .deal-redirect-label { font-size: 11px; color: #555; margin-top: 12px; }
+      .deal-fallback { display: none; margin-top: 14px; padding: 10px 28px; background: #1a472a; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+      .deal-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #1a472a; width: 0%; transition: width 0.5s linear; }
     `;
   }
 
@@ -272,30 +285,134 @@
     function showDeal(dealPrice, checkoutUrl, expiresAt, discountCode) {
       if (dealShown) return;
       dealShown = true;
+
+      // Hide input row
       shadow.querySelector('#input-row')?.remove();
-      const banner = document.createElement('div');
-      banner.className = 'deal-banner';
-      const exp = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7200000);
-      banner.innerHTML = `
-        <div class="deal-title">&#127881; Deal locked in!</div>
-        <div class="deal-prices">
-          <span class="deal-price">$${parseFloat(dealPrice).toFixed(2)}</span>
-          ${productInfo.price ? `<span class="deal-orig">$${parseFloat(productInfo.price).toFixed(2)}</span>` : ''}
+
+      const panel = shadow.querySelector('#panel');
+      const listPrice = productInfo.price || dealPrice;
+      const saved = Math.round(listPrice - dealPrice);
+      const savedPct = Math.round((saved / listPrice) * 100);
+      // Deal expires 10 minutes from now (or use server value)
+      const exp = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 10 * 60 * 1000);
+
+      // Build deal screen
+      const ds = document.createElement('div');
+      ds.className = 'deal-screen';
+      ds.innerHTML = `
+        <svg class="deal-check" viewBox="0 0 52 52" width="52" height="52">
+          <circle cx="26" cy="26" r="24" fill="none" stroke="#1a472a" stroke-width="2"/>
+          <path class="checkmark" fill="none" stroke="white" stroke-width="3"
+            stroke-linecap="round" stroke-linejoin="round"
+            d="M14 27l8 8 16-16"
+            stroke-dasharray="36" stroke-dashoffset="36"/>
+        </svg>
+        <div class="deal-product">${escHtml(productInfo.name || '')}</div>
+        <div class="deal-orig-num">${listPrice !== dealPrice ? '$' + Math.round(listPrice) : ''}</div>
+        <div class="deal-price-wrap">
+          <div class="deal-price-num" id="_dp">$${Math.round(listPrice)}</div>
         </div>
-        ${discountCode ? `<div class="deal-code">Code: ${discountCode}</div>` : ''}
-        <div class="deal-timer" id="ctdn"></div>
-        <a href="${escHtml(checkoutUrl)}" class="checkout-btn" target="_top">Complete Purchase &#8594;</a>
+        <div class="deal-savings" id="_ds">${saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in'}</div>
+        ${discountCode ? `<div class="deal-code-line">${escHtml(discountCode)} applied automatically</div>` : ''}
+        <div class="deal-timer-wrap">
+          <div class="deal-timer-digits" id="_dtd">10:00</div>
+          <div class="deal-timer-label">Deal expires in</div>
+        </div>
+        <div class="deal-redirect-label" id="_drl" style="opacity:0">Heading to your cart...</div>
+        <button class="deal-fallback" id="_dfb">Go to cart &rarr;</button>
+        <div class="deal-progress" id="_dpr"></div>
       `;
-      shadow.querySelector('#panel').appendChild(banner);
-      const ctdn = shadow.querySelector('#ctdn');
-      function tick() {
-        const r = exp - Date.now();
-        if (r <= 0) { ctdn.textContent = 'Deal expired'; return; }
-        const h = Math.floor(r / 3600000), m = Math.floor((r % 3600000) / 60000), s = Math.floor((r % 60000) / 1000);
-        ctdn.textContent = `Expires in: ${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
-        setTimeout(tick, 1000);
+      panel.appendChild(ds);
+
+      // MOMENT 1 — slide up
+      requestAnimationFrame(() => { ds.classList.add('visible'); });
+
+      // MOMENT 2 — price countdown with stamp overshoot
+      setTimeout(() => {
+        animatePrice(Math.round(listPrice), Math.round(dealPrice), 700, () => {
+          const badge = shadow.querySelector('#_ds');
+          if (badge) badge.classList.add('show');
+        });
+      }, 500);
+
+      function animatePrice(from, to, duration, onComplete) {
+        const start = performance.now();
+        const range = from - to;
+        function step(now) {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const overshoot = (progress > 0.85 && progress < 1)
+            ? Math.sin(((progress - 0.85) / 0.15) * Math.PI) * 2 : 0;
+          const current = Math.round(from - (range * eased) + overshoot);
+          const el = shadow.querySelector('#_dp');
+          if (el) el.textContent = '$' + current;
+          if (progress < 1) { requestAnimationFrame(step); }
+          else { if (el) el.textContent = '$' + to; onComplete && onComplete(); }
+        }
+        requestAnimationFrame(step);
       }
-      tick();
+
+      // MOMENT 3 — confetti inside shadow DOM
+      setTimeout(() => {
+        const scr = document.createElement('script');
+        scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
+        document.head.appendChild(scr);
+        scr.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
+          ds.appendChild(canvas);
+          const fire = window.confetti.create(canvas, { resize: true });
+          const colors = ['#1a472a', '#2d6a4f', '#d4b896', '#f9f7f4', '#c4a882'];
+          fire({ particleCount: 60, spread: 55, origin: { x: 0.2, y: 0.5 }, colors });
+          fire({ particleCount: 60, spread: 55, origin: { x: 0.8, y: 0.5 }, colors });
+        };
+      }, 700);
+
+      // Countdown timer (deal expiry)
+      const timerEl = shadow.querySelector('#_dtd');
+      const timerInterval = setInterval(() => {
+        const remaining = Math.max(0, exp - Date.now());
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.floor((remaining % 60000) / 1000);
+        if (timerEl) {
+          timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+          if (remaining < 120000) timerEl.classList.add('urgent');
+        }
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          if (timerEl) timerEl.textContent = 'Expired';
+          const fb = shadow.querySelector('#_dfb');
+          if (fb) { fb.style.display = 'block'; fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; }; }
+        }
+      }, 1000);
+
+      // MOMENT 4 — redirect label, progress bar, auto-redirect
+      setTimeout(() => {
+        const lbl = shadow.querySelector('#_drl');
+        if (lbl) lbl.style.opacity = '1';
+      }, 1500);
+
+      setTimeout(() => {
+        const bar = shadow.querySelector('#_dpr');
+        if (bar) bar.style.width = '100%';
+        setTimeout(() => {
+          if (checkoutUrl) {
+            try { window.location.href = checkoutUrl; }
+            catch {
+              const fb = shadow.querySelector('#_dfb');
+              if (fb) { fb.style.display = 'block'; fb.onclick = () => { window.location.href = checkoutUrl; }; }
+            }
+          } else {
+            const fb = shadow.querySelector('#_dfb');
+            if (fb) { fb.style.display = 'block'; fb.onclick = () => window.history.back(); }
+          }
+        }, 500);
+      }, 2500);
+
+      // Fallback button always wired
+      const fb = shadow.querySelector('#_dfb');
+      if (fb) fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; };
     }
 
     // Lead capture is now handled inline by the bot's message — no form widget needed

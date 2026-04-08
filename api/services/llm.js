@@ -16,6 +16,9 @@ const TONE_VOICE = {
   generous:     'You genuinely want them to have it. Deal-focused, warm, rooting for them.',
 };
 
+// Human escalation message — in the merchant's tone, never reveals floor
+const ESCALATION_DIRECTION = `You've genuinely given everything you can. You're not going to reveal any limit or number. Instead, warmly hand off to your human team — frame it as them potentially having more flexibility than you, not as a dead end. Keep it warm, in character, and leave the door wide open. 2 sentences max.`;
+
 // Per-step concrete instruction — what the bot is doing emotionally at each step
 // These change what the LLM writes, not just how it starts
 const STEP_DIRECTION = [
@@ -58,10 +61,10 @@ function pickOpener(stepIndex, lastBotMessages) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, lastBotMessages, needsLeadCapture }) {
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isEscalating, lastBotMessages, needsLeadCapture }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const priceStr = `$${nextPrice}`;
-  const direction = isLowball ? LOWBALL_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
+  const direction = isLowball ? LOWBALL_DIRECTION : isEscalating ? ESCALATION_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
   const opener = isOpening ? null : pickOpener(stepIndex, lastBotMessages);
 
   const prevMessages = (lastBotMessages || []).slice(-2);

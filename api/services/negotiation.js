@@ -257,6 +257,8 @@ async function processNegotiation({
   const isFinalOffer = nextStep === 5;
 
   // ── PARALLEL: insights extraction + LLM call ───────────────────────────────
+  const botRepliesAlready = messages.filter(m => m.role === 'assistant').length;
+  const isEscalating = isFinalOffer && botRepliesAlready >= 5;
   const lastBotMessages = messages.filter(m => m.role === 'assistant').slice(-2).map(m => m.content);
   const latestInsight = customerInsights.slice(-1)[0]?.insight || null;
   const brandStatement = pickBrandStatement(brandStatements, nextStep, usedStatements);
@@ -265,8 +267,8 @@ async function processNegotiation({
     tone: merchantSettings.tone, productName: negotiation.product_name,
     nextPrice, brandStatement,
     customerInsight: latestInsight,
-    stepIndex: nextStep, isOpening: false, isLowball, lastBotMessages,
-    needsLeadCapture
+    stepIndex: nextStep, isOpening: false, isLowball, isEscalating, lastBotMessages,
+    needsLeadCapture: needsLeadCapture && !isEscalating
   });
 
   const [insightResult, llmResult] = await Promise.all([
@@ -294,11 +296,9 @@ async function processNegotiation({
   ];
 
   // ── STEP 4: PERSIST ─────────────────────────────────────────────────────────
-  let status = isFinalOffer ? 'final_offer' : 'active';
+  let status = isEscalating ? 'human_escalated' : isFinalOffer ? 'final_offer' : 'active';
 
-  if (isFinalOffer && messages.filter(m => m.role === 'assistant').length >= 5) {
-    // Already showed final offer last turn and customer still hasn't accepted
-    status = 'human_escalated';
+  if (isEscalating) {
     await supabase.from('admin_alerts').insert({
       merchant_id: merchantId,
       type: 'human_escalation',
