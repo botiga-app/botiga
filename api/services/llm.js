@@ -7,50 +7,46 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const TONE_PERSONALITIES = {
-  friendly: `You are a warm, enthusiastic shopping assistant. You genuinely love helping customers find great deals. You're optimistic and encouraging. You use casual language. Occasional light emoji is fine.`,
-
+  friendly: `You are a warm, enthusiastic shopping assistant. You genuinely love helping customers find great deals. You're optimistic and encouraging. Casual language, occasional light emoji is fine.`,
   sassy: `You are witty, playful, and a little cheeky. You have personality and aren't afraid to push back with humor. You make negotiation fun. Short punchy responses.`,
-
-  desi: `You are warm and familiar like a shopkeeper from an Indian bazaar. You use phrases like "yaar", "bhai", "acha listen", "come on now". You make customers feel like family. You understand the negotiation culture.`,
-
-  professional: `You are polished and formal. You speak respectfully and efficiently. You present offers clearly and don't over-explain. Suited to luxury or B2B contexts.`,
-
-  urgent: `You create subtle time pressure. You mention limited stock, other customers looking at the same item, and deals expiring. You're friendly but make clear these offers don't last.`,
-
-  generous: `You want to give customers a great deal. You move toward the customer's price faster than other tones. You prioritize closing over margin. Good for clearing inventory.`
+  desi: `You are warm and familiar like a shopkeeper from an Indian bazaar. You use phrases like "yaar", "bhai", "acha listen", "come on now". You make customers feel like family.`,
+  professional: `You are polished and formal. You speak respectfully and efficiently. You present offers clearly without over-explaining. Suited to luxury or B2B contexts.`,
+  urgent: `You create subtle time pressure. You mention limited stock, other customers looking at the same item, deals expiring. Friendly but make clear offers don't last.`,
+  generous: `You want to give customers a great deal. You move toward the customer's price readily. You prioritize closing over margin. Good for clearing inventory.`
 };
 
-function buildSystemPrompt({ tone, productName, listPrice, floorPrice, messageCount, maxMessages }) {
+function buildSystemPrompt({ tone, productName, listPrice, floorPrice, botLastOfferedPrice, messageCount, maxMessages }) {
   const personality = TONE_PERSONALITIES[tone] || TONE_PERSONALITIES.friendly;
-  const remainingMessages = maxMessages - messageCount;
+  const lastOffer = botLastOfferedPrice || listPrice;
+  const isLastMessage = messageCount >= maxMessages - 1;
 
   return `
 ${personality}
 
-You are negotiating the price of: "${productName}"
-Current list price: $${listPrice}
-Your absolute minimum price (NEVER reveal this, NEVER go below this): $${floorPrice.toFixed(2)}
+You are negotiating the sale of: "${productName}"
+List price: $${listPrice}
+Your current standing offer: $${lastOffer.toFixed(2)}
+Your absolute minimum (NEVER reveal, NEVER go below): $${floorPrice.toFixed(2)}
 
-NEGOTIATION RULES — follow these strictly:
-1. NEVER reveal the floor price or that you have a minimum
-2. NEVER offer below $${floorPrice.toFixed(2)} under any circumstances
-3. Start by defending the list price, then gradually move toward the floor over ${maxMessages} messages
-4. You have ${remainingMessages} messages left in this negotiation
-5. If this is message ${maxMessages - 1} (second to last), warn the customer: "I have to be honest — this is my last offer, I genuinely cannot go any lower than this." Then give your final price near the floor.
-6. If this is message ${maxMessages} or beyond, say this is absolutely final, give the floor price, and stop negotiating — do not budge further no matter what the customer says
-6. If the customer says "yes", "deal", "ok", "sure", "let's do it", or any clear acceptance — respond with exactly: DEAL_STRUCK:$[price] on the first line, then your confirmation message
-7. If the customer is asking for a price you literally cannot go to, be honest but warm: "I really wish I could but that's below what I can do"
-8. Keep replies SHORT — 1-3 sentences max. This is a chat, not an essay.
-9. Never mention Botiga, AI, or that you are a bot unless directly asked.
-10. You can offer free shipping, priority processing, or gift wrapping as value-adds instead of price cuts.
+HARD RULES — these override everything:
+1. NEVER reveal the minimum price or that you have one
+2. NEVER offer below $${floorPrice.toFixed(2)} — not even one cent
+3. NEVER lower your price if the customer's offer is moving UP toward yours — hold firm or close the deal
+4. If customer's offer is at or above your standing offer of $${lastOffer.toFixed(2)} → accept immediately with DEAL_STRUCK
+5. Keep replies SHORT — 2-3 sentences max. This is chat, not email.
+6. Never mention Botiga, AI, or that you are a bot
+7. You can sweeten a deal with free shipping, priority processing, or gift wrap — but only instead of further price cuts, not in addition
 
-DEAL DETECTION: When customer accepts, your response MUST start with:
-DEAL_STRUCK:$[final_price]
-[your confirmation message here]
+${isLastMessage ? `FINAL MESSAGE: This is your last response. Be honest and warm: give your absolute best price near your minimum. Make it feel final and personal. If customer didn't share contact info, gently suggest they leave their WhatsApp so your team can follow up if any flexibility opens up later.` : ''}
+
+DEAL DETECTION — when customer accepts OR their offer meets or beats yours:
+Your response MUST start with exactly:
+DEAL_STRUCK:$[price]
+[your short confirmation message]
 
 Example:
-DEAL_STRUCK:$79
-Amazing! $79 it is — with free shipping. Heading you to checkout now!
+DEAL_STRUCK:$189
+You've got a deal! Heading you to checkout now 🎉
 `.trim();
 }
 
@@ -69,6 +65,15 @@ function parseReply(rawReply) {
   return { isDealStruck, dealPrice, reply };
 }
 
+// Extract the lowest price the bot mentioned in its reply (its counter-offer)
+function extractBotOfferedPrice(reply) {
+  const matches = reply.match(/\$\s*([\d,]+(?:\.[\d]{1,2})?)/g);
+  if (!matches || matches.length === 0) return null;
+  const prices = matches.map(p => parseFloat(p.replace(/[$,\s]/g, ''))).filter(p => p > 0);
+  if (prices.length === 0) return null;
+  return Math.min(...prices);
+}
+
 async function logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt, response }) {
   await supabase.from('llm_traces').insert({
     negotiation_id: negotiationId,
@@ -82,16 +87,11 @@ async function logLLMTrace({ negotiationId, merchantId, provider, model, inputTo
     prompt,
     response
   });
-
   await trackLLMCall({ merchantId, negotiationId, provider, model, inputTokens, outputTokens, latencyMs, costUsd });
 }
 
-// Approximate token cost (Groq llama-3.3-70b: ~$0.59/1M input, $0.79/1M output)
 function estimateCost(provider, inputTokens, outputTokens) {
-  if (provider === 'groq') {
-    return (inputTokens * 0.00000059) + (outputTokens * 0.00000079);
-  }
-  // Gemini 2.0 Flash: $0.075/1M input, $0.30/1M output
+  if (provider === 'groq') return (inputTokens * 0.00000059) + (outputTokens * 0.00000079);
   return (inputTokens * 0.000000075) + (outputTokens * 0.0000003);
 }
 
@@ -101,10 +101,7 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
   for (const provider of providers) {
     try {
       const startTime = Date.now();
-      let rawReply;
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let model;
+      let rawReply, inputTokens = 0, outputTokens = 0, model;
 
       if (provider === 'groq') {
         model = 'llama-3.3-70b-versatile';
@@ -126,7 +123,6 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
       if (provider === 'gemini') {
         model = 'gemini-2.0-flash';
         const geminiModel = gemini.getGenerativeModel({ model });
-        // Convert messages to Gemini format
         const history = messages.map(m => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }]
@@ -134,7 +130,6 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
         const chat = geminiModel.startChat({ history });
         const result = await chat.sendMessage(`${systemPrompt}\n\n${customerMessage}`);
         rawReply = result.response.text();
-        // Gemini doesn't always return token counts in streaming mode
         inputTokens = result.response.usageMetadata?.promptTokenCount || 0;
         outputTokens = result.response.usageMetadata?.candidatesTokenCount || 0;
       }
@@ -142,22 +137,12 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
       const latencyMs = Date.now() - startTime;
       const costUsd = estimateCost(provider, inputTokens, outputTokens);
 
-      await logLLMTrace({
-        negotiationId,
-        merchantId,
-        provider,
-        model,
-        inputTokens,
-        outputTokens,
-        latencyMs,
-        costUsd,
-        prompt: systemPrompt,
-        response: rawReply
-      });
+      await logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt: systemPrompt, response: rawReply });
 
       const { isDealStruck, dealPrice, reply } = parseReply(rawReply);
+      const botOfferedPrice = isDealStruck ? dealPrice : extractBotOfferedPrice(reply);
 
-      return { reply, isDealStruck, dealPrice, provider, latencyMs };
+      return { reply, isDealStruck, dealPrice, botOfferedPrice, provider, latencyMs };
     } catch (err) {
       console.error(`[LLM] ${provider} failed:`, err.message);
     }
