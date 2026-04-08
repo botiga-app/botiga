@@ -49,9 +49,12 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
         negotiationId,
         expiresAt
       });
+      console.log('[Shopify] Discount code created:', discountCode);
     } catch (err) {
-      console.error('[Shopify] Discount code creation failed:', err.message);
+      console.error('[Shopify] Discount code creation FAILED:', err.message, '| shop:', shopifyDomain, '| token prefix:', shopifyAccessToken?.slice(0, 10));
     }
+  } else {
+    console.warn('[Shopify] Skipping discount code — missing domain:', shopifyDomain, 'or token:', !!shopifyAccessToken);
   }
 
   if (variantId && productUrl) {
@@ -249,7 +252,7 @@ async function processNegotiation({
       properties: { list_price: negotiation.list_price, deal_price: finalDealPrice, broker_fee: fees.brokerFee }
     });
 
-    return { negotiationId: negotiation.id, reply: dealReply, status: 'won', dealPrice: finalDealPrice, checkoutUrl, brokerFee: fees.brokerFee, expiresAt };
+    return { negotiationId: negotiation.id, reply: dealReply, status: 'won', dealPrice: finalDealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt };
   }
 
   // Step 3: Pick brand statement and run insight extraction in parallel with LLM

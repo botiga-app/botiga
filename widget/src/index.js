@@ -138,6 +138,7 @@
       .deal-price { font-size: 22px; font-weight: 700; color: #047857; }
       .deal-orig { font-size: 12px; color: #999; text-decoration: line-through; margin-left: 6px; }
       .deal-timer { font-size: 11px; color: #6b7280; margin-top: 4px; }
+      .deal-code { font-size: 12px; color: #065f46; background: #d1fae5; border-radius: 6px; padding: 4px 10px; display: inline-block; margin-top: 6px; letter-spacing: 0.05em; }
       .checkout-btn { display: block; width: 100%; margin-top: 12px; padding: 12px; background: #047857; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; }
     `;
   }
@@ -278,7 +279,7 @@
       });
     }
 
-    function showDeal(dealPrice, listPrice, checkoutUrl, expiresAt) {
+    function showDeal(dealPrice, listPrice, checkoutUrl, expiresAt, discountCode) {
       shadow.querySelector('#input-row')?.remove();
       const banner = document.createElement('div');
       banner.className = 'deal-banner';
@@ -289,6 +290,7 @@
           <span class="deal-price">$${parseFloat(dealPrice).toFixed(2)}</span>
           ${listPrice ? `<span class="deal-orig">$${parseFloat(listPrice).toFixed(2)}</span>` : ''}
         </div>
+        ${discountCode ? `<div class="deal-code">Use code: <strong>${discountCode}</strong></div>` : ''}
         <div class="deal-timer" id="ctdn">Expires in: ...</div>
         <a href="${checkoutUrl}" class="checkout-btn" target="_top">Complete Purchase &#8594;</a>
       `;
@@ -345,7 +347,7 @@
         }
 
         if (d.status === 'won' && d.deal_price) {
-          showDeal(d.deal_price, productInfo.price, d.checkout_url, d.expires_at);
+          showDeal(d.deal_price, productInfo.price, d.checkout_url, d.expires_at, d.discount_code);
         }
       } catch { appendMsg('bot', "Connection issue — please try again."); }
       finally { setLoading(false); }

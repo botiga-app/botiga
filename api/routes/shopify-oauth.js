@@ -88,26 +88,89 @@ router.get('/shopify/callback', async (req, res) => {
     if (first) merchant = first;
   }
 
+  let saveStatus = 'No merchant found';
   if (merchant) {
-    await supabase.from('merchants').update({
+    const { error: updateError } = await supabase.from('merchants').update({
       shopify_access_token: access_token,
       shopify_domain: storeDomain
     }).eq('id', merchant.id);
-    console.log('[Shopify OAuth] Token saved to merchant', merchant.id);
-  } else {
-    console.log('[Shopify OAuth] No merchant found — token logged above');
+
+    if (updateError) {
+      console.error('[Shopify OAuth] DB update failed:', updateError.message);
+      saveStatus = `DB update failed: ${updateError.message}`;
+    } else {
+      saveStatus = `Saved to merchant ${merchant.id}`;
+      console.log('[Shopify OAuth] Token saved to merchant', merchant.id);
+    }
   }
 
   res.send(`
     <html><body style="font-family:system-ui;padding:40px;max-width:600px;margin:auto">
       <h2>✅ Shopify connected!</h2>
       <p><strong>Store:</strong> ${storeDomain}</p>
+      <p><strong>Save status:</strong> <code>${saveStatus}</code></p>
       <p><strong>Access token:</strong></p>
       <code style="background:#f4f4f4;padding:12px;display:block;border-radius:8px;word-break:break-all">${access_token}</code>
-      <p style="color:#666;margin-top:20px">Copy this token and add it to your <code>api/.env</code> as:<br>
+      <hr style="margin:24px 0;border:none;border-top:1px solid #eee"/>
+      <p style="color:#666"><strong>If save status shows an error</strong>, the DB columns are missing. Run this SQL in Supabase:</p>
+      <code style="background:#f4f4f4;padding:12px;display:block;border-radius:8px;font-size:12px">
+ALTER TABLE merchants ADD COLUMN IF NOT EXISTS shopify_access_token TEXT;<br>
+ALTER TABLE merchants ADD COLUMN IF NOT EXISTS shopify_domain TEXT;
+      </code>
+      <p style="color:#666;margin-top:16px">Then set these in Vercel env vars as an immediate bridge:<br>
       <code>SHOPIFY_ACCESS_TOKEN=${access_token}<br>SHOPIFY_DOMAIN=${storeDomain}</code></p>
     </body></html>
   `);
+});
+
+// Diagnostic: GET /api/shopify/status?merchant_id=UUID
+// Shows exactly what's in DB and whether the Shopify API responds
+router.get('/shopify/status', async (req, res) => {
+  const merchantId = req.query.merchant_id;
+  if (!merchantId) return res.status(400).json({ error: 'merchant_id required' });
+
+  const { data: merchant, error } = await supabase
+    .from('merchants')
+    .select('id, email, shopify_domain, shopify_access_token')
+    .eq('id', merchantId)
+    .single();
+
+  if (error) return res.status(404).json({ error: 'Merchant not found', detail: error.message });
+
+  const domain = merchant.shopify_domain || process.env.SHOPIFY_DOMAIN;
+  const token = merchant.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+
+  const status = {
+    merchant_id: merchant.id,
+    shopify_domain_in_db: merchant.shopify_domain,
+    shopify_domain_effective: domain,
+    token_in_db: merchant.shopify_access_token ? `${merchant.shopify_access_token.slice(0, 10)}...` : null,
+    token_from_env: process.env.SHOPIFY_ACCESS_TOKEN ? `${process.env.SHOPIFY_ACCESS_TOKEN.slice(0, 10)}...` : null,
+    token_effective: token ? `${token.slice(0, 10)}...` : null,
+    ready: !!(domain && token),
+    shopify_api_test: null
+  };
+
+  // Live test the Shopify API if we have credentials
+  if (domain && token) {
+    try {
+      const testRes = await fetch(`https://${domain}/admin/api/2024-01/shop.json`, {
+        headers: { 'X-Shopify-Access-Token': token }
+      });
+      if (testRes.ok) {
+        const { shop } = await testRes.json();
+        status.shopify_api_test = `OK — connected to "${shop.name}" (${shop.myshopify_domain})`;
+      } else {
+        status.shopify_api_test = `FAILED — ${testRes.status}: ${await testRes.text()}`;
+        status.ready = false;
+      }
+    } catch (e) {
+      status.shopify_api_test = `ERROR — ${e.message}`;
+      status.ready = false;
+    }
+  }
+
+  res.json(status);
 });
 
 module.exports = router;

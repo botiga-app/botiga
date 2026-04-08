@@ -105,6 +105,7 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       status: result.status,
       deal_price: result.dealPrice,
       checkout_url: result.checkoutUrl,
+      discount_code: result.discountCode || null,
       broker_fee: result.brokerFee,
       expires_at: result.expiresAt
     });
