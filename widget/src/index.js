@@ -208,6 +208,7 @@
     let loading = false;
     let leadCaptured = false;
     let dealShown = false;
+    let msgCount = 0; // number of bot replies received this session
 
     const msgsEl = shadow.querySelector('#msgs');
     const inp = shadow.querySelector('#inp');
@@ -415,14 +416,16 @@
         negotiationId = d.negotiation_id;
         saveSession({ negotiationId });
         appendMsg('bot', d.bot_reply);
+        msgCount++;
 
         if (d.status === 'won' && d.deal_price) {
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
           clearSession();
-        } else if (d.is_final_offer && !leadCaptured) {
-          setTimeout(() => showLeadCapture(true), 400);
-        } else if (d.status === 'human_escalated' && !leadCaptured) {
-          setTimeout(() => showLeadCapture(true), 400);
+        } else if (d.is_final_offer || d.status === 'human_escalated') {
+          if (!leadCaptured) setTimeout(() => showLeadCapture(true), 400);
+        } else if (!leadCaptured && msgCount === 1) {
+          // Capture lead early — after bot's very first reply
+          setTimeout(() => showLeadCapture(false), 400);
         }
       } catch {
         removeTyping();

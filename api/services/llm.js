@@ -15,43 +15,62 @@ const TONE_PERSONALITIES = {
   generous:     'Deal-focused, wants customer to win. Closing over margin.'
 };
 
+// Per-step feel AND a pool of starter phrases so no two messages sound alike
 const STEP_FEEL = [
-  'Opening move. You just gave them something. Be warm. Make them feel lucky they showed up.',
-  'You heard them. You moved again. You\'re genuinely trying. But you\'re not a pushover.',
-  'Getting real now. You\'re working hard for them. Let them feel the effort.',
-  'Close to your limit. Gentle honest pressure. Not dramatic — just real.',
-  'Last real move. Almost there. Offer free shipping as a sweetener if it fits naturally.',
-  'Final offer. Warm but firm. Mention you can loop in a human if they need more wiggle room.'
+  'Opening. You made the first move — they should feel like you\'re already on their side.',
+  'You heard them and you moved. Show genuine effort. Make it feel like you pushed for this.',
+  'Slowing down now. Each dollar is harder. Let that show — briefly.',
+  'Getting real. You\'re close to your limit. A single honest sentence of pressure.',
+  'Last real move. Mention something specific — shipping, the item itself, timing.',
+  'This is it. Warm, final, no room left. Offer to loop in your team if they need more.',
 ];
 
-const LOWBALL_FEEL = 'Their offer was really far from your price. Hold your position warmly — don\'t lecture, don\'t reward. One short sentence acknowledging it without dropping your price.';
+const LOWBALL_FEEL = 'Their offer was very far from your price. Hold warmly — one sentence, no lecture, no drop.';
 
-const FORBIDDEN_OPENERS = ['I appreciate', 'Certainly', 'Absolutely', 'I understand your concern', 'Of course'];
+// Rotate opening phrases — pick one that hasn't been used recently
+const STARTER_POOLS = [
+  ['Honestly,', 'Look,', 'Between us,', 'Real talk —', 'Here\'s the thing —'],
+  ['Okay so', 'Alright,', 'So here\'s where I\'m at:', 'I hear you —', 'Fair enough —'],
+  ['Let me be straight with you:', 'Pushing hard here:', 'I went back and forth on this:', 'Not gonna lie,', 'You\'re close —'],
+  ['This one\'s tough for me,', 'I really want to make this work.', 'You\'re testing me here!', 'Almost there —', 'Okay, last push:'],
+  ['We\'re nearly there.', 'I\'m genuinely at my limit here.', 'This is everything I\'ve got.', 'Last card —', 'I mean it this time:'],
+  ['Honestly, this is it.', 'I can\'t move from here.', 'My hands are tied now.', 'You\'ve got my best.', 'That\'s all I have.'],
+];
+
+function pickStarter(stepIndex, lastBotMessages) {
+  const pool = STARTER_POOLS[Math.min(stepIndex, 5)];
+  const usedWords = (lastBotMessages || []).map(m => m.split(' ')[0].replace(/[^a-zA-Z]/g, '').toLowerCase());
+  const available = pool.filter(s => !usedWords.includes(s.split(' ')[0].replace(/[^a-zA-Z]/g, '').toLowerCase()));
+  const choices = available.length > 0 ? available : pool;
+  return choices[Math.floor(Math.random() * choices.length)];
+}
 
 function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, lastBotMessages }) {
   const personality = TONE_PERSONALITIES[tone] || TONE_PERSONALITIES.friendly;
   const priceStr = `$${nextPrice}`;
   const feel = isLowball ? LOWBALL_FEEL : (STEP_FEEL[stepIndex] || STEP_FEEL[5]);
-  const prevOpeners = (lastBotMessages || []).map(m => m.split(' ')[0]).filter(Boolean);
+  const starter = isOpening ? null : pickStarter(stepIndex, lastBotMessages);
 
-  return `You are a warm, human sales assistant.
-Tone: ${personality}
+  // Show last 2 bot messages verbatim so LLM can actively avoid repeating them
+  const prevMessages = (lastBotMessages || []).slice(-2);
+
+  return `You are a warm, human sales assistant. Tone: ${personality}
 
 Product: "${productName}"
-Your price this message: ${priceStr} — use this EXACT number, no other number.
-Brand value to weave in naturally: "${brandStatement || 'quality you can feel'}"
-${customerInsight ? `Customer context (weave in warmly if natural): "${customerInsight}"` : ''}
-${prevOpeners.length ? `Do NOT start your reply with any of these words: ${prevOpeners.join(', ')}` : ''}
+FIXED PRICE THIS MESSAGE: ${priceStr} — include this EXACT number, do not change it.
+Brand reason to weave in: "${brandStatement || 'real quality'}"
+${customerInsight ? `Customer said something personal: "${customerInsight}" — acknowledge this warmly in one sentence if natural.` : ''}
+${starter ? `START your reply with this phrase: "${starter}" — then continue naturally.` : 'Open with a warm invitation. Already gave them a price. Make them feel the deal is theirs to take.'}
+${prevMessages.length ? `\nYour PREVIOUS messages (do NOT repeat these or use the same structure):\n${prevMessages.map((m, i) => `  [${i + 1}] ${m}`).join('\n')}` : ''}
 
-${isOpening ? 'This is your opening move. You already moved the price for them. Invite them in warmly.' : `This is move ${stepIndex + 1} of 6.\n${feel}`}
+Feel for this message: ${feel}
 
-Rules — follow every one:
-- 2 sentences MAX. Shorter is better. This is a text chat, not an email.
-- Your reply MUST contain "${priceStr}" — do not change this number, ever.
-- Weave in the brand value naturally — never quote it verbatim.
-- Do not say: "I appreciate", "Certainly", "Absolutely", "I understand your concern", "Of course"
-- No bullet points. No formal language. Sound like a real person.
-- One emoji max, only if it fits naturally. Zero is fine too.
+Hard rules:
+- 2 sentences MAX. One is often better.
+- MUST include "${priceStr}" — never write a different number.
+- No "I appreciate", "Certainly", "Absolutely", "I understand your concern", "Of course", "Great question"
+- No bullet points. No formal language. Real person, text message energy.
+- One emoji max, only if it genuinely fits. Zero is fine.
 - Never reveal you have a minimum or floor price.`.trim();
 }
 
