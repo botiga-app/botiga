@@ -148,12 +148,6 @@
       @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
       .reaction { font-size: 12px; color: #6b7280; align-self: flex-end; padding: 2px 4px; animation: fadein 0.2s ease; }
       @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-      .lead-form { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; max-width: 90%; align-self: flex-start; width: 100%; }
-      .lead-form p { font-size: 12px; color: #374151; margin-bottom: 10px; line-height: 1.4; }
-      .lead-form input { width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 12px; margin-bottom: 8px; display: block; outline: none; }
-      .lead-form input:focus { border-color: ${bg}; }
-      .lead-form .submit-btn { width: 100%; padding: 9px; background: ${bg}; color: ${fg}; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-      .lead-form .skip-btn { display: block; text-align: center; font-size: 11px; color: #9ca3af; cursor: pointer; margin-top: 8px; background: none; border: none; width: 100%; }
       .input-row { display: flex; padding: 12px 16px; gap: 8px; border-top: 1px solid #eee; background: #fff; flex-shrink: 0; }
       .inp { flex: 1; border: 1.5px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 13px; font-family: inherit; outline: none; transition: border 0.15s; }
       .inp:focus { border-color: ${bg}; }
@@ -206,9 +200,7 @@
 
     let negotiationId = null;
     let loading = false;
-    let leadCaptured = false;
     let dealShown = false;
-    let msgCount = 0; // number of bot replies received this session
 
     const msgsEl = shadow.querySelector('#msgs');
     const inp = shadow.querySelector('#inp');
@@ -306,39 +298,7 @@
       tick();
     }
 
-    function showLeadCapture(isFinalOffer) {
-      if (leadCaptured) return;
-      leadCaptured = true;
-      const form = document.createElement('div');
-      form.className = 'lead-form';
-      form.innerHTML = `
-        <p>${isFinalOffer ? "Don't want to miss this? Leave your details and our team will reach out." : "Want us to hold this price? Drop your details."}</p>
-        <input id="_bl_name" type="text" placeholder="Your name" />
-        <input id="_bl_phone" type="tel" placeholder="WhatsApp (e.g. +1234567890)" />
-        <input id="_bl_email" type="email" placeholder="Email (optional)" />
-        <button class="submit-btn" id="_bl_save">Send to team</button>
-        <button class="skip-btn" id="_bl_skip">Skip for now</button>
-      `;
-      msgsEl.appendChild(form);
-      msgsEl.scrollTop = msgsEl.scrollHeight;
-
-      form.querySelector('#_bl_save').addEventListener('click', async () => {
-        const name = form.querySelector('#_bl_name').value.trim();
-        const phone = form.querySelector('#_bl_phone').value.trim();
-        const email = form.querySelector('#_bl_email').value.trim();
-        if (!phone && !email) return;
-        try {
-          await fetch(`${API_BASE}/api/recovery/capture`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...API_HEADERS },
-            body: JSON.stringify({ negotiation_id: negotiationId, customer_name: name || null, customer_whatsapp: phone || null, customer_email: email || null })
-          });
-        } catch {}
-        form.innerHTML = '<p style="color:#047857;font-weight:600;padding:4px 0;">&#9989; Got it! Our team will reach out.</p>';
-      });
-
-      form.querySelector('#_bl_skip').addEventListener('click', () => form.remove());
-    }
+    // Lead capture is now handled inline by the bot's message — no form widget needed
 
     // ── OPENING CALL ───────────────────────────────────────────────────────────
     async function doOpening() {
@@ -416,16 +376,10 @@
         negotiationId = d.negotiation_id;
         saveSession({ negotiationId });
         appendMsg('bot', d.bot_reply);
-        msgCount++;
 
         if (d.status === 'won' && d.deal_price) {
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
           clearSession();
-        } else if (d.is_final_offer || d.status === 'human_escalated') {
-          if (!leadCaptured) setTimeout(() => showLeadCapture(true), 400);
-        } else if (!leadCaptured && msgCount === 1) {
-          // Capture lead early — after bot's very first reply
-          setTimeout(() => showLeadCapture(false), 400);
         }
       } catch {
         removeTyping();

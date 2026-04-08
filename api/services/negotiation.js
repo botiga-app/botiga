@@ -169,6 +169,28 @@ async function processNegotiation({
   const brandStatements = merchantSettings.brand_value_statements || [];
   const usedStatements = messages.filter(m => m.brand_statement).map(m => m.brand_statement);
 
+  // ── CONTACT DETECTION — save phone/email if customer shared it ──────────────
+  const phoneMatch = customerMessage.match(/(?:\+?[\d\s\-().]{7,20})/);
+  const emailMatch = customerMessage.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  const contactUpdates = {};
+  if (phoneMatch && !negotiation.customer_whatsapp) {
+    const cleaned = phoneMatch[0].replace(/[\s\-().]/g, '');
+    if (cleaned.length >= 7) contactUpdates.customer_whatsapp = cleaned;
+  }
+  if (emailMatch && !negotiation.customer_email) {
+    contactUpdates.customer_email = emailMatch[0];
+  }
+  if (Object.keys(contactUpdates).length > 0) {
+    await supabase.from('negotiations').update(contactUpdates).eq('id', negotiation.id);
+  }
+
+  // Whether bot has already asked for contact this negotiation
+  const alreadyAskedContact = messages.some(m => m.role === 'assistant' && m.asked_contact);
+  const hasContact = !!(negotiation.customer_whatsapp || negotiation.customer_email || contactUpdates.customer_whatsapp || contactUpdates.customer_email);
+  // Ask for contact on the first real bot reply (after opening), but only once and only if we don't have it
+  const botRepliesCount = messages.filter(m => m.role === 'assistant').length;
+  const needsLeadCapture = !hasContact && !alreadyAskedContact && botRepliesCount >= 1;
+
   // ── OPENING MOVE ────────────────────────────────────────────────────────────
   if (isOpening) {
     const nextPrice = priceLadder[0];
@@ -243,7 +265,8 @@ async function processNegotiation({
     tone: merchantSettings.tone, productName: negotiation.product_name,
     nextPrice, brandStatement,
     customerInsight: latestInsight,
-    stepIndex: nextStep, isOpening: false, isLowball, lastBotMessages
+    stepIndex: nextStep, isOpening: false, isLowball, lastBotMessages,
+    needsLeadCapture
   });
 
   const [insightResult, llmResult] = await Promise.all([
@@ -251,7 +274,8 @@ async function processNegotiation({
     callLLM({
       systemPrompt, messages, customerMessage,
       negotiationId: negotiation.id, merchantId,
-      nextPrice, brandStatement, isOpening: false
+      nextPrice, brandStatement, isOpening: false,
+      tone: merchantSettings.tone
     })
   ]);
 
@@ -266,7 +290,7 @@ async function processNegotiation({
   const updatedMessages = [
     ...messages,
     { role: 'user', content: customerMessage },
-    { role: 'assistant', content: reply, brand_statement: brandStatement }
+    { role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: needsLeadCapture || undefined }
   ];
 
   // ── STEP 4: PERSIST ─────────────────────────────────────────────────────────

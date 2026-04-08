@@ -6,113 +6,125 @@ const { trackLLMCall } = require('../lib/posthog');
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const TONE_PERSONALITIES = {
-  friendly:     'Warm, genuine, like a friend who works there. Enthusiastic but not pushy.',
-  sassy:        'Witty, playful, a little cheeky. Short punchy sentences. Fun to talk to.',
-  desi:         'Warm like a bazaar shopkeeper. Use "yaar", "bhai", "acha". Makes customer feel like family.',
-  professional: 'Polished, respectful, efficient. Luxury or B2B feel. No slang.',
-  urgent:       'Friendly but creates subtle urgency. Mentions limited stock or expiring deal.',
-  generous:     'Deal-focused, wants customer to win. Closing over margin.'
+// Voice per tone — specific vocabulary and energy, not just a descriptor
+const TONE_VOICE = {
+  friendly:     'Warm, genuine, like a friend who works at the boutique. Contractions, short sentences, one emoji if it fits.',
+  sassy:        'Witty and confident. A little cheeky. Short, punchy. Playful — not rude. Keeps it fun.',
+  desi:         'Like a warm shopkeeper from an Indian bazaar. Use "yaar", "bhai", "acha listen", "chal" naturally. Makes them feel like family.',
+  professional: 'Polished and clear. No slang. Respectful, direct. Suits luxury or business buyers.',
+  urgent:       'Friendly with a light sense of time pressure. Mentions limited stock or timing — once, naturally.',
+  generous:     'You genuinely want them to have it. Deal-focused, warm, rooting for them.',
 };
 
-// Per-step feel AND a pool of starter phrases so no two messages sound alike
-const STEP_FEEL = [
-  'Opening. You made the first move — they should feel like you\'re already on their side.',
-  'You heard them and you moved. Show genuine effort. Make it feel like you pushed for this.',
-  'Slowing down now. Each dollar is harder. Let that show — briefly.',
-  'Getting real. You\'re close to your limit. A single honest sentence of pressure.',
-  'Last real move. Mention something specific — shipping, the item itself, timing.',
-  'This is it. Warm, final, no room left. Offer to loop in your team if they need more.',
+// Per-step concrete instruction — what the bot is doing emotionally at each step
+// These change what the LLM writes, not just how it starts
+const STEP_DIRECTION = [
+  // Step 1 (opening)
+  `You already moved the price for them before they even asked. They should feel like you're on their side. Warm invitation — make them feel lucky they showed up. Then ask naturally for their phone or email in case you get disconnected — weave it in at the end, like: "What's your WhatsApp in case we lose each other?" or "Drop me your email so I can hold this for you?" Phrase it your way — natural, never pushy.`,
+
+  // Step 2
+  `They pushed back. You heard them and you moved. Show you fought for this — "I had to really push for that" energy. Brief and real. Do NOT ask for contact again if already asked.`,
+
+  // Step 3
+  `Still moving but the steps are getting smaller. Let them feel the effort slowing down. One honest sentence about how tight it's getting. Brief.`,
+
+  // Step 4
+  `You're close to your edge. Genuine, light pressure — not dramatic. Make it feel real without revealing any limit. One sentence.`,
+
+  // Step 5
+  `Near final. Pair your price with a specific product reason (craftsmanship, shipping, materials). Almost there energy — make them feel the deal is within reach.`,
+
+  // Step 6 (floor)
+  `This is genuinely your last offer. Warm, not dramatic. Suggest that your team might be able to help if they need more — frame it as passing them to someone with more flexibility, not as a dead end.`,
 ];
 
-const LOWBALL_FEEL = 'Their offer was very far from your price. Hold warmly — one sentence, no lecture, no drop.';
+const LOWBALL_DIRECTION = `Their offer was way off. Hold your position warmly — do not drop your price, do not lecture them. Acknowledge it briefly with lightness or humour. One sentence.`;
 
-// Rotate opening phrases — pick one that hasn't been used recently
-const STARTER_POOLS = [
-  ['Honestly,', 'Look,', 'Between us,', 'Real talk —', 'Here\'s the thing —'],
-  ['Okay so', 'Alright,', 'So here\'s where I\'m at:', 'I hear you —', 'Fair enough —'],
-  ['Let me be straight with you:', 'Pushing hard here:', 'I went back and forth on this:', 'Not gonna lie,', 'You\'re close —'],
-  ['This one\'s tough for me,', 'I really want to make this work.', 'You\'re testing me here!', 'Almost there —', 'Okay, last push:'],
-  ['We\'re nearly there.', 'I\'m genuinely at my limit here.', 'This is everything I\'ve got.', 'Last card —', 'I mean it this time:'],
-  ['Honestly, this is it.', 'I can\'t move from here.', 'My hands are tied now.', 'You\'ve got my best.', 'That\'s all I have.'],
+// Phrase pool per step — force variety in openings
+const OPENERS = [
+  ['Okay, so —', 'Here\'s the thing —', 'So listen —', 'Alright —', 'Between us —'],
+  ['I hear you —', 'Fair enough —', 'Okay so', 'Alright,', 'Right, so —'],
+  ['Getting real here —', 'Honestly,', 'Look,', 'Not gonna lie,', 'I\'ll be straight —'],
+  ['Pushing hard for you:', 'Real talk —', 'Almost there —', 'You\'re testing me here —', 'Okay last push:'],
+  ['This one took some doing:', 'Nearly there —', 'I went back and forth on this:', 'Okay, last real move:', 'Here\'s what I can do:'],
+  ['Genuinely, this is it.', 'My team would kill me but —', 'Last card:', 'Okay, final answer:', 'This is everything:'],
 ];
 
-function pickStarter(stepIndex, lastBotMessages) {
-  const pool = STARTER_POOLS[Math.min(stepIndex, 5)];
-  const usedWords = (lastBotMessages || []).map(m => m.split(' ')[0].replace(/[^a-zA-Z]/g, '').toLowerCase());
-  const available = pool.filter(s => !usedWords.includes(s.split(' ')[0].replace(/[^a-zA-Z]/g, '').toLowerCase()));
-  const choices = available.length > 0 ? available : pool;
+function pickOpener(stepIndex, lastBotMessages) {
+  const pool = OPENERS[Math.min(stepIndex, 5)];
+  const usedFirst = (lastBotMessages || []).map(m => m.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, ''));
+  const available = pool.filter(p => !usedFirst.includes(p.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '')));
+  const choices = available.length ? available : pool;
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, lastBotMessages }) {
-  const personality = TONE_PERSONALITIES[tone] || TONE_PERSONALITIES.friendly;
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, lastBotMessages, needsLeadCapture }) {
+  const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const priceStr = `$${nextPrice}`;
-  const feel = isLowball ? LOWBALL_FEEL : (STEP_FEEL[stepIndex] || STEP_FEEL[5]);
-  const starter = isOpening ? null : pickStarter(stepIndex, lastBotMessages);
+  const direction = isLowball ? LOWBALL_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
+  const opener = isOpening ? null : pickOpener(stepIndex, lastBotMessages);
 
-  // Show last 2 bot messages verbatim so LLM can actively avoid repeating them
   const prevMessages = (lastBotMessages || []).slice(-2);
 
-  return `You are a warm, human sales assistant. Tone: ${personality}
+  return `You are a sales assistant for a boutique selling "${productName}".
+Voice: ${voice}
 
-Product: "${productName}"
-FIXED PRICE THIS MESSAGE: ${priceStr} — include this EXACT number, do not change it.
-Brand reason to weave in: "${brandStatement || 'real quality'}"
-${customerInsight ? `Customer said something personal: "${customerInsight}" — acknowledge this warmly in one sentence if natural.` : ''}
-${starter ? `START your reply with this phrase: "${starter}" — then continue naturally.` : 'Open with a warm invitation. Already gave them a price. Make them feel the deal is theirs to take.'}
-${prevMessages.length ? `\nYour PREVIOUS messages (do NOT repeat these or use the same structure):\n${prevMessages.map((m, i) => `  [${i + 1}] ${m}`).join('\n')}` : ''}
+YOUR PRICE THIS MESSAGE: ${priceStr}
+You MUST include "${priceStr}" in your reply. Do not write any other price.
 
-Feel for this message: ${feel}
+Brand reason to use naturally (do not quote verbatim): "${brandStatement || 'real quality and craftsmanship'}"
+${customerInsight ? `Customer mentioned: "${customerInsight}" — acknowledge this warmly if natural.` : ''}
+${needsLeadCapture && !isLowball ? `Weave in a natural ask for their phone or email at the end — like "What's your WhatsApp in case we get disconnected?" or "Drop me your email so I can hold this for you?" — phrase it your own way, keep it light.` : ''}
+${opener ? `Start your reply with: "${opener}" — then continue naturally in your own voice.` : ''}
+${prevMessages.length ? `\nYour previous messages — do NOT repeat their structure, phrasing, or opening:\n${prevMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}` : ''}
 
-Hard rules:
-- 2 sentences MAX. One is often better.
-- MUST include "${priceStr}" — never write a different number.
-- No "I appreciate", "Certainly", "Absolutely", "I understand your concern", "Of course", "Great question"
-- No bullet points. No formal language. Real person, text message energy.
-- One emoji max, only if it genuinely fits. Zero is fine.
-- Never reveal you have a minimum or floor price.`.trim();
+What you are doing this message: ${direction}
+
+RULES — every one is hard:
+- 2 sentences MAX. One is often better. This is chat, not email.
+- MUST contain "${priceStr}" — never write a different number.
+- NEVER say: "I appreciate", "Certainly", "Absolutely", "Of course", "I understand your concern", "Great question", "Happy to help"
+- NEVER say: "that's my minimum", "I can't go lower", "that's my floor", "my hands are tied", "that's the lowest I can go", "I'm at my limit" — these reveal your constraints. Just move on naturally.
+- No bullet points. No formal language. Sound like a real human texting.
+- One emoji max. Zero is fine.`.trim();
 }
 
 function validateAndFixPrice(text, nextPrice) {
   const exact = `$${nextPrice}`;
   if (text.includes(exact)) return text;
-  // LLM changed the price — replace inline
-  const pricePattern = /\$[\d,]+(?:\.[\d]{1,2})?/g;
-  return text.replace(pricePattern, exact);
+  // LLM wrote a different price — replace the first dollar amount inline
+  return text.replace(/\$[\d,]+(?:\.[\d]{1,2})?/, exact);
 }
 
-function fallbackReply(nextPrice, brandStatement, isOpening) {
+function fallbackReply(nextPrice, brandStatement, isOpening, tone) {
+  const price = `$${nextPrice}`;
   if (isOpening) {
-    return `Hey! I can already offer you $${nextPrice} on this — ${brandStatement || 'it\'s genuinely worth it'}. What do you think? 😊`;
+    if (tone === 'desi') return `Yaar, I can already do ${price} for you — ${brandStatement || 'this is quality stuff'}. What do you think? 😊`;
+    if (tone === 'sassy') return `Okay so I already moved — ${price} is yours if you want it. What's your call?`;
+    return `Hey! I can already offer ${price} on this — ${brandStatement || 'it\'s worth every bit'}. What do you think? 😊`;
   }
-  return `I can do $${nextPrice} — ${brandStatement || 'this is real quality'}. What do you say?`;
+  return `I can do ${price} — ${brandStatement || 'real quality here'}. What do you say?`;
 }
 
 async function logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt, response }) {
   try {
     await supabase.from('llm_traces').insert({
-      negotiation_id: negotiationId,
-      merchant_id: merchantId,
-      provider, model,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      latency_ms: latencyMs,
-      cost_usd: costUsd,
-      prompt, response
+      negotiation_id: negotiationId, merchant_id: merchantId,
+      provider, model, input_tokens: inputTokens, output_tokens: outputTokens,
+      latency_ms: latencyMs, cost_usd: costUsd, prompt, response
     });
     await trackLLMCall({ merchantId, negotiationId, provider, model, inputTokens, outputTokens, latencyMs, costUsd });
   } catch {}
 }
 
-function estimateCost(provider, inputTokens, outputTokens) {
-  if (provider === 'groq') return (inputTokens * 0.00000059) + (outputTokens * 0.00000079);
-  return (inputTokens * 0.000000075) + (outputTokens * 0.0000003);
+function estimateCost(provider, i, o) {
+  if (provider === 'groq') return (i * 0.00000059) + (o * 0.00000079);
+  return (i * 0.000000075) + (o * 0.0000003);
 }
 
-async function callLLM({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextPrice, brandStatement, isOpening }) {
+async function callLLM({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextPrice, brandStatement, isOpening, tone }) {
   const userMessage = isOpening
-    ? '[Customer just opened the chat. Make your warm opening offer.]'
+    ? '[Customer just opened the chat. Make your warm opening offer now.]'
     : customerMessage;
 
   const providers = ['groq', 'gemini'];
@@ -132,7 +144,7 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
             { role: 'user', content: userMessage }
           ],
           max_tokens: 120,
-          temperature: 0.75
+          temperature: 0.9,
         });
         rawReply = response.choices[0].message.content;
         inputTokens = response.usage?.prompt_tokens || 0;
@@ -154,12 +166,8 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
       }
 
       const latencyMs = Date.now() - startTime;
-      const costUsd = estimateCost(provider, inputTokens, outputTokens);
-
-      // Validate price — fix inline if LLM changed it
       const reply = validateAndFixPrice(rawReply.trim(), nextPrice);
-
-      await logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt: systemPrompt, response: rawReply });
+      await logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd: estimateCost(provider, inputTokens, outputTokens), prompt: systemPrompt, response: rawReply });
 
       return { reply, provider, latencyMs };
     } catch (err) {
@@ -167,11 +175,7 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
     }
   }
 
-  return {
-    reply: fallbackReply(nextPrice, brandStatement, isOpening),
-    provider: 'fallback',
-    latencyMs: 0
-  };
+  return { reply: fallbackReply(nextPrice, brandStatement, isOpening, tone), provider: 'fallback', latencyMs: 0 };
 }
 
 module.exports = { callLLM, buildSystemPrompt };
