@@ -121,6 +121,8 @@
       .msg.bot { background: #fff; color: #1a1a1a; border-radius: 14px 14px 14px 2px; align-self: flex-start; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
       .msg.user { background: ${bg}; color: ${fg}; border-radius: 14px 14px 2px 14px; align-self: flex-end; }
       .typing { font-size: 12px; color: #999; align-self: flex-start; padding: 6px 0; }
+      .reaction { font-size: 12px; color: #6b7280; align-self: flex-end; padding: 2px 4px; animation: fadein 0.2s ease; }
+      @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
       .lead-form { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-top: 8px; max-width: 85%; align-self: flex-start; }
       .lead-form input { width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 12px; margin-bottom: 6px; display: block; box-sizing: border-box; outline: none; }
       .lead-form input:focus { border-color: ${bg}; }
@@ -211,6 +213,35 @@
       }
     }
 
+    // Immediate visual reaction to customer offer — runs before API responds
+    function showOfferReaction(text) {
+      const numMatch = text.match(/\$?\s*([\d,]+(?:\.[\d]{1,2})?)/);
+      if (!numMatch || !productInfo.price) return;
+      const offer = parseFloat(numMatch[1].replace(/[,\s]/g, ''));
+      if (offer <= 0 || offer > productInfo.price * 1.5) return;
+      const pct = offer / productInfo.price;
+      let emoji, label;
+      if (pct >= 0.90) { emoji = '🤩'; label = 'Getting warmer...'; }
+      else if (pct >= 0.80) { emoji = '😊'; label = 'Not bad...'; }
+      else { emoji = '😬'; label = "That's a tough one..."; }
+      const r = document.createElement('div');
+      r.className = 'reaction';
+      r.textContent = `${emoji} ${label}`;
+      msgsEl.appendChild(r);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      // Remove once bot replies
+      setTimeout(() => r.remove(), 4000);
+    }
+
+    // Tactical delay: low offers get longer pause to feel considered
+    function getResponseDelay(text) {
+      const numMatch = text.match(/\$?\s*([\d,]+(?:\.[\d]{1,2})?)/);
+      if (!numMatch || !productInfo.price) return 1500;
+      const offer = parseFloat(numMatch[1].replace(/[,\s]/g, ''));
+      const pct = offer / productInfo.price;
+      return pct < 0.70 ? 2500 : 1500;
+    }
+
     function showLeadCapture() {
       if (leadCaptured) return;
       const form = document.createElement('div');
@@ -278,6 +309,14 @@
       if (!text || loading) return;
       inp.value = '';
       appendMsg('user', text);
+
+      // Immediate offer reaction (client-side, no API needed)
+      showOfferReaction(text);
+
+      // Tactical delay before showing typing indicator
+      const delay = getResponseDelay(text);
+      await new Promise(r => setTimeout(r, delay));
+
       setLoading(true);
       try {
         const r = await fetch(`${API_BASE}/api/negotiate`, {
@@ -300,7 +339,7 @@
         appendMsg('bot', d.bot_reply);
         botMessageCount++;
 
-        // Show inline lead capture after bot's first counter (message 2)
+        // Show inline lead capture after bot's first counter
         if (botMessageCount === 1 && !leadCaptured && d.status === 'active') {
           setTimeout(showLeadCapture, 300);
         }

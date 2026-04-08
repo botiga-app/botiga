@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [merchantId, setMerchantId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [aboutText, setAboutText] = useState('');
+  const [generating, setGenerating] = useState(false);
   const supabase = createClient();
 
   // Example prices for fee calc
@@ -49,12 +51,31 @@ export default function SettingsPage() {
           negotiate_on_cart: true,
           recovery_enabled: true,
           recovery_channel: 'whatsapp',
-          dwell_time_seconds: 30
+          dwell_time_seconds: 30,
+          brand_value_statements: ['', '', '', '', '']
         });
       }
     }
     load();
   }, []);
+
+  async function generateStatements() {
+    if (!aboutText.trim()) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/generate-statements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ about_text: aboutText })
+      });
+      if (res.ok) {
+        const { statements } = await res.json();
+        update({ brand_value_statements: statements });
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function save() {
     if (!merchantId || !settings) return;
@@ -156,6 +177,58 @@ export default function SettingsPage() {
             floorPrice={exampleFloor}
             brokerFeePct={settings.broker_fee_pct || 25}
           />
+        </div>
+      </Section>
+
+      {/* Brand Story */}
+      <Section title="Your brand story">
+        <p className="text-xs text-gray-500">Write 3–5 reasons why customers should pay full price. The bot uses these as justifications when making offers — e.g. "I can do $199 — <em>hand-finished by artisans, not mass produced</em>."</p>
+        <div className="space-y-2">
+          {(settings.brand_value_statements || ['', '', '', '', '']).map((s, i) => (
+            <input
+              key={i}
+              type="text"
+              value={s}
+              onChange={e => {
+                const arr = [...(settings.brand_value_statements || ['', '', '', '', ''])];
+                arr[i] = e.target.value;
+                update({ brand_value_statements: arr });
+              }}
+              placeholder={[
+                'Hand-finished by artisans — not mass produced',
+                'Free returns within 30 days, no questions asked',
+                'Only 3 left in this size',
+                'Ships within 24 hours from our warehouse',
+                'Sustainably sourced fabric, certified ethical'
+              ][i]}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            />
+          ))}
+        </div>
+        <div className="pt-2 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">Or paste your About Us page and auto-generate:</p>
+          <textarea
+            value={aboutText}
+            onChange={e => setAboutText(e.target.value)}
+            placeholder="Paste your About Us page text here..."
+            rows={3}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+          />
+          <button
+            onClick={generateStatements}
+            disabled={generating || !aboutText.trim()}
+            className="mt-2 text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+          >
+            {generating ? 'Generating...' : '✨ Auto-generate from text'}
+          </button>
+          {settings.brand_value_statements?.filter(Boolean).length > 0 && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs font-medium text-gray-600 mb-1">Preview in bot message:</p>
+              <p className="text-xs text-gray-500 italic">
+                "I can do $199 — {settings.brand_value_statements.find(Boolean)}."
+              </p>
+            </div>
+          )}
         </div>
       </Section>
 
