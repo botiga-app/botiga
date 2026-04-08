@@ -1,60 +1,24 @@
 const supabase = require('../lib/supabase');
-const { callLLMWithFallback, buildAtomicSystemPrompt } = require('./llm');
-const { computeNextBotPrice } = require('./pricing-engine');
+const { callLLM, buildSystemPrompt } = require('./llm');
+const { PricingEngine, isAcceptance, lowballResponse, parseCustomerOffer } = require('./PricingEngine');
 const { extractCustomerInsight } = require('./insights');
 const { calculateBrokerFee } = require('./broker-fee');
 const { checkRepeatNegotiator } = require('./fingerprint');
 const { trackNegotiationEvent } = require('../lib/posthog');
 const { createShopifyDiscountCode } = require('./shopify');
 
-const MAX_MESSAGES = 6;
-
-function computeFloorPrice(listPrice, settings) {
-  const fromPct = settings.floor_price_pct
-    ? listPrice * (1 - settings.floor_price_pct / 100)
-    : listPrice * (1 - (settings.max_discount_pct || 20) / 100);
-  const fromFixed = settings.floor_price_fixed || 0;
-  return Math.max(fromPct, fromFixed);
-}
-
-function parseCustomerOffer(message) {
-  if (!message) return null;
-  const matches = message.match(/\$?\s*([\d,]+(?:\.[\d]{1,2})?)/g);
-  if (!matches) return null;
-  const prices = matches.map(p => parseFloat(p.replace(/[$,\s]/g, ''))).filter(p => p > 10);
-  return prices.length > 0 ? Math.max(...prices) : null;
-}
-
-/**
- * Pick one brand value statement that hasn't been used yet in this negotiation.
- * Returns a statement string or null.
- */
-function pickBrandStatement(brandStatements, usedStatements) {
-  const available = (brandStatements || []).filter(s => s && !usedStatements.includes(s));
-  if (available.length === 0) return null;
-  // Deterministic pick based on how many have been used so far
-  return available[0];
-}
-
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
   let discountCode = null;
 
   if (shopifyDomain && shopifyAccessToken) {
     try {
-      discountCode = await createShopifyDiscountCode({
-        shop: shopifyDomain,
-        accessToken: shopifyAccessToken,
-        listPrice,
-        dealPrice,
-        negotiationId,
-        expiresAt
-      });
+      discountCode = await createShopifyDiscountCode({ shop: shopifyDomain, accessToken: shopifyAccessToken, listPrice, dealPrice, negotiationId, expiresAt });
       console.log('[Shopify] Discount code created:', discountCode);
     } catch (err) {
-      console.error('[Shopify] Discount code creation FAILED:', err.message, '| shop:', shopifyDomain, '| token prefix:', shopifyAccessToken?.slice(0, 10));
+      console.error('[Shopify] Discount code FAILED:', err.message, '| shop:', shopifyDomain, '| token prefix:', shopifyAccessToken?.slice(0, 10));
     }
   } else {
-    console.warn('[Shopify] Skipping discount code — missing domain:', shopifyDomain, 'or token:', !!shopifyAccessToken);
+    console.warn('[Shopify] Skipping — missing domain:', shopifyDomain, 'or token:', !!shopifyAccessToken);
   }
 
   if (variantId && productUrl) {
@@ -74,77 +38,100 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
   return { url: url.toString(), discountCode };
 }
 
-async function logTrainingRow({ negotiationId, merchantId, messageIndex, customerMessage, customerOffer, botMessage, botPrice, pricingAction, customerPricePrev, brandStatementUsed }) {
-  try {
-    const customerPriceMovement = (customerOffer !== null && customerPricePrev !== null)
-      ? customerOffer - customerPricePrev
-      : null;
+async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId }) {
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
+    productUrl: negotiation.product_url,
+    variantId: negotiation.variant_id,
+    dealPrice,
+    listPrice: negotiation.list_price,
+    negotiationId: negotiation.id,
+    expiresAt,
+    shopifyDomain,
+    shopifyAccessToken
+  });
 
-    await supabase.from('negotiations_training').insert({
-      negotiation_id: negotiationId,
-      merchant_id: merchantId,
-      message_index: messageIndex,
-      customer_message: customerMessage,
-      customer_offer: customerOffer,
-      bot_message: botMessage,
-      bot_price: botPrice,
-      pricing_action: pricingAction,
-      customer_price_movement: customerPriceMovement,
-      brand_statement_used: brandStatementUsed
-    });
-  } catch {}
+  const fees = calculateBrokerFee({
+    listPrice: negotiation.list_price,
+    floorPrice: negotiation.floor_price,
+    dealPrice,
+    brokerFeePct: merchantSettings.broker_fee_pct || 25
+  });
+
+  const reply = `You've got a deal at $${dealPrice}! 🎉 Heading you to checkout now.`;
+
+  await supabase.from('negotiations').update({
+    messages: [...messages, { role: 'assistant', content: reply }],
+    status: 'won',
+    deal_price: dealPrice,
+    spread: fees.spread,
+    broker_fee: fees.brokerFee,
+    checkout_url: checkoutUrl,
+    discount_code: discountCode,
+    deal_expires_at: expiresAt,
+    bot_last_offered_price: dealPrice,
+    updated_at: new Date().toISOString()
+  }).eq('id', negotiation.id);
+
+  await trackNegotiationEvent({
+    merchantId, negotiationId: negotiation.id, event: 'deal_struck',
+    properties: { list_price: negotiation.list_price, deal_price: dealPrice, broker_fee: fees.brokerFee }
+  });
+
+  return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt };
+}
+
+function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
+  const all = (brandStatements || []).filter(Boolean);
+  if (!all.length) return null;
+  // Save strongest statements (last in array) for final steps
+  const available = all.filter(s => !usedStatements.includes(s));
+  if (!available.length) return all[stepIndex % all.length];
+  // Steps 4-5 get the last remaining (strongest) statement
+  if (stepIndex >= 4) return available[available.length - 1];
+  return available[0];
 }
 
 async function processNegotiation({
-  merchantId,
-  merchantSettings,
-  shopifyDomain,
-  shopifyAccessToken,
-  sessionId,
-  negotiationId,
-  productName,
-  productUrl,
-  variantId,
-  listPrice,
-  customerMessage
+  merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
+  sessionId, negotiationId, productName, productUrl, variantId,
+  listPrice, customerMessage, isOpening
 }) {
   let negotiation;
 
-  if (negotiationId) {
-    const { data, error } = await supabase
-      .from('negotiations')
-      .select('*')
-      .eq('id', negotiationId)
-      .eq('merchant_id', merchantId)
-      .single();
-    if (error || !data) throw new Error('Negotiation not found');
-    negotiation = data;
-  } else {
-    const isRepeat = await checkRepeatNegotiator(sessionId, merchantId);
-    if (isRepeat) {
-      return { negotiationId: null, reply: "You already got our best deal on this item!", status: 'lost', dealPrice: null, checkoutUrl: null, brokerFee: null, expiresAt: null };
+  // ── CREATE NEW NEGOTIATION ──────────────────────────────────────────────────
+  if (!negotiationId) {
+    if (!isOpening) {
+      const isRepeat = await checkRepeatNegotiator(sessionId, merchantId);
+      if (isRepeat) {
+        return { negotiationId: null, reply: "You already got our best deal on this item!", status: 'lost', dealPrice: null, checkoutUrl: null, brokerFee: null, expiresAt: null, discountCode: null };
+      }
     }
 
-    const floorPrice = computeFloorPrice(listPrice, merchantSettings);
+    // Build price ladder once, store immediately
+    const engine = new PricingEngine({
+      listPrice,
+      floorPrice: merchantSettings.floor_price_fixed || 0,
+      maxDiscountPct: merchantSettings.max_discount_pct || 20
+    });
 
-    const { data, error } = await supabase
-      .from('negotiations')
-      .insert({
-        merchant_id: merchantId,
-        session_id: sessionId,
-        product_name: productName,
-        product_url: productUrl,
-        variant_id: variantId || null,
-        list_price: listPrice,
-        floor_price: floorPrice,
-        bot_last_offered_price: listPrice,
-        tone_used: merchantSettings.tone,
-        messages: [],
-        customer_insights: [],
-        status: 'active'
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('negotiations').insert({
+      merchant_id: merchantId,
+      session_id: sessionId,
+      product_name: productName,
+      product_url: productUrl,
+      variant_id: variantId || null,
+      list_price: listPrice,
+      floor_price: engine.floorPrice,
+      price_ladder: engine.priceLadder,
+      current_step: 0,
+      lowball_hold_messages: 0,
+      bot_last_offered_price: listPrice,
+      tone_used: merchantSettings.tone,
+      messages: [],
+      customer_insights: [],
+      status: 'active'
+    }).select().single();
 
     if (error) throw new Error('Failed to create negotiation: ' + error.message);
     negotiation = data;
@@ -153,197 +140,186 @@ async function processNegotiation({
       merchantId, negotiationId: negotiation.id, event: 'negotiation_started',
       properties: { list_price: listPrice, product_name: productName, tone: merchantSettings.tone }
     });
+  } else {
+    // ── LOAD EXISTING NEGOTIATION ─────────────────────────────────────────────
+    const { data, error } = await supabase.from('negotiations').select('*').eq('id', negotiationId).eq('merchant_id', merchantId).single();
+    if (error || !data) throw new Error('Negotiation not found');
+    negotiation = data;
   }
 
+  // Already closed
   if (negotiation.status === 'won' || negotiation.status === 'lost') {
     return {
       negotiationId: negotiation.id,
-      reply: negotiation.status === 'won'
-        ? `This deal is already locked at $${negotiation.deal_price}!`
-        : "Sorry, this negotiation has ended.",
+      reply: negotiation.status === 'won' ? `This deal is already locked at $${negotiation.deal_price}!` : "Sorry, this negotiation has ended.",
       status: negotiation.status,
       dealPrice: negotiation.deal_price,
       checkoutUrl: negotiation.checkout_url,
+      discountCode: negotiation.discount_code,
       brokerFee: negotiation.broker_fee,
       expiresAt: negotiation.deal_expires_at
     };
   }
 
   const messages = negotiation.messages || [];
-  const messageCount = messages.length;
+  const priceLadder = negotiation.price_ladder || [];
   const floorPrice = negotiation.floor_price;
-  const botLastOfferedPrice = negotiation.bot_last_offered_price || negotiation.list_price;
+  const botLastPrice = negotiation.bot_last_offered_price || negotiation.list_price;
   const customerInsights = negotiation.customer_insights || [];
   const brandStatements = merchantSettings.brand_value_statements || [];
+  const usedStatements = messages.filter(m => m.brand_statement).map(m => m.brand_statement);
 
-  // Track which brand statements have been used so far (from messages)
-  const usedStatements = messages
-    .filter(m => m.role === 'assistant' && m.brand_statement)
-    .map(m => m.brand_statement);
+  // ── OPENING MOVE ────────────────────────────────────────────────────────────
+  if (isOpening) {
+    const nextPrice = priceLadder[0];
+    const brandStatement = pickBrandStatement(brandStatements, 0, usedStatements);
+    const lastBotMessages = [];
 
-  const customerOffer = parseCustomerOffer(customerMessage);
-
-  // Previous customer offer (for training movement tracking)
-  const prevUserMessages = messages.filter(m => m.role === 'user');
-  const prevCustomerOffer = prevUserMessages.length > 0
-    ? parseCustomerOffer(prevUserMessages[prevUserMessages.length - 1].content)
-    : null;
-
-  // Step 1: PricingEngine computes the next price — LLM cannot override this
-  const { price: nextBotPrice, isDeal, isHold, isAnchor } = computeNextBotPrice({
-    listPrice: negotiation.list_price,
-    floorPrice,
-    botLastOffer: botLastOfferedPrice,
-    customerOffer,
-    messageCount,
-    maxMessages: MAX_MESSAGES
-  });
-
-  // Step 2: If deal, close immediately without calling LLM
-  if (isDeal) {
-    const finalDealPrice = nextBotPrice;
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
-      productUrl: negotiation.product_url,
-      variantId: negotiation.variant_id,
-      dealPrice: finalDealPrice,
-      listPrice: negotiation.list_price,
-      negotiationId: negotiation.id,
-      expiresAt,
-      shopifyDomain,
-      shopifyAccessToken
+    const systemPrompt = buildSystemPrompt({
+      tone: merchantSettings.tone, productName, nextPrice,
+      brandStatement, customerInsight: null,
+      stepIndex: 0, isOpening: true, isLowball: false, lastBotMessages
     });
 
-    const fees = calculateBrokerFee({
-      listPrice: negotiation.list_price,
-      floorPrice,
-      dealPrice: finalDealPrice,
-      brokerFeePct: merchantSettings.broker_fee_pct || 25
+    const { reply } = await callLLM({
+      systemPrompt, messages: [], customerMessage: null,
+      negotiationId: negotiation.id, merchantId,
+      nextPrice, brandStatement, isOpening: true
     });
 
-    const dealReply = `You've got a deal at $${finalDealPrice.toFixed(2)}! Heading you to checkout now 🎉`;
-    const updatedMessages = [
-      ...messages,
-      { role: 'user', content: customerMessage },
-      { role: 'assistant', content: dealReply }
-    ];
-
+    const updatedMessages = [{ role: 'assistant', content: reply, brand_statement: brandStatement }];
     await supabase.from('negotiations').update({
       messages: updatedMessages,
-      status: 'won',
-      deal_price: finalDealPrice,
-      spread: fees.spread,
-      broker_fee: fees.brokerFee,
-      checkout_url: checkoutUrl,
-      discount_code: discountCode,
-      deal_expires_at: expiresAt,
-      bot_last_offered_price: finalDealPrice,
+      bot_last_offered_price: nextPrice,
       updated_at: new Date().toISOString()
     }).eq('id', negotiation.id);
 
-    await logTrainingRow({
-      negotiationId: negotiation.id, merchantId, messageIndex: messageCount,
-      customerMessage, customerOffer, botMessage: dealReply, botPrice: finalDealPrice,
-      pricingAction: 'deal', customerPricePrev: prevCustomerOffer, brandStatementUsed: null
-    });
-
-    await trackNegotiationEvent({
-      merchantId, negotiationId: negotiation.id, event: 'deal_struck',
-      properties: { list_price: negotiation.list_price, deal_price: finalDealPrice, broker_fee: fees.brokerFee }
-    });
-
-    return { negotiationId: negotiation.id, reply: dealReply, status: 'won', dealPrice: finalDealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt };
+    return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null };
   }
 
-  // Step 3: Pick brand statement and run insight extraction in parallel with LLM
-  const selectedStatement = pickBrandStatement(brandStatements, usedStatements);
-  const pricingAction = isAnchor ? 'anchor' : isHold ? 'hold' : 'concede';
+  // ── STEP 1: ACCEPTANCE CHECK (before anything else, no LLM) ────────────────
+  if (isAcceptance(customerMessage, botLastPrice)) {
+    const updatedMessages = [...messages, { role: 'user', content: customerMessage }];
+    const result = await strikeDeal({ negotiation: { ...negotiation, messages: updatedMessages }, dealPrice: botLastPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId });
+    return { negotiationId: negotiation.id, ...result };
+  }
 
-  const systemPrompt = buildAtomicSystemPrompt({
-    tone: merchantSettings.tone,
-    productName: negotiation.product_name,
-    nextBotPrice,
-    brandValueStatement: selectedStatement,
-    customerInsights,
-    messageCount,
-    maxMessages: MAX_MESSAGES,
-    isHold,
-    isAnchor
+  // ── STEP 2: LOWBALL CHECK ───────────────────────────────────────────────────
+  const customerOffer = parseCustomerOffer(customerMessage);
+  let currentStep = negotiation.current_step || 0;
+  let lowballHold = negotiation.lowball_hold_messages || 0;
+  let isLowball = false;
+  let advanceStep = true;
+
+  if (lowballHold > 0) {
+    // Still in lowball hold — do not advance, decrement counter
+    advanceStep = false;
+    isLowball = true;
+    lowballHold = lowballHold - 1;
+  } else if (customerOffer !== null && customerOffer < floorPrice) {
+    isLowball = true;
+    const strategy = lowballResponse();
+    if (strategy === 0) {
+      advanceStep = false; // hold firm
+    } else if (strategy === 1) {
+      advanceStep = true; // move one step but signal pain
+    } else {
+      advanceStep = false; // hold this message
+      lowballHold = 1;     // and hold next message too
+    }
+  }
+
+  // ── STEP 3: GET NEXT PRICE FROM LADDER ─────────────────────────────────────
+  const nextStep = advanceStep ? Math.min(currentStep + 1, 5) : currentStep;
+  const nextPrice = priceLadder[nextStep] ?? Math.round(floorPrice);
+  const isFinalOffer = nextStep === 5;
+
+  // ── PARALLEL: insights extraction + LLM call ───────────────────────────────
+  const lastBotMessages = messages.filter(m => m.role === 'assistant').slice(-2).map(m => m.content);
+  const latestInsight = customerInsights.slice(-1)[0]?.insight || null;
+  const brandStatement = pickBrandStatement(brandStatements, nextStep, usedStatements);
+
+  const systemPrompt = buildSystemPrompt({
+    tone: merchantSettings.tone, productName: negotiation.product_name,
+    nextPrice, brandStatement,
+    customerInsight: latestInsight,
+    stepIndex: nextStep, isOpening: false, isLowball, lastBotMessages
   });
 
-  // Parallel: insight extraction + main LLM call
   const [insightResult, llmResult] = await Promise.all([
     extractCustomerInsight(customerMessage),
-    callLLMWithFallback({
-      systemPrompt,
-      messages,
-      customerMessage,
-      negotiationId: negotiation.id,
-      merchantId,
-      nextBotPrice,
-      brandValueStatement: selectedStatement,
-      isHold
+    callLLM({
+      systemPrompt, messages, customerMessage,
+      negotiationId: negotiation.id, merchantId,
+      nextPrice, brandStatement, isOpening: false
     })
   ]);
 
-  const { reply, botOfferedPrice } = llmResult;
+  const { reply } = llmResult;
 
-  // Update insights if new one found
+  // Update insights
   let updatedInsights = customerInsights;
   if (insightResult.insight) {
-    updatedInsights = [...customerInsights, {
-      text: insightResult.insight,
-      category: insightResult.category,
-      message_index: messageCount
-    }];
+    updatedInsights = [...customerInsights, { text: insightResult.insight, category: insightResult.category, message_index: messages.length }];
   }
 
   const updatedMessages = [
     ...messages,
     { role: 'user', content: customerMessage },
-    { role: 'assistant', content: reply, brand_statement: selectedStatement }
+    { role: 'assistant', content: reply, brand_statement: brandStatement }
   ];
 
-  // Step 4: Persist and handle escalation
-  if (messageCount + 1 >= MAX_MESSAGES) {
-    const status = 'human_escalated';
+  // ── STEP 4: PERSIST ─────────────────────────────────────────────────────────
+  let status = isFinalOffer ? 'final_offer' : 'active';
 
-    await supabase.from('negotiations').update({
-      messages: updatedMessages,
-      status,
-      bot_last_offered_price: botOfferedPrice,
-      customer_insights: updatedInsights,
-      updated_at: new Date().toISOString()
-    }).eq('id', negotiation.id);
-
+  if (isFinalOffer && messages.filter(m => m.role === 'assistant').length >= 5) {
+    // Already showed final offer last turn and customer still hasn't accepted
+    status = 'human_escalated';
     await supabase.from('admin_alerts').insert({
       merchant_id: merchantId,
       type: 'human_escalation',
-      message: `Customer needs follow-up on ${negotiation.product_name}. Their best offer: ${customerOffer ? '$' + customerOffer : 'unknown'}. Bot floor: $${floorPrice}. Contact: ${negotiation.customer_whatsapp || negotiation.customer_email || 'none captured'}`,
+      message: `Customer needs human follow-up on ${negotiation.product_name}. Their best offer: ${customerOffer ? '$' + customerOffer : 'unknown'}. Bot floor: $${floorPrice}. Contact: ${negotiation.customer_whatsapp || negotiation.customer_email || 'none captured'}`,
       severity: 'warning'
     });
-
-    await trackNegotiationEvent({
-      merchantId, negotiationId: negotiation.id, event: 'negotiation_escalated',
-      properties: { message_count: messageCount + 1 }
-    });
-  } else {
-    await supabase.from('negotiations').update({
-      messages: updatedMessages,
-      bot_last_offered_price: botOfferedPrice,
-      customer_insights: updatedInsights,
-      updated_at: new Date().toISOString()
-    }).eq('id', negotiation.id);
+    await trackNegotiationEvent({ merchantId, negotiationId: negotiation.id, event: 'negotiation_escalated', properties: { message_count: updatedMessages.length } });
   }
 
-  await logTrainingRow({
-    negotiationId: negotiation.id, merchantId, messageIndex: messageCount,
-    customerMessage, customerOffer, botMessage: reply, botPrice: botOfferedPrice,
-    pricingAction, customerPricePrev: prevCustomerOffer, brandStatementUsed: selectedStatement
-  });
+  await supabase.from('negotiations').update({
+    messages: updatedMessages,
+    current_step: nextStep,
+    lowball_hold_messages: lowballHold,
+    bot_last_offered_price: nextPrice,
+    customer_insights: updatedInsights,
+    status,
+    updated_at: new Date().toISOString()
+  }).eq('id', negotiation.id);
 
-  const status = (messageCount + 1 >= MAX_MESSAGES) ? 'human_escalated' : 'active';
-  return { negotiationId: negotiation.id, reply, status, dealPrice: null, checkoutUrl: null, brokerFee: null, expiresAt: null };
+  // Log training row
+  try {
+    await supabase.from('negotiations_training').insert({
+      negotiation_id: negotiation.id,
+      merchant_id: merchantId,
+      message_index: messages.length,
+      customer_message: customerMessage,
+      customer_offer: customerOffer,
+      bot_message: reply,
+      bot_price: nextPrice,
+      pricing_action: isLowball ? 'lowball_hold' : advanceStep ? 'concede' : 'hold',
+      brand_statement_used: brandStatement
+    });
+  } catch {}
+
+  return {
+    negotiationId: negotiation.id,
+    reply,
+    status,
+    isFinalOffer,
+    dealPrice: null,
+    checkoutUrl: null,
+    discountCode: null,
+    brokerFee: null,
+    expiresAt: null
+  };
 }
 
 module.exports = { processNegotiation };

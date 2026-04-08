@@ -54,10 +54,14 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
     variant_id,
     list_price,
     customer_message,
+    opening,
   } = req.body;
 
-  if (!session_id || !list_price || !customer_message) {
-    return res.status(400).json({ error: 'Missing required fields: session_id, list_price, customer_message' });
+  if (!session_id || !list_price) {
+    return res.status(400).json({ error: 'Missing required fields: session_id, list_price' });
+  }
+  if (!opening && !customer_message) {
+    return res.status(400).json({ error: 'customer_message required unless opening:true' });
   }
 
   if (typeof list_price !== 'number' || list_price <= 0) {
@@ -96,13 +100,15 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       productUrl: product_url || null,
       variantId: variant_id || null,
       listPrice: list_price,
-      customerMessage: customer_message
+      customerMessage: customer_message || null,
+      isOpening: !!opening
     });
 
     res.json({
       negotiation_id: result.negotiationId,
       bot_reply: result.reply,
       status: result.status,
+      is_final_offer: result.isFinalOffer || false,
       deal_price: result.dealPrice,
       checkout_url: result.checkoutUrl,
       discount_code: result.discountCode || null,

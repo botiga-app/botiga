@@ -7,91 +7,67 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const TONE_PERSONALITIES = {
-  friendly: `You are a warm, enthusiastic shopping assistant. Genuine, encouraging, casual.`,
-  sassy: `You are witty, playful, a little cheeky. Short punchy sentences.`,
-  desi: `You are warm like a shopkeeper from an Indian bazaar. Use phrases like "yaar", "bhai", "acha listen".`,
-  professional: `You are polished and formal. Respectful, efficient, no over-explaining.`,
-  urgent: `You create subtle time pressure. Mention limited stock or expiring deals.`,
-  generous: `You want to give customers a great deal. Friendly and deal-focused.`
+  friendly:     'Warm, genuine, like a friend who works there. Enthusiastic but not pushy.',
+  sassy:        'Witty, playful, a little cheeky. Short punchy sentences. Fun to talk to.',
+  desi:         'Warm like a bazaar shopkeeper. Use "yaar", "bhai", "acha". Makes customer feel like family.',
+  professional: 'Polished, respectful, efficient. Luxury or B2B feel. No slang.',
+  urgent:       'Friendly but creates subtle urgency. Mentions limited stock or expiring deal.',
+  generous:     'Deal-focused, wants customer to win. Closing over margin.'
 };
 
-const DEFAULT_STATEMENT = 'This price reflects genuine quality and craftsmanship';
+const STEP_FEEL = [
+  'Opening move. You just gave them something. Be warm. Make them feel lucky they showed up.',
+  'You heard them. You moved again. You\'re genuinely trying. But you\'re not a pushover.',
+  'Getting real now. You\'re working hard for them. Let them feel the effort.',
+  'Close to your limit. Gentle honest pressure. Not dramatic — just real.',
+  'Last real move. Almost there. Offer free shipping as a sweetener if it fits naturally.',
+  'Final offer. Warm but firm. Mention you can loop in a human if they need more wiggle room.'
+];
 
-/**
- * Build system prompt for atomic response generation.
- * The price is FIXED — LLM may not change it.
- */
-function buildAtomicSystemPrompt({ tone, productName, nextBotPrice, brandValueStatement, customerInsights, messageCount, maxMessages, isHold, isAnchor }) {
+const LOWBALL_FEEL = 'Their offer was really far from your price. Hold your position warmly — don\'t lecture, don\'t reward. One short sentence acknowledging it without dropping your price.';
+
+const FORBIDDEN_OPENERS = ['I appreciate', 'Certainly', 'Absolutely', 'I understand your concern', 'Of course'];
+
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, lastBotMessages }) {
   const personality = TONE_PERSONALITIES[tone] || TONE_PERSONALITIES.friendly;
-  const isLastMessage = messageCount >= maxMessages - 1;
-  const priceStr = `$${nextBotPrice.toFixed(2)}`;
-  const statement = brandValueStatement || DEFAULT_STATEMENT;
+  const priceStr = `$${nextPrice}`;
+  const feel = isLowball ? LOWBALL_FEEL : (STEP_FEEL[stepIndex] || STEP_FEEL[5]);
+  const prevOpeners = (lastBotMessages || []).map(m => m.split(' ')[0]).filter(Boolean);
 
-  // Inject most recent customer insight if available
-  const latestInsight = (customerInsights || []).slice(-1)[0]?.insight || null;
+  return `You are a warm, human sales assistant.
+Tone: ${personality}
 
-  return `${personality}
+Product: "${productName}"
+Your price this message: ${priceStr} — use this EXACT number, no other number.
+Brand value to weave in naturally: "${brandStatement || 'quality you can feel'}"
+${customerInsight ? `Customer context (weave in warmly if natural): "${customerInsight}"` : ''}
+${prevOpeners.length ? `Do NOT start your reply with any of these words: ${prevOpeners.join(', ')}` : ''}
 
-You are negotiating the sale of: "${productName}"
+${isOpening ? 'This is your opening move. You already moved the price for them. Invite them in warmly.' : `This is move ${stepIndex + 1} of 6.\n${feel}`}
 
-FIXED PRICE FOR THIS RESPONSE: ${priceStr}
-You MUST use exactly ${priceStr} in your price_atom. Do not offer any other number.
-
-BRAND VALUE STATEMENT TO USE: "${statement}"
-This is your reason for the price. Do not invent a different reason.
-${latestInsight ? `\nCUSTOMER CONTEXT: "${latestInsight}" — weave this naturally into your insight_atom.` : ''}
-${isAnchor ? '\nThis is your opening anchor. Invite the customer to respond with their offer.' : ''}
-${isHold ? '\nCustomer offered below your minimum. Hold your price warmly — do NOT reveal you have a minimum.' : ''}
-${isLastMessage ? '\nFINAL MESSAGE: Add a personal urgency close. Make it feel genuine, not pushy.' : ''}
-
-Return ONLY valid JSON — no prose before or after:
-{
-  "empathy_atom": "1 sentence acknowledging their message or offer warmly",
-  "insight_atom": ${latestInsight ? '"1 sentence referencing customer context naturally"' : 'null'},
-  "price_atom": "1 sentence that MUST contain the exact string \\"${priceStr}\\"",
-  "reason_atom": "1 sentence using the brand value statement as your reason",
-  "close_atom": ${isLastMessage ? '"1 sentence personal urgency close"' : 'null'}
+Rules — follow every one:
+- 2 sentences MAX. Shorter is better. This is a text chat, not an email.
+- Your reply MUST contain "${priceStr}" — do not change this number, ever.
+- Weave in the brand value naturally — never quote it verbatim.
+- Do not say: "I appreciate", "Certainly", "Absolutely", "I understand your concern", "Of course"
+- No bullet points. No formal language. Sound like a real person.
+- One emoji max, only if it fits naturally. Zero is fine too.
+- Never reveal you have a minimum or floor price.`.trim();
 }
 
-HARD RULES:
-- price_atom MUST contain "${priceStr}" verbatim — no other price
-- Each atom: 1 short sentence, conversational, max 15 words
-- Never reveal a minimum, floor, or constraint
-- Never mention Botiga or AI`.trim();
+function validateAndFixPrice(text, nextPrice) {
+  const exact = `$${nextPrice}`;
+  if (text.includes(exact)) return text;
+  // LLM changed the price — replace inline
+  const pricePattern = /\$[\d,]+(?:\.[\d]{1,2})?/g;
+  return text.replace(pricePattern, exact);
 }
 
-/**
- * Assemble atom JSON into a single message string.
- */
-function assembleAtoms(atoms) {
-  return [
-    atoms.empathy_atom,
-    atoms.insight_atom,
-    atoms.price_atom,
-    atoms.reason_atom,
-    atoms.close_atom
-  ].filter(Boolean).join(' ').trim();
-}
-
-/**
- * Validate that the assembled message contains the exact price string.
- */
-function validatePrice(text, nextBotPrice) {
-  const exact = `$${nextBotPrice.toFixed(2)}`;
-  const rounded = `$${Math.round(nextBotPrice)}`;
-  return text.includes(exact) || text.includes(rounded);
-}
-
-/**
- * Fallback reply used when LLM fails or returns invalid JSON.
- */
-function fallbackReply(nextBotPrice, brandValueStatement, isHold) {
-  const priceStr = `$${nextBotPrice.toFixed(2)}`;
-  const statement = brandValueStatement || DEFAULT_STATEMENT;
-  if (isHold) {
-    return `I appreciate the offer, but ${statement.toLowerCase()}. The best I can do right now is ${priceStr}.`;
+function fallbackReply(nextPrice, brandStatement, isOpening) {
+  if (isOpening) {
+    return `Hey! I can already offer you $${nextPrice} on this — ${brandStatement || 'it\'s genuinely worth it'}. What do you think? 😊`;
   }
-  return `I can offer you ${priceStr} — ${statement.toLowerCase()}. What do you say?`;
+  return `I can do $${nextPrice} — ${brandStatement || 'this is real quality'}. What do you say?`;
 }
 
 async function logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt, response }) {
@@ -99,14 +75,12 @@ async function logLLMTrace({ negotiationId, merchantId, provider, model, inputTo
     await supabase.from('llm_traces').insert({
       negotiation_id: negotiationId,
       merchant_id: merchantId,
-      provider,
-      model,
+      provider, model,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       latency_ms: latencyMs,
       cost_usd: costUsd,
-      prompt,
-      response
+      prompt, response
     });
     await trackLLMCall({ merchantId, negotiationId, provider, model, inputTokens, outputTokens, latencyMs, costUsd });
   } catch {}
@@ -117,12 +91,11 @@ function estimateCost(provider, inputTokens, outputTokens) {
   return (inputTokens * 0.000000075) + (outputTokens * 0.0000003);
 }
 
-/**
- * Main LLM call with Gemini fallback.
- * Price is fixed — LLM only writes the words.
- * Returns: { reply, botOfferedPrice, provider, latencyMs }
- */
-async function callLLMWithFallback({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextBotPrice, brandValueStatement, isHold }) {
+async function callLLM({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextPrice, brandStatement, isOpening }) {
+  const userMessage = isOpening
+    ? '[Customer just opened the chat. Make your warm opening offer.]'
+    : customerMessage;
+
   const providers = ['groq', 'gemini'];
 
   for (const provider of providers) {
@@ -136,12 +109,11 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
           model,
           messages: [
             { role: 'system', content: systemPrompt },
-            ...messages,
-            { role: 'user', content: customerMessage }
+            ...(isOpening ? [] : messages),
+            { role: 'user', content: userMessage }
           ],
-          max_tokens: 250,
-          temperature: 0.65,
-          response_format: { type: 'json_object' }
+          max_tokens: 120,
+          temperature: 0.75
         });
         rawReply = response.choices[0].message.content;
         inputTokens = response.usage?.prompt_tokens || 0;
@@ -150,16 +122,13 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
 
       if (provider === 'gemini') {
         model = 'gemini-2.0-flash';
-        const geminiModel = gemini.getGenerativeModel({
-          model,
-          generationConfig: { responseMimeType: 'application/json' }
-        });
-        const history = messages.map(m => ({
+        const geminiModel = gemini.getGenerativeModel({ model });
+        const history = (isOpening ? [] : messages).map(m => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }]
         }));
         const chat = geminiModel.startChat({ history });
-        const result = await chat.sendMessage(`${systemPrompt}\n\n${customerMessage}`);
+        const result = await chat.sendMessage(`${systemPrompt}\n\n${userMessage}`);
         rawReply = result.response.text();
         inputTokens = result.response.usageMetadata?.promptTokenCount || 0;
         outputTokens = result.response.usageMetadata?.candidatesTokenCount || 0;
@@ -168,38 +137,22 @@ async function callLLMWithFallback({ systemPrompt, messages, customerMessage, ne
       const latencyMs = Date.now() - startTime;
       const costUsd = estimateCost(provider, inputTokens, outputTokens);
 
-      // Parse atoms and assemble reply
-      let reply;
-      try {
-        const atoms = JSON.parse(rawReply);
-        const assembled = assembleAtoms(atoms);
-
-        if (validatePrice(assembled, nextBotPrice)) {
-          reply = assembled;
-        } else {
-          // Price got mangled — use fallback
-          console.warn(`[LLM] Price validation failed. Expected $${nextBotPrice.toFixed(2)} in: ${assembled}`);
-          reply = fallbackReply(nextBotPrice, brandValueStatement, isHold);
-        }
-      } catch {
-        reply = fallbackReply(nextBotPrice, brandValueStatement, isHold);
-      }
+      // Validate price — fix inline if LLM changed it
+      const reply = validateAndFixPrice(rawReply.trim(), nextPrice);
 
       await logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd, prompt: systemPrompt, response: rawReply });
 
-      return { reply, botOfferedPrice: nextBotPrice, provider, latencyMs };
+      return { reply, provider, latencyMs };
     } catch (err) {
       console.error(`[LLM] ${provider} failed:`, err.message);
     }
   }
 
-  // Both providers failed — use template
   return {
-    reply: fallbackReply(nextBotPrice, brandValueStatement, isHold),
-    botOfferedPrice: nextBotPrice,
+    reply: fallbackReply(nextPrice, brandStatement, isOpening),
     provider: 'fallback',
     latencyMs: 0
   };
 }
 
-module.exports = { callLLMWithFallback, buildAtomicSystemPrompt };
+module.exports = { callLLM, buildSystemPrompt };
