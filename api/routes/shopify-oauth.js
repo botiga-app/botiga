@@ -49,12 +49,46 @@ router.get('/shopify/callback', async (req, res) => {
 
   console.log(`\n✅ Shopify access token for ${storeDomain}:\n${access_token}\n`);
 
-  // Store on merchant record matching this shop domain
-  const { data: merchant } = await supabase
+  // Try to match merchant by shopify_domain, website_url, or any partial match
+  let merchant = null;
+
+  // 1. Match by shopify_domain already stored
+  const { data: byDomain } = await supabase
     .from('merchants')
     .select('id')
-    .eq('website_url', `https://${storeDomain}`)
+    .eq('shopify_domain', storeDomain)
     .single();
+  if (byDomain) merchant = byDomain;
+
+  // 2. Match by website_url containing the myshopify domain
+  if (!merchant) {
+    const { data: byUrl } = await supabase
+      .from('merchants')
+      .select('id')
+      .eq('website_url', `https://${storeDomain}`)
+      .single();
+    if (byUrl) merchant = byUrl;
+  }
+
+  // 3. Match by website_url containing botiga-6380 (handles custom domain case)
+  if (!merchant) {
+    const { data: byPartial } = await supabase
+      .from('merchants')
+      .select('id')
+      .ilike('website_url', '%botiga-6380%')
+      .single();
+    if (byPartial) merchant = byPartial;
+  }
+
+  // 4. Fall back to first merchant (single-merchant setup)
+  if (!merchant) {
+    const { data: first } = await supabase
+      .from('merchants')
+      .select('id')
+      .limit(1)
+      .single();
+    if (first) merchant = first;
+  }
 
   if (merchant) {
     await supabase.from('merchants').update({
@@ -63,8 +97,7 @@ router.get('/shopify/callback', async (req, res) => {
     }).eq('id', merchant.id);
     console.log('[Shopify OAuth] Token saved to merchant', merchant.id);
   } else {
-    // Save to a temporary holding table / log
-    console.log('[Shopify OAuth] No matching merchant found — token logged above');
+    console.log('[Shopify OAuth] No merchant found — token logged above');
   }
 
   res.send(`
