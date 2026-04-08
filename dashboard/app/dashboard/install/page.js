@@ -9,6 +9,8 @@ export default function InstallPage() {
   const [apiKey, setApiKey] = useState(null);
   const [rotating, setRotating] = useState(false);
   const [merchantId, setMerchantId] = useState(null);
+  const [shopDomain, setShopDomain] = useState('');
+  const [shopifyConnected, setShopifyConnected] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -20,10 +22,21 @@ export default function InstallPage() {
       if (res.ok) {
         const data = await res.json();
         setApiKey(data.api_key);
+        if (data.shopify_domain) {
+          setShopDomain(data.shopify_domain);
+          setShopifyConnected(true);
+        }
       }
     }
     load();
   }, []);
+
+  function connectShopify() {
+    if (!shopDomain.trim() || !merchantId) return;
+    const domain = shopDomain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const shop = domain.includes('.myshopify.com') ? domain : `${domain}.myshopify.com`;
+    window.location.href = `${API}/api/shopify/install?shop=${encodeURIComponent(shop)}&merchant_id=${merchantId}`;
+  }
 
   async function rotateKey() {
     if (!merchantId || !confirm('Rotate API key? Your current install script will stop working until you update it.')) return;
@@ -48,6 +61,36 @@ export default function InstallPage() {
           <InstallScript apiKey={apiKey} />
         ) : (
           <p className="text-sm text-gray-400">Loading your install script...</p>
+        )}
+      </div>
+
+      {/* Shopify connect */}
+      <div className="mt-6 bg-white rounded-xl border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-1">Connect Shopify</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Required for automatic discount codes at checkout when a deal is struck.
+        </p>
+        {shopifyConnected ? (
+          <div className="flex items-center gap-3">
+            <span className="text-green-600 text-sm font-medium">✓ Connected: {shopDomain}</span>
+            <button onClick={() => setShopifyConnected(false)}
+              className="text-xs text-gray-400 underline">Change</button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="your-store.myshopify.com"
+              value={shopDomain}
+              onChange={e => setShopDomain(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && connectShopify()}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            />
+            <button onClick={connectShopify} disabled={!shopDomain.trim() || !merchantId}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+              Connect
+            </button>
+          </div>
         )}
       </div>
 

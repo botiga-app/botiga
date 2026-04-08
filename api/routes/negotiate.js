@@ -71,6 +71,10 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
     supabase.from('merchants').select('shopify_access_token, shopify_domain').eq('id', merchantId).single()
   ]);
 
+  // Fall back to env vars if merchant record doesn't have Shopify creds
+  const shopifyDomain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN || null;
+  const shopifyAccessToken = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN || null;
+
   const merchantSettings = settings || {
     tone: 'friendly',
     max_discount_pct: 20,
@@ -84,8 +88,8 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
     const result = await processNegotiation({
       merchantId,
       merchantSettings,
-      shopifyDomain: merchant?.shopify_domain || null,
-      shopifyAccessToken: merchant?.shopify_access_token || null,
+      shopifyDomain,
+      shopifyAccessToken,
       sessionId: session_id,
       negotiationId: negotiation_id || null,
       productName: product_name || 'this item',
