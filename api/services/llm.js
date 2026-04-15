@@ -137,13 +137,16 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
       const startTime = Date.now();
       let rawReply, inputTokens = 0, outputTokens = 0, model;
 
+      // Strip DB-only metadata fields — LLM APIs only accept role + content
+      const cleanMessages = (isOpening ? [] : messages).map(m => ({ role: m.role, content: m.content }));
+
       if (provider === 'groq') {
         model = 'llama-3.3-70b-versatile';
         const response = await groq.chat.completions.create({
           model,
           messages: [
             { role: 'system', content: systemPrompt },
-            ...(isOpening ? [] : messages),
+            ...cleanMessages,
             { role: 'user', content: userMessage }
           ],
           max_tokens: 120,
@@ -157,7 +160,7 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
       if (provider === 'gemini') {
         model = 'gemini-2.0-flash';
         const geminiModel = gemini.getGenerativeModel({ model });
-        const history = (isOpening ? [] : messages).map(m => ({
+        const history = cleanMessages.map(m => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }]
         }));
