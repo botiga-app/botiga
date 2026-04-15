@@ -184,23 +184,47 @@ router.get('/debug/opening', widgetCors, async (req, res) => {
   }
 });
 
-// Direct LLM test — calls Groq and returns raw result or exact error
+// Direct LLM test — calls the real callLLM function with a fake opening
 router.get('/debug/llm', widgetCors, async (req, res) => {
+  const errors = [];
   try {
     const Groq = require('groq-sdk');
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'user', content: 'Say: "Groq is working" and nothing else.' }
-      ],
-      max_tokens: 20,
-      temperature: 0.1
-    });
-    res.json({ ok: true, reply: response.choices[0].message.content, key_prefix: (process.env.GROQ_API_KEY || '').slice(0, 8) });
+
+    // Test 1: bare Groq call
+    let bare;
+    try {
+      const r = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'system', content: 'You sell bags.' }, { role: 'user', content: 'Say: OK' }],
+        max_tokens: 10, temperature: 0.1
+      });
+      bare = r.choices[0].message.content;
+    } catch (e) { errors.push('bare_groq: ' + e.message); }
+
+    // Test 2: real callLLM with opening
+    let llmResult;
+    try {
+      const { callLLM, buildSystemPrompt } = require('../services/llm');
+      const { PricingEngine } = require('../services/PricingEngine');
+      const engine = new PricingEngine({ listPrice: 99, floorPrice: 79, maxDiscountPct: 20 });
+      const systemPrompt = buildSystemPrompt({
+        tone: 'friendly', productName: 'Test Bag', nextPrice: engine.priceLadder[0],
+        brandStatement: null, customerInsight: null, stepIndex: 0,
+        isOpening: true, isLowball: false, isEscalating: false,
+        lastBotMessages: [], needsLeadCapture: true
+      });
+      llmResult = await callLLM({
+        systemPrompt, messages: [], customerMessage: null,
+        negotiationId: 'debug', merchantId: 'debug',
+        nextPrice: engine.priceLadder[0], brandStatement: null,
+        isOpening: true, tone: 'friendly'
+      });
+    } catch (e) { errors.push('callLLM: ' + e.message); }
+
+    res.json({ bare, llmResult, errors, key_prefix: (process.env.GROQ_API_KEY || '').slice(0, 8) });
   } catch (err) {
-    res.json({ ok: false, error: err.message, status: err.status, key_prefix: (process.env.GROQ_API_KEY || '').slice(0, 8) });
+    res.json({ ok: false, error: err.message, errors });
   }
 });
 
