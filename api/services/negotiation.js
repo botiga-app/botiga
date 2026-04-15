@@ -222,7 +222,7 @@ async function processNegotiation({
       updated_at: new Date().toISOString()
     }).eq('id', negotiation.id);
 
-    return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null };
+    return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null, needsLeadCapture: !hasContactAlready };
   }
 
   // ── STEP 1: ACCEPTANCE CHECK (before anything else, no LLM) ────────────────

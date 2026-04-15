@@ -140,6 +140,12 @@
       .msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: #f7f7f8; }
       .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
       .msg.bot { background: #fff; color: #1a1a1a; border-radius: 14px 14px 14px 2px; align-self: flex-start; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+      .lead-chip { margin-top: 8px; padding: 7px 11px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 12px; color: #166534; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: background 0.15s; }
+      .lead-chip:hover { background: #dcfce7; }
+      .lead-chip-icon { font-size: 14px; flex-shrink: 0; }
+      .lead-chip-input { border: none; background: transparent; font-size: 12px; color: #166534; outline: none; width: 100%; font-family: inherit; }
+      .lead-chip-input::placeholder { color: #4ade80; }
+      .lead-chip-send { background: #16a34a; color: #fff; border: none; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0; font-family: inherit; }
       .msg.user { background: ${bg}; color: ${fg}; border-radius: 14px 14px 2px 14px; align-self: flex-end; }
       .typing { display: flex; align-items: center; gap: 4px; align-self: flex-start; padding: 10px 14px; background: #fff; border-radius: 14px 14px 14px 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
       .typing span { width: 6px; height: 6px; background: #bbb; border-radius: 50%; animation: bounce 1.2s infinite; }
@@ -225,11 +231,35 @@
     sendBtn.addEventListener('click', send);
 
     // ── HELPERS ────────────────────────────────────────────────────────────────
-    function appendMsg(role, text) {
+    function appendMsg(role, text, needsLeadCapture) {
       removeTyping();
       const m = document.createElement('div');
       m.className = `msg ${role}`;
       m.textContent = text;
+
+      if (role === 'bot' && needsLeadCapture) {
+        const chip = document.createElement('div');
+        chip.className = 'lead-chip';
+        chip.innerHTML = `<span class="lead-chip-icon">📱</span><input class="lead-chip-input" placeholder="Phone or email — I'll hold this for you" type="text" autocomplete="off" /><button class="lead-chip-send">→</button>`;
+        m.appendChild(chip);
+        const chipInput = chip.querySelector('.lead-chip-input');
+        const chipSend = chip.querySelector('.lead-chip-send');
+        const submitChip = async () => {
+          const val = chipInput.value.trim();
+          if (!val) return;
+          chip.innerHTML = `<span class="lead-chip-icon">✅</span><span>Got it — deal held for you!</span>`;
+          try {
+            await fetch(`${API_BASE}/api/negotiate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...API_HEADERS },
+              body: JSON.stringify({ api_key: apiKey, session_id: getSessionId(), negotiation_id: negotiationId, product_name: productInfo.name, product_url: productInfo.url, variant_id: detectVariantId(), list_price: productInfo.price || 0, customer_message: val })
+            });
+          } catch {}
+        };
+        chipSend.addEventListener('click', submitChip);
+        chipInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitChip(); });
+      }
+
       msgsEl.appendChild(m);
       msgsEl.scrollTop = msgsEl.scrollHeight;
       return m;
@@ -449,7 +479,7 @@
         else {
           negotiationId = d.negotiation_id;
           saveSession({ negotiationId });
-          appendMsg('bot', d.bot_reply);
+          appendMsg('bot', d.bot_reply, d.needs_lead_capture);
         }
       } catch {
         removeTyping();
@@ -500,7 +530,7 @@
 
         negotiationId = d.negotiation_id;
         saveSession({ negotiationId });
-        appendMsg('bot', d.bot_reply);
+        appendMsg('bot', d.bot_reply, d.needs_lead_capture);
 
         if (d.status === 'won' && d.deal_price) {
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
@@ -564,36 +594,44 @@
       const id = getNegId();
       if (!id) return;
       triggered = true;
+
       const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2147483647;display:flex;align-items:center;justify-content:center;';
-      const popup = document.createElement('div');
-      popup.style.cssText = 'background:#fff;border-radius:16px;padding:28px;width:340px;font-family:system-ui,sans-serif;';
-      popup.innerHTML = `
-        <h3 style="font-size:17px;font-weight:700;margin-bottom:6px;">Wait — hold your deal! &#129309;</h3>
-        <p style="font-size:13px;color:#666;margin-bottom:16px;">Leave your details and we'll send you the deal to complete later.</p>
-        <input id="_bex_phone" type="tel" placeholder="WhatsApp (e.g. +1234567890)" style="width:100%;border:1.5px solid #ddd;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:10px;display:block;box-sizing:border-box;" />
-        <input id="_bex_email" type="email" placeholder="Or your email" style="width:100%;border:1.5px solid #ddd;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:10px;display:block;box-sizing:border-box;" />
-        <button id="_bex_save" style="width:100%;padding:12px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Save my deal</button>
-        <button id="_bex_skip" style="display:block;width:100%;text-align:center;margin-top:10px;font-size:12px;color:#999;cursor:pointer;background:none;border:none;">No thanks</button>
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2147483647;display:flex;align-items:flex-end;justify-content:center;';
+
+      const sheet = document.createElement('div');
+      sheet.style.cssText = 'background:#111;color:#fff;border-radius:20px 20px 0 0;width:100%;max-width:420px;padding:32px 28px 36px;font-family:system-ui,sans-serif;transform:translateY(100%);transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1);';
+      sheet.innerHTML = `
+        <div style="font-size:22px;margin-bottom:6px;">🎁</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px;letter-spacing:-0.3px;">Your surprise price is saved.</div>
+        <div style="font-size:13px;color:#999;margin-bottom:22px;line-height:1.5;">Leave your number or email and we'll send it straight to you — ready to checkout whenever you are.</div>
+        <input id="_bex_contact" type="text" placeholder="Phone number or email" style="width:100%;background:#1e1e1e;border:1px solid #333;border-radius:10px;padding:13px 16px;font-size:14px;color:#fff;outline:none;box-sizing:border-box;margin-bottom:12px;font-family:inherit;" />
+        <button id="_bex_save" style="width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Send me the deal</button>
+        <button id="_bex_skip" style="display:block;width:100%;text-align:center;margin-top:14px;font-size:12px;color:#555;cursor:pointer;background:none;border:none;font-family:inherit;">No thanks</button>
       `;
-      overlay.appendChild(popup);
+      overlay.appendChild(sheet);
       document.body.appendChild(overlay);
-      const dismiss = () => overlay.remove();
-      popup.querySelector('#_bex_skip').addEventListener('click', dismiss);
+
+      requestAnimationFrame(() => { sheet.style.transform = 'translateY(0)'; });
+
+      const dismiss = () => {
+        sheet.style.transform = 'translateY(100%)';
+        setTimeout(() => overlay.remove(), 350);
+      };
+      sheet.querySelector('#_bex_skip').addEventListener('click', dismiss);
       overlay.addEventListener('click', ev => { if (ev.target === overlay) dismiss(); });
-      popup.querySelector('#_bex_save').addEventListener('click', async () => {
-        const phone = popup.querySelector('#_bex_phone').value.trim();
-        const email = popup.querySelector('#_bex_email').value.trim();
-        if (!phone && !email) return;
+      sheet.querySelector('#_bex_save').addEventListener('click', async () => {
+        const val = sheet.querySelector('#_bex_contact').value.trim();
+        if (!val) return;
+        const isPhone = /[\d\+\-\(\)\s]{7,}/.test(val);
         try {
           await fetch(`${API_BASE}/api/recovery/capture`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...API_HEADERS },
-            body: JSON.stringify({ negotiation_id: id, customer_whatsapp: phone || null, customer_email: email || null })
+            body: JSON.stringify({ negotiation_id: id, customer_whatsapp: isPhone ? val : null, customer_email: isPhone ? null : val })
           });
         } catch {}
-        popup.innerHTML = '<p style="font-size:14px;color:#047857;text-align:center;padding:20px 0;">&#9989; Deal saved! We\'ll send it to you.</p>';
-        setTimeout(dismiss, 2000);
+        sheet.innerHTML = '<div style="text-align:center;padding:20px 0;"><div style="font-size:28px;margin-bottom:10px;">✅</div><div style="font-size:15px;font-weight:600;">Deal sent!</div><div style="font-size:13px;color:#999;margin-top:6px;">Check your messages.</div></div>';
+        setTimeout(dismiss, 2200);
       });
     });
   }

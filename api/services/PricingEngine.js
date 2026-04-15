@@ -45,23 +45,26 @@ class PricingEngine {
       current -= drop;
       steps.push(Math.round(current));
     }
-    // Step 6 is always exactly floor
-    steps.push(Math.round(floor));
+    // Step 6 stops at floor + 1-3% of floor (obfuscates the true floor)
+    // Customer never knows the real floor — bot just acts like it ran out of room
+    const obfuscationPct = this.rand(0.01, 0.03);
+    const obfuscatedFloor = Math.round(floor * (1 + obfuscationPct));
+    steps.push(obfuscatedFloor);
 
     // ── SAFETY PASS ────────────────────────────────────────────────────────────
     // Enforce strict descent
     for (let i = 1; i < steps.length; i++) {
       if (steps[i] >= steps[i - 1]) steps[i] = steps[i - 1] - 1;
     }
-    // Steps 1-4 must stay at least $4 above floor (room for steps 5+6)
+    // Steps 1-4 must stay at least $4 above obfuscated floor
     for (let i = 0; i <= 3; i++) {
-      if (steps[i] < floor + 4) steps[i] = Math.round(floor + 4);
+      if (steps[i] < obfuscatedFloor + 4) steps[i] = Math.round(obfuscatedFloor + 4);
     }
-    // Step 5 must be at least floor+$2 and below step 4
-    if (steps[4] < floor + 2) steps[4] = Math.round(floor + 2);
+    // Step 5 must be at least obfuscated floor+$2 and below step 4
+    if (steps[4] < obfuscatedFloor + 2) steps[4] = Math.round(obfuscatedFloor + 2);
     if (steps[4] >= steps[3]) steps[4] = steps[3] - 1;
-    // Step 6 always exactly floor — final override
-    steps[5] = Math.round(floor);
+    // Step 6 = obfuscated floor (1-3% above real floor) — final override
+    steps[5] = obfuscatedFloor;
 
     return steps;
   }
