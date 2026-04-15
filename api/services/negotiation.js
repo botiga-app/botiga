@@ -1,6 +1,6 @@
 const supabase = require('../lib/supabase');
 const { callLLM, buildSystemPrompt } = require('./llm');
-const { PricingEngine, isAcceptance, lowballResponse, parseCustomerOffer } = require('./PricingEngine');
+const { PricingEngine, isAcceptance, parseCustomerOffer } = require('./PricingEngine');
 const { extractCustomerInsight } = require('./insights');
 const { calculateBrokerFee } = require('./broker-fee');
 const { checkRepeatNegotiator } = require('./fingerprint');
@@ -39,7 +39,7 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
 }
 
 async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId }) {
-  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
     productUrl: negotiation.product_url,
     variantId: negotiation.variant_id,
@@ -193,7 +193,7 @@ async function processNegotiation({
   // Ask on step 1 (second bot message, first customer reply) and once more on step 4 if still no contact
   // Never ask more than twice total
   const currentStepForLead = negotiation.current_step || 0;
-  const needsLeadCapture = !hasContact && timesAskedContact < 2 && (timesAskedContact === 0 || currentStepForLead >= 3);
+  const needsLeadCapture = !hasContact && timesAskedContact < 2 && (timesAskedContact === 0 || currentStepForLead >= 1);
 
   // ── OPENING MOVE ────────────────────────────────────────────────────────────
   if (isOpening) {
@@ -239,30 +239,10 @@ async function processNegotiation({
   let isLowball = false;
   let advanceStep = true;
 
-  // Count consecutive lowball holds so we can force progress after a while
-  const consecutiveLowballs = messages.filter(m => m.role === 'assistant' && m.was_lowball).length;
-
-  if (lowballHold > 0) {
-    // Still in lowball hold — do not advance, decrement counter
-    advanceStep = false;
+  if (customerOffer !== null && customerOffer < floorPrice) {
+    // Always advance on lowball — customers always lowball with a bot, stalling kills the negotiation
     isLowball = true;
-    lowballHold = lowballHold - 1;
-  } else if (customerOffer !== null && customerOffer < floorPrice) {
-    isLowball = true;
-    // After 2 consecutive lowball holds, always advance so negotiation doesn't stall
-    if (consecutiveLowballs >= 2) {
-      advanceStep = true;
-    } else {
-      const strategy = lowballResponse();
-      if (strategy === 0) {
-        advanceStep = false; // hold firm
-      } else if (strategy === 1) {
-        advanceStep = true; // move one step but signal pain
-      } else {
-        advanceStep = false; // hold this message
-        lowballHold = 1;     // and hold next message too
-      }
-    }
+    advanceStep = true;
   }
 
   // ── STEP 3: GET NEXT PRICE FROM LADDER ─────────────────────────────────────

@@ -353,20 +353,28 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti inside shadow DOM
+      // MOMENT 3 — confetti inside shadow DOM (script preloaded on init)
+      function fireConfetti() {
+        if (!window.confetti) return;
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
+        ds.appendChild(canvas);
+        const fire = window.confetti.create(canvas, { resize: true });
+        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
+        fire({ particleCount: 80, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
+        setTimeout(() => fire({ particleCount: 80, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
+        setTimeout(() => fire({ particleCount: 60, spread: 100, origin: { x: 0.5, y: 0.4 }, colors }), 400);
+      }
       setTimeout(() => {
-        const scr = document.createElement('script');
-        scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
-        document.head.appendChild(scr);
-        scr.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
-          ds.appendChild(canvas);
-          const fire = window.confetti.create(canvas, { resize: true });
-          const colors = ['#1a472a', '#2d6a4f', '#d4b896', '#f9f7f4', '#c4a882'];
-          fire({ particleCount: 60, spread: 55, origin: { x: 0.2, y: 0.5 }, colors });
-          fire({ particleCount: 60, spread: 55, origin: { x: 0.8, y: 0.5 }, colors });
-        };
+        if (window.__confettiLoaded) {
+          fireConfetti();
+        } else {
+          // Fallback: try loading if preload hadn't finished
+          const scr = document.createElement('script');
+          scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
+          scr.onload = () => { window.__confettiLoaded = true; fireConfetti(); };
+          document.head.appendChild(scr);
+        }
       }, 700);
 
       // Countdown timer (deal expiry)
@@ -626,9 +634,19 @@
       .catch(() => {});
   }
 
+  // Preload confetti so it's ready instantly when deal fires
+  function preloadConfetti() {
+    if (window.__confettiLoaded) return;
+    const scr = document.createElement('script');
+    scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
+    scr.onload = () => { window.__confettiLoaded = true; };
+    document.head.appendChild(scr);
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', run);
+    document.addEventListener('DOMContentLoaded', () => { run(); preloadConfetti(); });
   } else {
     run();
+    preloadConfetti();
   }
 })();
