@@ -41,7 +41,7 @@ const STEP_DIRECTION = [
   `This is genuinely your last offer. Warm, not dramatic. Suggest that your team might be able to help if they need more — frame it as passing them to someone with more flexibility, not as a dead end.`,
 ];
 
-const LOWBALL_DIRECTION = `Their offer was way off. Hold your position warmly — do not drop your price, do not lecture them. Acknowledge it briefly with lightness or humour. One sentence.`;
+const LOWBALL_DIRECTION = `Their offer was way off. Hold your position warmly — do not drop your price, do not lecture them. Acknowledge it briefly with lightness or humour, then nudge them toward something closer to your price without being pushy. One sentence.`;
 
 // Phrase pool per step — force variety in openings
 const OPENERS = [

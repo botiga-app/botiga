@@ -239,6 +239,9 @@ async function processNegotiation({
   let isLowball = false;
   let advanceStep = true;
 
+  // Count consecutive lowball holds so we can force progress after a while
+  const consecutiveLowballs = messages.filter(m => m.role === 'assistant' && m.was_lowball).length;
+
   if (lowballHold > 0) {
     // Still in lowball hold — do not advance, decrement counter
     advanceStep = false;
@@ -246,14 +249,19 @@ async function processNegotiation({
     lowballHold = lowballHold - 1;
   } else if (customerOffer !== null && customerOffer < floorPrice) {
     isLowball = true;
-    const strategy = lowballResponse();
-    if (strategy === 0) {
-      advanceStep = false; // hold firm
-    } else if (strategy === 1) {
-      advanceStep = true; // move one step but signal pain
+    // After 2 consecutive lowball holds, always advance so negotiation doesn't stall
+    if (consecutiveLowballs >= 2) {
+      advanceStep = true;
     } else {
-      advanceStep = false; // hold this message
-      lowballHold = 1;     // and hold next message too
+      const strategy = lowballResponse();
+      if (strategy === 0) {
+        advanceStep = false; // hold firm
+      } else if (strategy === 1) {
+        advanceStep = true; // move one step but signal pain
+      } else {
+        advanceStep = false; // hold this message
+        lowballHold = 1;     // and hold next message too
+      }
     }
   }
 
@@ -298,7 +306,7 @@ async function processNegotiation({
   const updatedMessages = [
     ...messages,
     { role: 'user', content: customerMessage },
-    { role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: needsLeadCapture || undefined }
+    { role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: needsLeadCapture || undefined, was_lowball: isLowball || undefined }
   ];
 
   // ── STEP 4: PERSIST ─────────────────────────────────────────────────────────
