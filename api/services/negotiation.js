@@ -170,18 +170,20 @@ async function processNegotiation({
   const usedStatements = messages.filter(m => m.brand_statement).map(m => m.brand_statement);
 
   // ── CONTACT DETECTION — save phone/email if customer shared it ──────────────
-  const phoneMatch = customerMessage.match(/(?:\+?[\d\s\-().]{7,20})/);
-  const emailMatch = customerMessage.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
   const contactUpdates = {};
-  if (phoneMatch && !negotiation.customer_whatsapp) {
-    const cleaned = phoneMatch[0].replace(/[\s\-().]/g, '');
-    if (cleaned.length >= 7) contactUpdates.customer_whatsapp = cleaned;
-  }
-  if (emailMatch && !negotiation.customer_email) {
-    contactUpdates.customer_email = emailMatch[0];
-  }
-  if (Object.keys(contactUpdates).length > 0) {
-    await supabase.from('negotiations').update(contactUpdates).eq('id', negotiation.id);
+  if (customerMessage) {
+    const phoneMatch = customerMessage.match(/(?:\+?[\d\s\-().]{7,20})/);
+    const emailMatch = customerMessage.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+    if (phoneMatch && !negotiation.customer_whatsapp) {
+      const cleaned = phoneMatch[0].replace(/[\s\-().]/g, '');
+      if (cleaned.length >= 7) contactUpdates.customer_whatsapp = cleaned;
+    }
+    if (emailMatch && !negotiation.customer_email) {
+      contactUpdates.customer_email = emailMatch[0];
+    }
+    if (Object.keys(contactUpdates).length > 0) {
+      await supabase.from('negotiations').update(contactUpdates).eq('id', negotiation.id);
+    }
   }
 
   // Whether bot has already asked for contact this negotiation
