@@ -184,6 +184,26 @@ router.get('/debug/opening', widgetCors, async (req, res) => {
   }
 });
 
+// Direct LLM test — calls Groq and returns raw result or exact error
+router.get('/debug/llm', widgetCors, async (req, res) => {
+  try {
+    const Groq = require('groq-sdk');
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: 'Say: "Groq is working" and nothing else.' }
+      ],
+      max_tokens: 20,
+      temperature: 0.1
+    });
+    res.json({ ok: true, reply: response.choices[0].message.content, key_prefix: (process.env.GROQ_API_KEY || '').slice(0, 8) });
+  } catch (err) {
+    res.json({ ok: false, error: err.message, status: err.status, key_prefix: (process.env.GROQ_API_KEY || '').slice(0, 8) });
+  }
+});
+
 // Returns merchant_id for a given API key (so you don't have to look it up manually)
 router.get('/debug/merchant', widgetCors, async (req, res) => {
   const { api_key } = req.query;
