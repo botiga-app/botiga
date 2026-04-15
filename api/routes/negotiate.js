@@ -116,9 +116,82 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       expires_at: result.expiresAt
     });
   } catch (err) {
-    console.error('[negotiate] Error:', err.message);
-    res.status(500).json({ error: 'Negotiation service temporarily unavailable' });
+    console.error('[negotiate] Error:', err.message, err.stack);
+    res.status(500).json({ error: 'Negotiation service temporarily unavailable', detail: err.message });
   }
+});
+
+// Debug endpoint — walks through opening flow step by step, returns exact failure point
+router.get('/debug/opening', widgetCors, async (req, res) => {
+  const { merchant_id } = req.query;
+  if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
+  const steps = [];
+  try {
+    steps.push('fetching merchant_settings');
+    const { data: settings, error: settingsErr } = await supabase
+      .from('merchant_settings').select('*').eq('merchant_id', merchant_id).single();
+    if (settingsErr) return res.json({ failed_at: steps[steps.length - 1], error: settingsErr.message, steps });
+    steps.push('merchant_settings OK — tone: ' + (settings && settings.tone) + ' brand_value_statements: ' + JSON.stringify(settings && settings.brand_value_statements));
+
+    steps.push('building PricingEngine');
+    const { PricingEngine } = require('../services/PricingEngine');
+    const engine = new PricingEngine({ listPrice: 100, floorPrice: (settings && settings.floor_price_fixed) || 0, maxDiscountPct: (settings && settings.max_discount_pct) || 20 });
+    steps.push('PricingEngine OK — ladder: ' + JSON.stringify(engine.priceLadder));
+
+    steps.push('inserting test negotiation row');
+    const { data: neg, error: negErr } = await supabase.from('negotiations').insert({
+      merchant_id,
+      session_id: 'debug-' + Date.now(),
+      product_name: 'Debug Product',
+      product_url: null,
+      variant_id: null,
+      list_price: 100,
+      floor_price: engine.floorPrice,
+      price_ladder: engine.priceLadder,
+      current_step: 0,
+      lowball_hold_messages: 0,
+      bot_last_offered_price: 100,
+      tone_used: (settings && settings.tone) || 'friendly',
+      messages: [],
+      customer_insights: [],
+      status: 'active'
+    }).select().single();
+    if (negErr) return res.json({ failed_at: steps[steps.length - 1], error: negErr.message, steps });
+    steps.push('negotiations insert OK — id: ' + neg.id);
+    await supabase.from('negotiations').delete().eq('id', neg.id);
+    steps.push('test row deleted');
+
+    steps.push('building system prompt');
+    const { buildSystemPrompt } = require('../services/llm');
+    const prompt = buildSystemPrompt({
+      tone: (settings && settings.tone) || 'friendly',
+      productName: 'Debug Product',
+      nextPrice: engine.priceLadder[0],
+      brandStatement: null,
+      customerInsight: null,
+      stepIndex: 0,
+      isOpening: true,
+      isLowball: false,
+      isEscalating: false,
+      lastBotMessages: [],
+      needsLeadCapture: true
+    });
+    steps.push('system prompt OK — ' + prompt.length + ' chars');
+
+    res.json({ ok: true, steps });
+  } catch (err) {
+    res.json({ failed_at: steps[steps.length - 1], error: err.message, stack: (err.stack || '').split('\n').slice(0, 8), steps });
+  }
+});
+
+// Returns merchant_id for a given API key (so you don't have to look it up manually)
+router.get('/debug/merchant', widgetCors, async (req, res) => {
+  const { api_key } = req.query;
+  if (!api_key) return res.status(400).json({ error: 'api_key required' });
+  const { data, error } = await supabase
+    .from('merchants').select('id, email, shopify_domain, plan').eq('api_key', api_key).single();
+  if (error) return res.json({ error: error.message });
+  res.json(data);
 });
 
 module.exports = router;
