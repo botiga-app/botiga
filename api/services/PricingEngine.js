@@ -20,51 +20,62 @@ class PricingEngine {
   generateLadder() {
     const floor = this.floorPrice;
     const list = this.listPrice;
-    const spread = list - floor;
 
-    // If spread is too small to negotiate, just offer floor immediately
-    if (spread < 5) {
-      return Array(6).fill(Math.round(floor));
+    // Obfuscated floor: 1-3% above real floor so customer can't reverse-engineer it
+    const obfuscationPct = this.rand(0.01, 0.03);
+    const obfuscatedFloor = Math.round(floor * (1 + obfuscationPct));
+    const usableSpread = list - obfuscatedFloor;
+
+    // Minimum meaningful drop per step — never insult with $1-2 moves
+    // At least 3% of list price or $4, whichever is larger
+    const minDrop = Math.max(4, Math.round(list * 0.03));
+
+    // If spread can't support 6 meaningful steps, use fewer
+    const maxSteps = Math.min(6, Math.floor(usableSpread / minDrop));
+    if (maxSteps < 2) {
+      // Spread too small — go straight to obfuscated floor
+      return [obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor];
     }
 
-    // Step drops as DECREASING percentages of total spread.
-    // Opening is a real gesture (28-38% of spread).
-    // Each subsequent step is smaller — customer sees movement slowing.
-    // No cliff at the end — step 5 lands naturally near floor+$2.
-    const rawDrops = [
-      spread * this.rand(0.28, 0.38), // Step 1: meaningful opening
-      spread * this.rand(0.20, 0.28), // Step 2: real movement
-      spread * this.rand(0.14, 0.20), // Step 3: slowing
-      spread * this.rand(0.09, 0.14), // Step 4: getting tight
-      spread * this.rand(0.05, 0.09), // Step 5: last real move
-    ];
+    // Distribute drops as decreasing percentages — opening is the biggest gesture
+    const dropWeights = [0.35, 0.25, 0.18, 0.12, 0.07, 0.03].slice(0, maxSteps - 1);
+    const weightSum = dropWeights.reduce((a, b) => a + b, 0);
+    // Reserve last step for obfuscated floor, distribute rest across earlier steps
+    const remainingSpread = usableSpread - minDrop; // keep minDrop for last step
 
     const steps = [];
     let current = list;
-    for (const drop of rawDrops) {
+    for (let i = 0; i < dropWeights.length; i++) {
+      const nominalDrop = (dropWeights[i] / weightSum) * remainingSpread;
+      // Add ±10% jitter so prices don't look algorithmic
+      const jitter = this.rand(0.9, 1.1);
+      const drop = Math.max(minDrop, Math.round(nominalDrop * jitter));
       current -= drop;
       steps.push(Math.round(current));
     }
-    // Step 6 stops at floor + 1-3% of floor (obfuscates the true floor)
-    // Customer never knows the real floor — bot just acts like it ran out of room
-    const obfuscationPct = this.rand(0.01, 0.03);
-    const obfuscatedFloor = Math.round(floor * (1 + obfuscationPct));
+
+    // Final step — obfuscated floor
     steps.push(obfuscatedFloor);
 
-    // ── SAFETY PASS ────────────────────────────────────────────────────────────
-    // Enforce strict descent
+    // Pad to 6 steps if fewer were generated (repeat last meaningful step)
+    while (steps.length < 6) {
+      steps.push(obfuscatedFloor);
+    }
+
+    // ── SAFETY PASS — strict descent, min drop enforced ───────────────────────
     for (let i = 1; i < steps.length; i++) {
-      if (steps[i] >= steps[i - 1]) steps[i] = steps[i - 1] - 1;
+      const prev = steps[i - 1];
+      // Each step must be at least minDrop below the previous, except the last
+      const requiredDrop = i < steps.length - 1 ? minDrop : 1;
+      if (steps[i] > prev - requiredDrop) {
+        steps[i] = prev - requiredDrop;
+      }
+      // Never go below obfuscated floor
+      if (steps[i] < obfuscatedFloor) steps[i] = obfuscatedFloor;
     }
-    // Steps 1-4 must stay at least $4 above obfuscated floor
-    for (let i = 0; i <= 3; i++) {
-      if (steps[i] < obfuscatedFloor + 4) steps[i] = Math.round(obfuscatedFloor + 4);
-    }
-    // Step 5 must be at least obfuscated floor+$2 and below step 4
-    if (steps[4] < obfuscatedFloor + 2) steps[4] = Math.round(obfuscatedFloor + 2);
-    if (steps[4] >= steps[3]) steps[4] = steps[3] - 1;
-    // Step 6 = obfuscated floor (1-3% above real floor) — final override
-    steps[5] = obfuscatedFloor;
+
+    // Last step always obfuscated floor
+    steps[steps.length - 1] = obfuscatedFloor;
 
     return steps;
   }

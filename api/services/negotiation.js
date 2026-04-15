@@ -246,8 +246,13 @@ async function processNegotiation({
   }
 
   // ── STEP 3: GET NEXT PRICE FROM LADDER ─────────────────────────────────────
-  const nextStep = advanceStep ? Math.min(currentStep + 1, 5) : currentStep;
-  const nextPrice = priceLadder[nextStep] ?? Math.round(floorPrice);
+  let nextStep = advanceStep ? Math.min(currentStep + 1, 5) : currentStep;
+  let nextPrice = priceLadder[nextStep] ?? Math.round(floorPrice);
+  // Never offer the same price as last time — skip ahead if needed
+  while (nextPrice >= botLastPrice && nextStep < 5) {
+    nextStep += 1;
+    nextPrice = priceLadder[nextStep] ?? Math.round(floorPrice);
+  }
   const isFinalOffer = nextStep === 5;
 
   // ── PARALLEL: insights extraction + LLM call ───────────────────────────────
