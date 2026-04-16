@@ -245,11 +245,14 @@ router.get('/debug/email', widgetCors, async (req, res) => {
   if (!to) return res.status(400).json({ error: 'to= required' });
 
   const config = {
+    AWS_SES_SMTP_USER: process.env.AWS_SES_SMTP_USER ? '***set***' : null,
+    AWS_SES_SMTP_PASS: process.env.AWS_SES_SMTP_PASS ? '***set***' : null,
+    AWS_SES_SMTP_HOST: process.env.AWS_SES_SMTP_HOST || null,
     RESEND_API_KEY: !!process.env.RESEND_API_KEY,
     GMAIL_USER: process.env.GMAIL_USER || null,
     GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD ? '***set***' : null,
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || null,
-    provider: process.env.RESEND_API_KEY ? 'resend' : (process.env.GMAIL_USER ? 'gmail' : 'none')
+    provider: process.env.AWS_SES_SMTP_USER ? 'ses' : process.env.RESEND_API_KEY ? 'resend' : (process.env.GMAIL_USER ? 'gmail' : 'none')
   };
 
   if (config.provider === 'none') {
