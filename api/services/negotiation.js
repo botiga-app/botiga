@@ -6,6 +6,7 @@ const { calculateBrokerFee } = require('./broker-fee');
 const { checkRepeatNegotiator } = require('./fingerprint');
 const { trackNegotiationEvent } = require('../lib/posthog');
 const { createShopifyDiscountCode } = require('./shopify');
+const { sendDealEmail } = require('./email');
 
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
   let discountCode = null;
@@ -77,6 +78,19 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     merchantId, negotiationId: negotiation.id, event: 'deal_struck',
     properties: { list_price: negotiation.list_price, deal_price: dealPrice, broker_fee: fees.brokerFee }
   });
+
+  // Send deal email if we have the customer's email
+  if (negotiation.customer_email) {
+    sendDealEmail({
+      to: negotiation.customer_email,
+      productName: negotiation.product_name,
+      dealPrice,
+      listPrice: negotiation.list_price,
+      discountCode,
+      checkoutUrl,
+      expiresAt
+    }).catch(() => {});
+  }
 
   return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt };
 }

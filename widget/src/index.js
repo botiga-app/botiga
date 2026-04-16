@@ -533,8 +533,8 @@
         appendMsg('bot', d.bot_reply, d.needs_lead_capture);
 
         if (d.status === 'won' && d.deal_price) {
+          saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, discountCode: d.discount_code, productName: productInfo.name } });
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
-          clearSession();
         }
       } catch {
         removeTyping();
@@ -636,11 +636,56 @@
     });
   }
 
+  // ── CART DEAL TIMER BANNER ───────────────────────────────────────────────────
+  function injectCartBanner() {
+    const session = getSession();
+    const deal = session.deal;
+    if (!deal || !deal.expiresAt || !deal.checkoutUrl) return;
+
+    const exp = new Date(deal.expiresAt);
+    if (Date.now() >= exp) return; // already expired
+
+    const banner = document.createElement('div');
+    banner.id = '_botiga_cart_banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483645;background:#111;color:#fff;font-family:system-ui,sans-serif;padding:12px 20px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,0.3);';
+    banner.innerHTML = `
+      <span>🎁 Your negotiated deal on <strong>${deal.productName || 'this item'}</strong> — <strong>$${deal.price}</strong>${deal.discountCode ? ' · code <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:12px;">' + deal.discountCode + '</code>' : ''}</span>
+      <span id="_bcb_timer" style="font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:46px;text-align:right;"></span>
+      <a href="${deal.checkoutUrl}" style="background:#16a34a;color:#fff;padding:7px 16px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;">Checkout →</a>
+      <button id="_bcb_close" style="background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;">×</button>
+    `;
+    document.body.prepend(banner);
+    document.body.style.paddingTop = (parseInt(document.body.style.paddingTop || '0') + banner.offsetHeight) + 'px';
+
+    banner.querySelector('#_bcb_close').addEventListener('click', () => {
+      document.body.style.paddingTop = '';
+      banner.remove();
+    });
+
+    const timerEl = banner.querySelector('#_bcb_timer');
+    const tick = setInterval(() => {
+      const remaining = Math.max(0, exp - Date.now());
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      if (remaining <= 120000) timerEl.style.color = '#ef4444';
+      if (remaining <= 0) {
+        clearInterval(tick);
+        timerEl.textContent = 'Expired';
+        banner.style.background = '#333';
+        banner.querySelector('a').style.display = 'none';
+      }
+    }, 1000);
+  }
+
   // ── INIT ─────────────────────────────────────────────────────────────────────
   function init(settings) {
     const isCart = window.location.pathname.includes('/cart');
     if (!settings.negotiate_on_product && !isCart) return;
     if (isCart && !settings.negotiate_on_cart) return;
+
+    // Show deal timer banner on cart page if a deal is active
+    if (isCart) injectCartBanner();
 
     const buttonStyles = detectStyles();
     const productInfo = detectProduct();
