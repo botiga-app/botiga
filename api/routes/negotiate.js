@@ -239,4 +239,38 @@ router.get('/debug/merchant', widgetCors, async (req, res) => {
   res.json(data);
 });
 
+// Test email sending directly
+router.get('/debug/email', widgetCors, async (req, res) => {
+  const { to } = req.query;
+  if (!to) return res.status(400).json({ error: 'to= required' });
+
+  const config = {
+    RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+    GMAIL_USER: process.env.GMAIL_USER || null,
+    GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD ? '***set***' : null,
+    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || null,
+    provider: process.env.RESEND_API_KEY ? 'resend' : (process.env.GMAIL_USER ? 'gmail' : 'none')
+  };
+
+  if (config.provider === 'none') {
+    return res.json({ ok: false, config, error: 'No email provider configured. Set RESEND_API_KEY or GMAIL_USER+GMAIL_APP_PASSWORD in Vercel env vars.' });
+  }
+
+  try {
+    const { sendDealEmail } = require('../services/email');
+    await sendDealEmail({
+      to,
+      productName: 'Test Product',
+      dealPrice: 150,
+      listPrice: 199,
+      discountCode: 'BOTIGA-TEST',
+      checkoutUrl: 'https://botiga.ai',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    });
+    res.json({ ok: true, config, sent_to: to });
+  } catch (err) {
+    res.json({ ok: false, config, error: err.message });
+  }
+});
+
 module.exports = router;

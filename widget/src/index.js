@@ -383,26 +383,22 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti (always load fresh to guarantee it's ready)
+      // MOMENT 3 — confetti over full page (more reliable than shadow DOM canvas)
+      const shootConfetti = () => {
+        try {
+          const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
+          window.confetti({ particleCount: 100, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
+          setTimeout(() => window.confetti({ particleCount: 100, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
+          setTimeout(() => window.confetti({ particleCount: 80, spread: 120, origin: { x: 0.5, y: 0.5 }, colors }), 350);
+        } catch (e) {}
+      };
       setTimeout(() => {
-        const doConfetti = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
-            ds.appendChild(canvas);
-            const fire = window.confetti.create(canvas, { resize: true });
-            const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-            fire({ particleCount: 90, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
-            setTimeout(() => fire({ particleCount: 90, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
-            setTimeout(() => fire({ particleCount: 60, spread: 100, origin: { x: 0.5, y: 0.4 }, colors }), 350);
-          } catch (e) {}
-        };
         if (typeof window.confetti === 'function') {
-          doConfetti();
+          shootConfetti();
         } else {
           const scr = document.createElement('script');
-          scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
-          scr.onload = doConfetti;
+          scr.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
+          scr.onload = shootConfetti;
           document.head.appendChild(scr);
         }
       }, 700);
