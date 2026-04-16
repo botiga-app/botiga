@@ -386,24 +386,15 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti over full page (more reliable than shadow DOM canvas)
-      const shootConfetti = () => {
-        try {
-          const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-          window.confetti({ particleCount: 100, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
-          setTimeout(() => window.confetti({ particleCount: 100, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
-          setTimeout(() => window.confetti({ particleCount: 80, spread: 120, origin: { x: 0.5, y: 0.5 }, colors }), 350);
-        } catch (e) {}
-      };
+      // MOMENT 3 — confetti (bundled, no CDN dependency)
       setTimeout(() => {
-        if (typeof window.confetti === 'function') {
-          shootConfetti();
-        } else {
-          const scr = document.createElement('script');
-          scr.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
-          scr.onload = shootConfetti;
-          document.head.appendChild(scr);
-        }
+        try {
+          const fire = require('canvas-confetti');
+          const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
+          fire({ particleCount: 120, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
+          setTimeout(() => fire({ particleCount: 120, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
+          setTimeout(() => fire({ particleCount: 100, spread: 130, origin: { x: 0.5, y: 0.5 }, colors }), 350);
+        } catch (e) {}
       }, 700);
 
       // Countdown timer (deal expiry)
@@ -718,19 +709,11 @@
       .catch(() => {});
   }
 
-  // Preload confetti so it's ready instantly when deal fires
-  function preloadConfetti() {
-    if (window.__confettiLoaded) return;
-    const scr = document.createElement('script');
-    scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
-    scr.onload = () => { window.__confettiLoaded = true; };
-    document.head.appendChild(scr);
-  }
+
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { run(); preloadConfetti(); });
+    document.addEventListener('DOMContentLoaded', run);
   } else {
     run();
-    preloadConfetti();
   }
 })();
