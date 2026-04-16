@@ -15,7 +15,7 @@ if (process.env.RESEND_API_KEY) {
   });
 }
 
-const FROM = process.env.RESEND_FROM_EMAIL || process.env.GMAIL_USER || 'deals@botiga.ai';
+const FROM = process.env.RESEND_FROM_EMAIL || (resend ? 'onboarding@resend.dev' : process.env.GMAIL_USER) || 'deals@botiga.ai';
 
 async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCode, checkoutUrl, expiresAt }) {
   if (!process.env.RESEND_API_KEY || !to) return;
