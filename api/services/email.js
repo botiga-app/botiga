@@ -1,10 +1,14 @@
-// Email supports two providers:
-// 1. Resend (requires RESEND_API_KEY + a verified domain)
-// 2. Gmail via SMTP (requires GMAIL_USER + GMAIL_APP_PASSWORD — no domain needed)
+// Email provider priority: Brevo → Resend → Gmail SMTP
+let brevo = null;
 let resend = null;
 let nodemailerTransport = null;
 
-if (process.env.RESEND_API_KEY) {
+if (process.env.BREVO_API_KEY) {
+  const SibApiV3Sdk = require('@getbrevo/brevo');
+  const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+  apiInstance.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
+  brevo = apiInstance;
+} else if (process.env.RESEND_API_KEY) {
   const { Resend } = require('resend');
   resend = new Resend(process.env.RESEND_API_KEY);
 } else if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
@@ -15,7 +19,8 @@ if (process.env.RESEND_API_KEY) {
   });
 }
 
-const FROM = process.env.RESEND_FROM_EMAIL || (resend ? 'onboarding@resend.dev' : process.env.GMAIL_USER) || 'deals@botiga.ai';
+const FROM_NAME = 'Botiga Deals';
+const FROM = process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || (resend ? 'onboarding@resend.dev' : process.env.GMAIL_USER) || 'deals@botiga.live';
 
 async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCode, checkoutUrl, expiresAt }) {
   if (!process.env.RESEND_API_KEY || !to) return;
@@ -25,8 +30,8 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
   const expiry = new Date(expiresAt);
   const expiryStr = expiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-  if (!resend && !nodemailerTransport) {
-    console.warn('[Email] No email provider configured. Set RESEND_API_KEY or GMAIL_USER+GMAIL_APP_PASSWORD.');
+  if (!brevo && !resend && !nodemailerTransport) {
+    console.warn('[Email] No email provider configured. Set BREVO_API_KEY, RESEND_API_KEY, or GMAIL_USER+GMAIL_APP_PASSWORD.');
     return;
   }
 
@@ -76,19 +81,19 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
       `.trim();
 
   try {
-    if (resend) {
-      await resend.emails.send({ from: FROM, to, subject, html });
+    if (brevo) {
+      const SibApiV3Sdk = require('@getbrevo/brevo');
+      const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+      sendSmtpEmail.subject = subject;
+      sendSmtpEmail.htmlContent = html;
+      sendSmtpEmail.sender = { name: FROM_NAME, email: FROM };
+      sendSmtpEmail.to = [{ email: to }];
+      await brevo.sendTransacEmail(sendSmtpEmail);
+    } else if (resend) {
+      await resend.emails.send({ from: `${FROM_NAME} <${FROM}>`, to, subject, html });
     } else if (nodemailerTransport) {
       await nodemailerTransport.sendMail({
-        from: `Botiga Deals <${FROM}>`,
-        to,
-        subject,
-        html,
-        replyTo: FROM,
-        headers: {
-          'X-Priority': '1',
-          'X-Mailer': 'Botiga'
-        }
+        from: `${FROM_NAME} <${FROM}>`, to, subject, html, replyTo: FROM
       });
     }
   } catch (err) {
