@@ -39,7 +39,7 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
   return { url: url.toString(), discountCode };
 }
 
-async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId }) {
+async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId, productImage }) {
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
     productUrl: negotiation.product_url,
@@ -89,7 +89,8 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
       listPrice: negotiation.list_price,
       discountCode,
       checkoutUrl,
-      expiresAt
+      expiresAt,
+      productImage: productImage || null
     }).catch(err => console.error('[Email] strikeDeal send failed:', err.message));
   } else {
     console.warn('[Email] No customer_email on negotiation', negotiation.id);
@@ -111,7 +112,7 @@ function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
 
 async function processNegotiation({
   merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
-  sessionId, negotiationId, productName, productUrl, variantId,
+  sessionId, negotiationId, productName, productUrl, productImage, variantId,
   listPrice, customerMessage, isOpening
 }) {
   let negotiation;
@@ -254,7 +255,7 @@ async function processNegotiation({
     const freshEmail = contactUpdates.customer_email || negotiation.customer_email;
     const result = await strikeDeal({
       negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail },
-      dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId
+      dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId, productImage
     });
     return { negotiationId: negotiation.id, ...result };
   }

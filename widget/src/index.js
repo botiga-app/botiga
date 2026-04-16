@@ -85,7 +85,10 @@
     }
     if (!name) { const og = document.querySelector('meta[property="og:title"]'); if (og) name = og.getAttribute('content'); }
     if (!price) { const og = document.querySelector('meta[property="og:price:amount"]'); if (og) price = parseFloat(og.getAttribute('content')); }
-    return { name: name || document.title, price, url: window.location.href };
+    let image = null;
+    const ogImage = document.querySelector('meta[property="og:image"]');
+    if (ogImage) image = ogImage.getAttribute('content');
+    return { name: name || document.title, price, url: window.location.href, image };
   }
 
   function findPlacement(position) {
@@ -464,6 +467,7 @@
             session_id: getSessionId(),
             product_name: productInfo.name,
             product_url: productInfo.url,
+            product_image: productInfo.image || null,
             variant_id: detectVariantId(),
             list_price: productInfo.price || 0,
             opening: true
@@ -511,6 +515,7 @@
             negotiation_id: negotiationId,
             product_name: productInfo.name,
             product_url: productInfo.url,
+            product_image: productInfo.image || null,
             variant_id: detectVariantId(),
             list_price: productInfo.price || 0,
             customer_message: text
