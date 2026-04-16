@@ -101,7 +101,11 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
       await resend.emails.send({ from: `${FROM_NAME} <${FROM}>`, to, subject, html });
     } else if (nodemailerTransport) {
       await nodemailerTransport.sendMail({
-        from: `${FROM_NAME} <${FROM}>`, to, subject, html, replyTo: FROM
+        from: `${FROM_NAME} <${FROM}>`,
+        to,
+        subject,
+        html,
+        replyTo: process.env.REPLY_TO_EMAIL || FROM
       });
     }
   } catch (err) {
