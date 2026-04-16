@@ -1,7 +1,21 @@
-const { Resend } = require('resend');
+// Email supports two providers:
+// 1. Resend (requires RESEND_API_KEY + a verified domain)
+// 2. Gmail via SMTP (requires GMAIL_USER + GMAIL_APP_PASSWORD — no domain needed)
+let resend = null;
+let nodemailerTransport = null;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.RESEND_FROM_EMAIL || 'deals@botiga.ai';
+if (process.env.RESEND_API_KEY) {
+  const { Resend } = require('resend');
+  resend = new Resend(process.env.RESEND_API_KEY);
+} else if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+  const nodemailer = require('nodemailer');
+  nodemailerTransport = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+  });
+}
+
+const FROM = process.env.RESEND_FROM_EMAIL || process.env.GMAIL_USER || 'deals@botiga.ai';
 
 async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCode, checkoutUrl, expiresAt }) {
   if (!process.env.RESEND_API_KEY || !to) return;
@@ -11,12 +25,13 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
   const expiry = new Date(expiresAt);
   const expiryStr = expiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-  try {
-    await resend.emails.send({
-      from: FROM,
-      to,
-      subject: `Your deal on ${productName} — $${dealPrice} (${savedPct}% off)`,
-      html: `
+  if (!resend && !nodemailerTransport) {
+    console.warn('[Email] No email provider configured. Set RESEND_API_KEY or GMAIL_USER+GMAIL_APP_PASSWORD.');
+    return;
+  }
+
+  const subject = `Your deal on ${productName} — $${dealPrice} (${savedPct}% off)`;
+  const html = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -58,8 +73,14 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
   </div>
 </body>
 </html>
-      `.trim()
-    });
+      `.trim();
+
+  try {
+    if (resend) {
+      await resend.emails.send({ from: FROM, to, subject, html });
+    } else if (nodemailerTransport) {
+      await nodemailerTransport.sendMail({ from: FROM, to, subject, html });
+    }
   } catch (err) {
     console.error('[Email] Failed to send deal email:', err.message);
   }
