@@ -383,26 +383,26 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti inside shadow DOM (script preloaded on init)
-      function fireConfetti() {
-        if (!window.confetti) return;
-        const canvas = document.createElement('canvas');
-        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
-        ds.appendChild(canvas);
-        const fire = window.confetti.create(canvas, { resize: true });
-        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-        fire({ particleCount: 80, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
-        setTimeout(() => fire({ particleCount: 80, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
-        setTimeout(() => fire({ particleCount: 60, spread: 100, origin: { x: 0.5, y: 0.4 }, colors }), 400);
-      }
+      // MOMENT 3 — confetti (always load fresh to guarantee it's ready)
       setTimeout(() => {
-        if (window.__confettiLoaded) {
-          fireConfetti();
+        const doConfetti = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;';
+            ds.appendChild(canvas);
+            const fire = window.confetti.create(canvas, { resize: true });
+            const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
+            fire({ particleCount: 90, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
+            setTimeout(() => fire({ particleCount: 90, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
+            setTimeout(() => fire({ particleCount: 60, spread: 100, origin: { x: 0.5, y: 0.4 }, colors }), 350);
+          } catch (e) {}
+        };
+        if (typeof window.confetti === 'function') {
+          doConfetti();
         } else {
-          // Fallback: try loading if preload hadn't finished
           const scr = document.createElement('script');
           scr.src = 'https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js';
-          scr.onload = () => { window.__confettiLoaded = true; fireConfetti(); };
+          scr.onload = doConfetti;
           document.head.appendChild(scr);
         }
       }, 700);
