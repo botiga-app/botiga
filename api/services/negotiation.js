@@ -80,19 +80,22 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
   });
 
   // Send deal email if we have the customer's email
-  if (negotiation.customer_email) {
+  const emailTo = negotiation.customer_email || null;
+  if (emailTo) {
     sendDealEmail({
-      to: negotiation.customer_email,
+      to: emailTo,
       productName: negotiation.product_name,
       dealPrice,
       listPrice: negotiation.list_price,
       discountCode,
       checkoutUrl,
       expiresAt
-    }).catch(() => {});
+    }).catch(err => console.error('[Email] strikeDeal send failed:', err.message));
+  } else {
+    console.warn('[Email] No customer_email on negotiation', negotiation.id);
   }
 
-  return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt };
+  return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt, emailSentTo: emailTo };
 }
 
 function pickBrandStatement(brandStatements, stepIndex, usedStatements) {

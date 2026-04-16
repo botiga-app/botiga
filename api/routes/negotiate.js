@@ -114,7 +114,8 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       discount_code: result.discountCode || null,
       broker_fee: result.brokerFee,
       expires_at: result.expiresAt,
-      needs_lead_capture: result.needsLeadCapture || false
+      needs_lead_capture: result.needsLeadCapture || false,
+      debug_email_sent_to: result.emailSentTo || null
     });
   } catch (err) {
     console.error('[negotiate] Error:', err.message, err.stack);
