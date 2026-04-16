@@ -79,7 +79,17 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
     if (resend) {
       await resend.emails.send({ from: FROM, to, subject, html });
     } else if (nodemailerTransport) {
-      await nodemailerTransport.sendMail({ from: FROM, to, subject, html });
+      await nodemailerTransport.sendMail({
+        from: `Botiga Deals <${FROM}>`,
+        to,
+        subject,
+        html,
+        replyTo: FROM,
+        headers: {
+          'X-Priority': '1',
+          'X-Mailer': 'Botiga'
+        }
+      });
     }
   } catch (err) {
     console.error('[Email] Failed to send deal email:', err.message);

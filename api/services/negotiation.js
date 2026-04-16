@@ -242,13 +242,17 @@ async function processNegotiation({
   // ── STEP 1: ACCEPTANCE CHECK (before anything else, no LLM) ────────────────
   if (isAcceptance(customerMessage, botLastPrice)) {
     const customerOffer = parseCustomerOffer(customerMessage);
-    // Deal at customer's price if they named one below bot price, but never below floor
     let dealPrice = botLastPrice;
     if (customerOffer !== null && customerOffer < botLastPrice) {
       dealPrice = Math.max(Math.round(customerOffer), Math.ceil(floorPrice));
     }
     const updatedMessages = [...messages, { role: 'user', content: customerMessage }];
-    const result = await strikeDeal({ negotiation: { ...negotiation, messages: updatedMessages }, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId });
+    // Pass freshly-detected email/phone — negotiation object was loaded before contact detection ran
+    const freshEmail = contactUpdates.customer_email || negotiation.customer_email;
+    const result = await strikeDeal({
+      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail },
+      dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId
+    });
     return { negotiationId: negotiation.id, ...result };
   }
 
