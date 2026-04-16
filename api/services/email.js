@@ -3,7 +3,15 @@ let brevo = null;
 let resend = null;
 let nodemailerTransport = null;
 
-if (process.env.BREVO_API_KEY) {
+if (process.env.AWS_SES_SMTP_USER && process.env.AWS_SES_SMTP_PASS) {
+  const nodemailer = require('nodemailer');
+  nodemailerTransport = nodemailer.createTransport({
+    host: process.env.AWS_SES_SMTP_HOST || 'email-smtp.us-east-1.amazonaws.com',
+    port: 465,
+    secure: true,
+    auth: { user: process.env.AWS_SES_SMTP_USER, pass: process.env.AWS_SES_SMTP_PASS }
+  });
+} else if (process.env.BREVO_API_KEY) {
   const SibApiV3Sdk = require('@getbrevo/brevo');
   const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
   apiInstance.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
