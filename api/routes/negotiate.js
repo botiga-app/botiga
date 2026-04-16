@@ -257,8 +257,8 @@ router.get('/debug/email', widgetCors, async (req, res) => {
   }
 
   try {
-    // Verify SMTP connection first
-    if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    // Only verify Gmail SMTP if Gmail is the active provider (no Resend key)
+    if (!process.env.RESEND_API_KEY && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
       const nodemailer = require('nodemailer');
       const transport = nodemailer.createTransport({
         service: 'gmail',
