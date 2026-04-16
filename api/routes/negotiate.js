@@ -257,8 +257,18 @@ router.get('/debug/email', widgetCors, async (req, res) => {
   }
 
   try {
+    // Verify SMTP connection first
+    if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+      const nodemailer = require('nodemailer');
+      const transport = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+      });
+      await transport.verify();
+    }
+
     const { sendDealEmail } = require('../services/email');
-    await sendDealEmail({
+    const result = await sendDealEmail({
       to,
       productName: 'Test Product',
       dealPrice: 150,
@@ -267,9 +277,9 @@ router.get('/debug/email', widgetCors, async (req, res) => {
       checkoutUrl: 'https://botiga.ai',
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
     });
-    res.json({ ok: true, config, sent_to: to });
+    res.json({ ok: true, config, sent_to: to, smtp_verified: true });
   } catch (err) {
-    res.json({ ok: false, config, error: err.message });
+    res.json({ ok: false, config, error: err.message, hint: err.message.includes('auth') ? 'App password wrong or 2FA not enabled on Gmail' : 'Check Gmail account settings' });
   }
 });
 
