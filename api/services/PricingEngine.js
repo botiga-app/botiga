@@ -102,7 +102,10 @@ function isAcceptance(customerMessage, botLastPrice) {
 
   const wordMatch = acceptanceWords.some(w => msg === w || msg.includes(w));
   const numericOffer = parseFloat(customerMessage.replace(/[^0-9.]/g, ''));
-  const numericMatch = !isNaN(numericOffer) && numericOffer > 0 && numericOffer >= botLastPrice;
+
+  // Accept if offer >= bot price, OR if within 3% (don't give away more for a $1 gap)
+  const closeEnough = botLastPrice * 0.97;
+  const numericMatch = !isNaN(numericOffer) && numericOffer > 0 && numericOffer >= closeEnough;
 
   return wordMatch || numericMatch;
 }
