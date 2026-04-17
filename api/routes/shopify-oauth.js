@@ -5,8 +5,32 @@ const supabase = require('../lib/supabase');
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
-const APP_URL = process.env.APP_URL || 'https://hexagonally-brownish-jenny.ngrok-free.dev';
+const APP_URL = process.env.APP_URL || 'https://botiga-api-two.vercel.app';
 const SCOPES = 'write_price_rules,write_discounts,read_products';
+
+// Register all mandatory webhooks for a store
+async function registerWebhooks(domain, token) {
+  const topics = [
+    'app/uninstalled',
+    'customers/data_request',
+    'customers/redact',
+    'shop/redact'
+  ];
+
+  const results = [];
+  for (const topic of topics) {
+    // Convert topic to URL path: app/uninstalled → app/uninstalled
+    const address = `${APP_URL}/webhooks/${topic}`;
+    const res = await fetch(`https://${domain}/admin/api/2024-01/webhooks.json`, {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhook: { topic, address, format: 'json' } })
+    });
+    const data = await res.json();
+    results.push({ topic, ok: res.ok, id: data.webhook?.id });
+  }
+  return results;
+}
 
 // Step 1: Initiate OAuth — visit /api/shopify/install?shop=botiga-6380.myshopify.com&merchant_id=UUID
 router.get('/shopify/install', (req, res) => {
@@ -101,6 +125,15 @@ router.get('/shopify/callback', async (req, res) => {
     } else {
       saveStatus = `Saved to merchant ${merchant.id}`;
       console.log('[Shopify OAuth] Token saved to merchant', merchant.id);
+
+      // Register mandatory webhooks
+      try {
+        await registerWebhooks(storeDomain, access_token);
+        console.log('[Shopify OAuth] Webhooks registered');
+      } catch (e) {
+        console.warn('[Shopify OAuth] Webhook registration failed:', e.message);
+      }
+
       // Auto-register confetti Script Tag on install
       try {
         const { registerScriptTag } = require('./script-tags');
@@ -109,26 +142,15 @@ router.get('/shopify/callback', async (req, res) => {
       } catch (e) {
         console.warn('[Shopify OAuth] Script tag registration failed:', e.message);
       }
+
+      // Redirect to dashboard
+      const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://app.botiga.ai';
+      return res.redirect(`${DASHBOARD_URL}/dashboard/install?shop_connected=1&shop=${encodeURIComponent(storeDomain)}`);
     }
   }
 
-  res.send(`
-    <html><body style="font-family:system-ui;padding:40px;max-width:600px;margin:auto">
-      <h2>✅ Shopify connected!</h2>
-      <p><strong>Store:</strong> ${storeDomain}</p>
-      <p><strong>Save status:</strong> <code>${saveStatus}</code></p>
-      <p><strong>Access token:</strong></p>
-      <code style="background:#f4f4f4;padding:12px;display:block;border-radius:8px;word-break:break-all">${access_token}</code>
-      <hr style="margin:24px 0;border:none;border-top:1px solid #eee"/>
-      <p style="color:#666"><strong>If save status shows an error</strong>, the DB columns are missing. Run this SQL in Supabase:</p>
-      <code style="background:#f4f4f4;padding:12px;display:block;border-radius:8px;font-size:12px">
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS shopify_access_token TEXT;<br>
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS shopify_domain TEXT;
-      </code>
-      <p style="color:#666;margin-top:16px">Then set these in Vercel env vars as an immediate bridge:<br>
-      <code>SHOPIFY_ACCESS_TOKEN=${access_token}<br>SHOPIFY_DOMAIN=${storeDomain}</code></p>
-    </body></html>
-  `);
+  // Fallback if no merchant found
+  res.status(400).send('Installation failed — merchant not found. Please try again.');
 });
 
 // Diagnostic: GET /api/shopify/status?merchant_id=UUID

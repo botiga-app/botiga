@@ -9,7 +9,7 @@ async function validateApiKey(req, res, next) {
 
   const { data: merchant, error } = await supabase
     .from('merchants')
-    .select('id, plan, trial_ends_at')
+    .select('id, plan, trial_ends_at, shopify_domain')
     .eq('api_key', apiKey)
     .single();
 

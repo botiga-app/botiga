@@ -103,9 +103,29 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
 
   const merchantId = req.merchant.id;
 
+  // Plan enforcement — check monthly negotiation limit for free/starter plans
+  const PLAN_LIMITS = { free: 50, starter: 500 };
+  const merchantPlan = req.merchant.plan || 'free';
+  if (PLAN_LIMITS[merchantPlan] && opening) {
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const { count } = await supabase
+      .from('negotiations')
+      .select('id', { count: 'exact', head: true })
+      .eq('merchant_id', merchantId)
+      .gte('created_at', monthStart.toISOString());
+    if ((count || 0) >= PLAN_LIMITS[merchantPlan]) {
+      return res.status(402).json({
+        error: 'plan_limit_reached',
+        message: `Monthly limit of ${PLAN_LIMITS[merchantPlan]} negotiations reached. Upgrade your plan.`,
+        upgrade_url: `${process.env.DASHBOARD_URL || 'https://app.botiga.ai'}/dashboard/billing`
+      });
+    }
+  }
+
   const [{ data: settings }, { data: merchant }] = await Promise.all([
     supabase.from('merchant_settings').select('*').eq('merchant_id', merchantId).single(),
-    supabase.from('merchants').select('shopify_access_token, shopify_domain').eq('id', merchantId).single()
+    supabase.from('merchants').select('shopify_access_token, shopify_domain, plan').eq('id', merchantId).single()
   ]);
 
   // Fall back to env vars if merchant record doesn't have Shopify creds

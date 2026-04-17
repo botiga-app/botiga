@@ -14,6 +14,9 @@ if (process.env.SENTRY_DSN) {
   Sentry.setupExpressErrorHandler(app);
 }
 
+// Webhooks must be mounted BEFORE express.json() — they need the raw body for HMAC verification
+app.use('/', require('./routes/webhooks'));
+
 app.use(express.json());
 
 // Handle CORS preflight for all routes — must be before route definitions
@@ -27,6 +30,7 @@ app.use('/api', require('./routes/deals'));
 app.use('/api', require('./routes/recovery'));
 app.use('/api', require('./routes/shopify-oauth'));
 app.use('/api', require('./routes/rules'));
+app.use('/api', require('./routes/billing'));
 app.use('/api', require('./routes/cron'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/script-tags').router);

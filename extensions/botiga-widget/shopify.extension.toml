@@ -1,0 +1,10 @@
+api_version = "2024-01"
+
+[[extensions]]
+type = "theme"
+name = "Botiga Negotiation Widget"
+handle = "botiga-widget"
+
+  [extensions.development]
+  resource = "/products"
+  preview_url = "https://botiga-api-two.vercel.app"

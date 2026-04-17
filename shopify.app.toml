@@ -1,0 +1,37 @@
+name = "Botiga AI Negotiation"
+client_id = "" # Fill in from Shopify Partner Dashboard → App → Client ID
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "jxavr1-ur.myshopify.com"
+
+[access_scopes]
+scopes = "write_price_rules,write_discounts,read_products"
+
+[auth]
+redirect_urls = [
+  "https://botiga-api-two.vercel.app/api/shopify/callback",
+  "http://localhost:3001/api/shopify/callback"
+]
+
+[webhooks]
+api_version = "2024-01"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "https://botiga-api-two.vercel.app/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = ["customers/data_request"]
+  uri = "https://botiga-api-two.vercel.app/webhooks/customers/data_request"
+
+  [[webhooks.subscriptions]]
+  topics = ["customers/redact"]
+  uri = "https://botiga-api-two.vercel.app/webhooks/customers/redact"
+
+  [[webhooks.subscriptions]]
+  topics = ["shop/redact"]
+  uri = "https://botiga-api-two.vercel.app/webhooks/shop/redact"
+
+[pos]
+embedded = false

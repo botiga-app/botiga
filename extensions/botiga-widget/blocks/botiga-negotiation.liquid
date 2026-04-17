@@ -1,0 +1,78 @@
+{% comment %}
+  Botiga AI Negotiation Widget — Theme App Extension Block
+  Merchants add this block via the Shopify Theme Editor (no code required).
+  It injects the negotiation widget script on product pages and/or the cart.
+{% endcomment %}
+
+{% if block.settings.api_key != blank %}
+  {% assign botiga_api_key = block.settings.api_key %}
+{% endif %}
+
+{% if botiga_api_key != blank %}
+  <script
+    src="https://botiga-api-two.vercel.app/n.js?k={{ botiga_api_key }}"
+    async
+    data-botiga-key="{{ botiga_api_key }}"
+  ></script>
+{% else %}
+  {% if request.design_mode %}
+    <div style="
+      padding: 16px;
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      color: #92400e;
+    ">
+      <strong>Botiga:</strong> Enter your API key in the block settings to activate the negotiation widget.
+      Find your key at <a href="https://botiga-dashboard-gamma.vercel.app/dashboard/install" target="_blank" style="color:#92400e">botiga.ai/dashboard → Install</a>.
+    </div>
+  {% endif %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "Botiga Negotiation Widget",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "api_key",
+      "label": "Botiga API Key",
+      "info": "Find your API key in the Botiga dashboard under Install."
+    },
+    {
+      "type": "header",
+      "content": "Display Settings"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_product",
+      "label": "Show on product pages",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_cart",
+      "label": "Show on cart page",
+      "default": false
+    },
+    {
+      "type": "range",
+      "id": "dwell_time",
+      "label": "Seconds before button appears",
+      "min": 0,
+      "max": 120,
+      "step": 5,
+      "default": 30,
+      "unit": "s"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Botiga Negotiation Widget"
+    }
+  ]
+}
+{% endschema %}
