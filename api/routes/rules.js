@@ -5,6 +5,61 @@ const { widgetCors } = require('../middleware/cors');
 
 router.use(widgetCors);
 
+// Fetch Shopify products merged with existing rules
+router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
+  const { merchantId } = req.params;
+  const { page = 1 } = req.query;
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('shopify_domain, shopify_access_token')
+    .eq('id', merchantId)
+    .single();
+
+  const domain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN;
+  const token = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+
+  if (!domain || !token) {
+    return res.status(200).json({ products: [], error: 'no_shopify', message: 'Connect your Shopify store first' });
+  }
+
+  try {
+    // Fetch one page of products from Shopify (250 max per request)
+    const limit = 20;
+    const sinceId = req.query.since_id || null;
+    const url = `https://${domain}/admin/api/2024-01/products.json?limit=${limit}${sinceId ? `&since_id=${sinceId}` : ''}`;
+    const shopRes = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+    if (!shopRes.ok) throw new Error(`Shopify ${shopRes.status}: ${await shopRes.text()}`);
+    const { products } = await shopRes.json();
+
+    // Fetch existing product-level rules for this merchant
+    const { data: rules } = await supabase
+      .from('negotiation_rules')
+      .select('*')
+      .eq('merchant_id', merchantId)
+      .eq('rule_type', 'product');
+
+    const rulesByHandle = {};
+    for (const r of (rules || [])) rulesByHandle[r.entity_id] = r;
+
+    // Merge
+    const merged = products.map(p => ({
+      id: p.id,
+      title: p.title,
+      handle: p.handle,
+      image: p.image?.src || null,
+      price: p.variants?.[0]?.price || null,
+      product_type: p.product_type || null,
+      rule: rulesByHandle[p.handle] || null
+    }));
+
+    res.json({ products: merged, has_more: products.length === limit, last_id: products[products.length - 1]?.id });
+  } catch (err) {
+    console.error('[shopify-products]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // List all rules for a merchant
 router.get('/merchants/:merchantId/rules', async (req, res) => {
   const { merchantId } = req.params;

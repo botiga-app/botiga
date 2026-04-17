@@ -260,8 +260,8 @@ export default function SettingsPage() {
               onChange={e => update({ negotiate_on_cart: e.target.checked })}
               className="w-4 h-4 rounded text-indigo-600" />
             <div>
-              <div className="text-sm font-medium text-gray-700">Show on cart page</div>
-              <div className="text-xs text-gray-400">Allow negotiations on the cart page</div>
+              <div className="text-sm font-medium text-gray-700">Cart negotiation</div>
+              <div className="text-xs text-gray-400">Let customers negotiate their entire cart as a bundle — works with abandoned cart emails via <code className="bg-gray-100 px-1 rounded">/cart?negotiate=1</code></div>
             </div>
           </label>
 
