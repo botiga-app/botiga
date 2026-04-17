@@ -183,11 +183,16 @@ async function processNegotiation({
       } catch {}
     }
 
+    // Cart bundles use cart_max_discount_pct (default 10%) — tighter than per-product
+    const maxDiscountPct = isCartBundle
+      ? (merchantSettings.cart_max_discount_pct || 10)
+      : (effectiveSettings.max_discount_pct || 20);
+
     // Build price ladder once, store immediately
     const engine = new PricingEngine({
       listPrice,
       floorPrice: effectiveSettings.floor_price_fixed || 0,
-      maxDiscountPct: effectiveSettings.max_discount_pct || 20
+      maxDiscountPct
     });
 
     const { data, error } = await supabase.from('negotiations').insert({

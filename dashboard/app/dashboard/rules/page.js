@@ -16,12 +16,18 @@ export default function RulesPage() {
 
   const load = useCallback(async (mid) => {
     setLoading(true);
-    const res = await fetch(`${API}/api/merchants/${mid}/shopify-products`);
-    const data = await res.json();
-    if (data.error === 'no_shopify') {
-      setError('no_shopify');
-    } else if (data.products) {
-      setProducts(data.products);
+    try {
+      const res = await fetch(`${API}/api/merchants/${mid}/shopify-products`);
+      const data = await res.json();
+      if (data.error === 'no_shopify') {
+        setError('no_shopify');
+      } else if (data.error) {
+        setError(data.error);
+      } else if (data.products) {
+        setProducts(data.products);
+      }
+    } catch (e) {
+      setError(e.message);
     }
     setLoading(false);
   }, []);
@@ -73,14 +79,22 @@ export default function RulesPage() {
 
   if (loading) return <div className="p-8 text-sm text-gray-400">Loading products…</div>;
 
-  if (error === 'no_shopify') {
+  if (error) {
     return (
-      <div className="p-8 max-w-2xl">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Product Rules</h2>
-        <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-6 text-sm text-yellow-800">
-          <strong>Shopify not connected.</strong> Connect your Shopify store to manage per-product negotiation rules.
-          <br /><a href="/dashboard/install" className="underline mt-2 inline-block">Go to Install →</a>
-        </div>
+      <div className="p-8 max-w-2xl space-y-3">
+        <h2 className="text-xl font-bold text-gray-900">Product Rules</h2>
+        {error === 'no_shopify' ? (
+          <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-6 text-sm text-yellow-800">
+            <strong>Shopify not connected.</strong> Connect your Shopify store to manage per-product negotiation rules.
+            <br /><a href="/dashboard/install" className="underline mt-2 inline-block">Go to Install →</a>
+          </div>
+        ) : (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-6 text-sm text-red-800">
+            <strong>Failed to load products:</strong> <code className="ml-1">{error}</code>
+            <br /><span className="text-red-600 mt-1 block">Check that your Shopify store is connected and the access token is valid.</span>
+            <a href="/dashboard/install" className="underline mt-2 inline-block">Go to Install →</a>
+          </div>
+        )}
       </div>
     );
   }

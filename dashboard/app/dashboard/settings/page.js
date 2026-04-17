@@ -265,6 +265,22 @@ export default function SettingsPage() {
             </div>
           </label>
 
+          {settings.negotiate_on_cart && (
+            <div className="pl-7">
+              <label className="block text-sm text-gray-600 mb-1">
+                Cart max discount % <span className="text-gray-400 font-normal">(keeps cart-level deals tighter than per-product)</span>
+              </label>
+              <div className="flex items-center gap-3 max-w-xs">
+                <input type="range" min={1} max={30} step={1}
+                  value={settings.cart_max_discount_pct || 10}
+                  onChange={e => update({ cart_max_discount_pct: Number(e.target.value) })}
+                  className="flex-1" />
+                <span className="text-sm font-semibold w-10 text-right">{settings.cart_max_discount_pct || 10}%</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Default: 10% — lower than product discount since cart totals are larger</p>
+            </div>
+          )}
+
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.recovery_enabled}
               onChange={e => update({ recovery_enabled: e.target.checked })}
