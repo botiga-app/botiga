@@ -700,7 +700,9 @@
     if (isCart) injectCartBanner();
 
     if (isCart) {
-      // Cart bundle negotiation — fetch live cart total then inject button
+      const autoNegotiate = new URLSearchParams(window.location.search).get('negotiate') === '1';
+
+      // Cart bundle negotiation — fetch live cart total then inject button (or auto-open)
       fetch('/cart.js')
         .then(r => r.json())
         .then(cart => {
@@ -715,16 +717,24 @@
             isCartBundle: true
           };
           const buttonStyles = detectStyles();
-          const { host, getNegId } = injectButton(settings, buttonStyles, cartInfo, false);
-          // Place before the checkout button
-          const checkoutBtn = document.querySelector('[name="checkout"], .cart__checkout-button, button[data-cart-checkout]');
-          if (checkoutBtn) {
-            checkoutBtn.closest('form,div')?.insertAdjacentElement('beforebegin', host) ||
-              checkoutBtn.parentNode.insertBefore(host, checkoutBtn);
+          const bg = overrideColor || settings.button_color || buttonStyles.backgroundColor;
+          const fg = settings.button_text_color || buttonStyles.color || '#fff';
+
+          if (autoNegotiate) {
+            // Came from recovery email — open chat immediately, no button needed
+            openChat(settings, { backgroundColor: bg, color: fg, fontFamily: buttonStyles.fontFamily, borderRadius: buttonStyles.borderRadius }, cartInfo);
           } else {
-            document.body.appendChild(host);
+            const { host, getNegId } = injectButton(settings, buttonStyles, cartInfo, false);
+            // Place before the checkout button
+            const checkoutBtn = document.querySelector('[name="checkout"], .cart__checkout-button, button[data-cart-checkout]');
+            if (checkoutBtn) {
+              checkoutBtn.closest('form,div')?.insertAdjacentElement('beforebegin', host) ||
+                checkoutBtn.parentNode.insertBefore(host, checkoutBtn);
+            } else {
+              document.body.appendChild(host);
+            }
+            if (settings.recovery_enabled) setupExitIntent(getNegId);
           }
-          if (settings.recovery_enabled) setupExitIntent(getNegId);
         })
         .catch(() => {});
       return; // product button not needed on cart page

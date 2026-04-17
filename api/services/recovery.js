@@ -54,17 +54,38 @@ async function sendStep2Recovery(negotiation) {
 }
 
 async function sendStep3Recovery(negotiation) {
-  const message = `Last chance on that ${negotiation.product_name}! If $${negotiation.deal_price} didn't feel right, reply with what works for you and I'll see what I can do 🙏`;
+  // Build a negotiate-and-checkout link from product_url or merchant lookup
+  let negotiateLink = null;
+  if (negotiation.product_url) {
+    try {
+      const origin = new URL(negotiation.product_url).origin;
+      negotiateLink = `${origin}/cart?negotiate=1`;
+    } catch {}
+  }
+  if (!negotiateLink && negotiation.merchant_id) {
+    const { data: merch } = await supabase.from('merchants').select('shopify_domain').eq('id', negotiation.merchant_id).single();
+    if (merch?.shopify_domain) negotiateLink = `https://${merch.shopify_domain}/cart?negotiate=1`;
+  }
+
+  const message = negotiateLink
+    ? `Still thinking about your ${negotiation.is_cart_bundle ? 'cart' : negotiation.product_name}? Make us an offer — we might surprise you 🤝\n\nNegotiate now → ${negotiateLink}`
+    : `Last chance on that ${negotiation.product_name}! If $${negotiation.deal_price} didn't feel right, reply with what works for you 🙏`;
 
   try {
     if (negotiation.customer_whatsapp) {
       await sendWhatsApp(negotiation.customer_whatsapp, message);
     }
     if (negotiation.customer_email) {
+      const isCartBundle = negotiation.is_cart_bundle;
+      const subject = isCartBundle
+        ? `You left items in your cart — make an offer`
+        : `Still interested in ${negotiation.product_name}? Make an offer`;
       await sendEmail(
         negotiation.customer_email,
-        `Last chance on your ${negotiation.product_name} deal`,
-        `<p>${message.replace(/\n/g, '<br>')}</p>`
+        subject,
+        negotiateLink
+          ? `<p>${message.replace(/\n/g, '<br>')}</p><p style="margin-top:16px"><a href="${negotiateLink}" style="background:#111;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Make an offer →</a></p>`
+          : `<p>${message.replace(/\n/g, '<br>')}</p>`
       );
     }
 
