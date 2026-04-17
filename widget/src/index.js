@@ -234,35 +234,11 @@
     sendBtn.addEventListener('click', send);
 
     // ── HELPERS ────────────────────────────────────────────────────────────────
-    function appendMsg(role, text, needsLeadCapture) {
+    function appendMsg(role, text) {
       removeTyping();
       const m = document.createElement('div');
       m.className = `msg ${role}`;
       m.textContent = text;
-
-      if (role === 'bot' && needsLeadCapture) {
-        const chip = document.createElement('div');
-        chip.className = 'lead-chip';
-        chip.innerHTML = `<span class="lead-chip-icon">📱</span><input class="lead-chip-input" placeholder="Phone or email — I'll hold this for you" type="text" autocomplete="off" /><button class="lead-chip-send">→</button>`;
-        m.appendChild(chip);
-        const chipInput = chip.querySelector('.lead-chip-input');
-        const chipSend = chip.querySelector('.lead-chip-send');
-        const submitChip = async () => {
-          const val = chipInput.value.trim();
-          if (!val) return;
-          chip.innerHTML = `<span class="lead-chip-icon">✅</span><span>Got it — deal held for you!</span>`;
-          try {
-            await fetch(`${API_BASE}/api/negotiate`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...API_HEADERS },
-              body: JSON.stringify({ api_key: apiKey, session_id: getSessionId(), negotiation_id: negotiationId, product_name: productInfo.name, product_url: productInfo.url, variant_id: detectVariantId(), list_price: productInfo.price || 0, customer_message: val })
-            });
-          } catch {}
-        };
-        chipSend.addEventListener('click', submitChip);
-        chipInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitChip(); });
-      }
-
       msgsEl.appendChild(m);
       msgsEl.scrollTop = msgsEl.scrollHeight;
       return m;
@@ -461,7 +437,7 @@
         else {
           negotiationId = d.negotiation_id;
           saveSession({ negotiationId });
-          appendMsg('bot', d.bot_reply, d.needs_lead_capture);
+          appendMsg('bot', d.bot_reply);
         }
       } catch {
         removeTyping();
@@ -514,7 +490,7 @@
 
         negotiationId = d.negotiation_id;
         saveSession({ negotiationId });
-        appendMsg('bot', d.bot_reply, d.needs_lead_capture);
+        appendMsg('bot', d.bot_reply);
 
         console.log('[Botiga] status:', d.status, '| deal_price:', d.deal_price, '| email_sent_to:', d.debug_email_sent_to);
 
