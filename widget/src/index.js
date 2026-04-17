@@ -386,14 +386,15 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti (bundled, no CDN dependency)
+      // MOMENT 3 — confetti (bundled, above widget z-index)
       setTimeout(() => {
         try {
           const fire = require('canvas-confetti');
           const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-          fire({ particleCount: 120, spread: 70, origin: { x: 0.3, y: 0.6 }, colors });
-          setTimeout(() => fire({ particleCount: 120, spread: 70, origin: { x: 0.7, y: 0.6 }, colors }), 150);
-          setTimeout(() => fire({ particleCount: 100, spread: 130, origin: { x: 0.5, y: 0.5 }, colors }), 350);
+          const opts = { zIndex: 2147483647, colors };
+          fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.3, y: 0.6 } });
+          setTimeout(() => fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.7, y: 0.6 } }), 150);
+          setTimeout(() => fire({ ...opts, particleCount: 100, spread: 130, origin: { x: 0.5, y: 0.5 } }), 350);
         } catch (e) {}
       }, 700);
 

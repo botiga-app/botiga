@@ -283,6 +283,19 @@ async function processNegotiation({
   }
   const isFinalOffer = nextStep === 5;
 
+  // ── NEAR-MISS: if customer named a price and bot's next step lands within $5
+  // of it, close the deal at the customer's price rather than look petty ────────
+  if (customerOffer !== null && customerOffer >= Math.ceil(floorPrice) && Math.abs(nextPrice - customerOffer) <= 5) {
+    const dealPrice = Math.max(Math.round(customerOffer), Math.ceil(floorPrice));
+    const updatedMessages = [...messages, { role: 'user', content: customerMessage }];
+    const freshEmail = contactUpdates.customer_email || negotiation.customer_email;
+    const result = await strikeDeal({
+      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail },
+      dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId, productImage
+    });
+    return { negotiationId: negotiation.id, ...result };
+  }
+
   // ── PARALLEL: insights extraction + LLM call ───────────────────────────────
   const botRepliesAlready = messages.filter(m => m.role === 'assistant').length;
   const isEscalating = isFinalOffer && botRepliesAlready >= 5;
