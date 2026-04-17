@@ -28,8 +28,13 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
     const limit = 20;
     const sinceId = req.query.since_id || null;
     const url = `https://${domain}/admin/api/2024-01/products.json?limit=${limit}${sinceId ? `&since_id=${sinceId}` : ''}`;
+    console.log(`[shopify-products] fetching from domain=${domain} token=${token.slice(0,10)}...`);
     const shopRes = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
-    if (!shopRes.ok) throw new Error(`Shopify ${shopRes.status}: ${await shopRes.text()}`);
+    if (!shopRes.ok) {
+      const body = await shopRes.text();
+      console.error(`[shopify-products] ${shopRes.status} from domain=${domain}: ${body}`);
+      throw new Error(`Shopify ${shopRes.status} (domain: ${domain}, token: ${token.slice(0,10)}...): ${body}`);
+    }
     const { products } = await shopRes.json();
 
     // Fetch existing product-level rules for this merchant

@@ -176,6 +176,22 @@ router.get('/shopify/status', async (req, res) => {
       status.shopify_api_test = `ERROR — ${e.message}`;
       status.ready = false;
     }
+
+    // Also test read_products scope specifically (shop.json works with any token)
+    try {
+      const prodRes = await fetch(`https://${domain}/admin/api/2024-01/products.json?limit=1`, {
+        headers: { 'X-Shopify-Access-Token': token }
+      });
+      if (prodRes.ok) {
+        status.products_scope_test = 'OK — read_products scope confirmed';
+      } else {
+        const body = await prodRes.text();
+        status.products_scope_test = `FAILED (${prodRes.status}) — token lacks read_products scope. Re-run OAuth to grant access. Detail: ${body}`;
+        status.ready = false;
+      }
+    } catch (e) {
+      status.products_scope_test = `ERROR — ${e.message}`;
+    }
   }
 
   res.json(status);
