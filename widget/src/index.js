@@ -386,18 +386,18 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti (bundled, above widget z-index)
-      setTimeout(() => {
-        try {
-          console.log('[Botiga] firing confetti');
-          const fire = require('canvas-confetti');
-          const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-          const opts = { zIndex: 2147483647, colors };
-          fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.3, y: 0.6 } });
-          setTimeout(() => fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.7, y: 0.6 } }), 150);
-          setTimeout(() => fire({ ...opts, particleCount: 100, spread: 130, origin: { x: 0.5, y: 0.5 } }), 350);
-        } catch (e) { console.error('[Botiga] confetti error:', e); }
-      }, 700);
+      // MOMENT 3 — confetti immediately, then follow-up bursts
+      try {
+        console.log('[Botiga] firing confetti');
+        const fire = require('canvas-confetti');
+        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
+        const opts = { zIndex: 2147483647, colors };
+        fire({ ...opts, particleCount: 150, spread: 80, origin: { x: 0.3, y: 0.6 } });
+        setTimeout(() => fire({ ...opts, particleCount: 150, spread: 80, origin: { x: 0.7, y: 0.6 } }), 200);
+        setTimeout(() => fire({ ...opts, particleCount: 120, spread: 130, origin: { x: 0.5, y: 0.4 } }), 500);
+        setTimeout(() => fire({ ...opts, particleCount: 80, spread: 70, origin: { x: 0.2, y: 0.5 } }), 1000);
+        setTimeout(() => fire({ ...opts, particleCount: 80, spread: 70, origin: { x: 0.8, y: 0.5 } }), 1200);
+      } catch (e) { console.error('[Botiga] confetti error:', e); }
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
@@ -438,7 +438,7 @@
             if (fb) { fb.style.display = 'block'; fb.onclick = () => window.history.back(); }
           }
         }, 500);
-      }, 2500);
+      }, 4000);
 
       // Fallback button always wired
       const fb = shadow.querySelector('#_dfb');
