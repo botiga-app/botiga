@@ -5,6 +5,7 @@ const { validateApiKey } = require('../middleware/auth');
 const { negotiationLimiter, settingsLimiter } = require('../middleware/rateLimit');
 const { widgetCors } = require('../middleware/cors');
 const { processNegotiation } = require('../services/negotiation');
+const { resolveProductRules } = require('../services/rules');
 
 // Widget settings — called on page load
 router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => {
@@ -42,6 +43,36 @@ router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => 
     dwell_time_seconds: settings?.dwell_time_seconds ?? 5,
     plan: merchant.plan
   });
+});
+
+// Product eligibility check — called before showing the negotiate button
+router.get('/widget/product-rules', widgetCors, settingsLimiter, async (req, res) => {
+  const { k: apiKey, handle, tags } = req.query;
+  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+
+  const { data: merchant, error } = await supabase
+    .from('merchants')
+    .select('id')
+    .eq('api_key', apiKey)
+    .single();
+
+  if (error || !merchant) return res.status(401).json({ error: 'Invalid API key' });
+
+  const { data: settings } = await supabase
+    .from('merchant_settings')
+    .select('max_discount_pct, floor_price_fixed, floor_price_pct')
+    .eq('merchant_id', merchant.id)
+    .single();
+
+  const parsedTags = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const result = await resolveProductRules(merchant.id, {
+    handle: handle || '',
+    tags: parsedTags,
+    defaults: settings || {}
+  });
+
+  res.json(result);
 });
 
 // Core negotiation endpoint

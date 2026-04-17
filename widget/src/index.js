@@ -718,22 +718,58 @@
 
     const buttonStyles = detectStyles();
     const productInfo = detectProduct();
-    const position = overridePosition || settings.button_position || 'below-cart';
-    const isFloating = position === 'floating';
-    const placement = findPlacement(position);
 
-    const { host, getNegId } = injectButton(settings, buttonStyles, productInfo, isFloating);
+    // Extract product handle from URL (/products/some-handle)
+    const handleMatch = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    const handle = handleMatch ? handleMatch[1] : '';
 
-    if (isFloating) {
-      host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483645;';
-      document.body.appendChild(host);
-    } else if (placement) {
-      placement.parentNode.insertBefore(host, placement.nextSibling);
-    } else {
-      document.body.appendChild(host);
-    }
+    // Extract tags from Shopify meta (free, no API call)
+    let tags = [];
+    try { tags = window.ShopifyAnalytics?.meta?.product?.tags || []; } catch {}
 
-    if (settings.recovery_enabled) setupExitIntent(getNegId);
+    // Check product-level negotiation rules before showing button
+    const rulesUrl = `${API_BASE}/api/widget/product-rules?k=${encodeURIComponent(apiKey)}&handle=${encodeURIComponent(handle)}&tags=${encodeURIComponent(tags.join(','))}`;
+    fetch(rulesUrl, { headers: API_HEADERS })
+      .then(r => r.json())
+      .then(rules => {
+        if (!rules.negotiable) return; // product blocked from negotiation
+
+        // Merge rule-level limits into settings so PricingEngine uses them
+        const effectiveSettings = {
+          ...settings,
+          max_discount_pct: rules.max_discount_pct ?? settings.max_discount_pct,
+          floor_price_fixed: rules.floor_price_fixed ?? settings.floor_price_fixed,
+          floor_price_pct: rules.floor_price_pct ?? settings.floor_price_pct
+        };
+
+        const position = overridePosition || settings.button_position || 'below-cart';
+        const isFloating = position === 'floating';
+        const placement = findPlacement(position);
+
+        const { host, getNegId } = injectButton(effectiveSettings, buttonStyles, productInfo, isFloating);
+
+        if (isFloating) {
+          host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483645;';
+          document.body.appendChild(host);
+        } else if (placement) {
+          placement.parentNode.insertBefore(host, placement.nextSibling);
+        } else {
+          document.body.appendChild(host);
+        }
+
+        if (effectiveSettings.recovery_enabled) setupExitIntent(getNegId);
+      })
+      .catch(() => {
+        // On rules fetch failure, fall back to showing button with global settings
+        const position = overridePosition || settings.button_position || 'below-cart';
+        const isFloating = position === 'floating';
+        const placement = findPlacement(position);
+        const { host, getNegId } = injectButton(settings, buttonStyles, productInfo, isFloating);
+        if (isFloating) { host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483645;'; document.body.appendChild(host); }
+        else if (placement) { placement.parentNode.insertBefore(host, placement.nextSibling); }
+        else { document.body.appendChild(host); }
+        if (settings.recovery_enabled) setupExitIntent(getNegId);
+      });
   }
 
   function run() {

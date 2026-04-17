@@ -7,6 +7,7 @@ const { checkRepeatNegotiator } = require('./fingerprint');
 const { trackNegotiationEvent } = require('../lib/posthog');
 const { createShopifyDiscountCode } = require('./shopify');
 const { sendDealEmail } = require('./email');
+const { resolveProductRules } = require('./rules');
 
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
   let discountCode = null;
@@ -171,11 +172,22 @@ async function processNegotiation({
       }
     }
 
+    // Resolve per-product rules (product/tag overrides) for non-cart bundles
+    let effectiveSettings = merchantSettings;
+    if (!isCartBundle && productUrl) {
+      try {
+        const handleMatch = productUrl.match(/\/products\/([^/?#]+)/);
+        const handle = handleMatch ? handleMatch[1] : '';
+        const resolved = await resolveProductRules(merchantId, { handle, tags: [], defaults: merchantSettings });
+        effectiveSettings = { ...merchantSettings, ...resolved };
+      } catch {}
+    }
+
     // Build price ladder once, store immediately
     const engine = new PricingEngine({
       listPrice,
-      floorPrice: merchantSettings.floor_price_fixed || 0,
-      maxDiscountPct: merchantSettings.max_discount_pct || 20
+      floorPrice: effectiveSettings.floor_price_fixed || 0,
+      maxDiscountPct: effectiveSettings.max_discount_pct || 20
     });
 
     const { data, error } = await supabase.from('negotiations').insert({
