@@ -37,17 +37,22 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
     }
     const { products } = await shopRes.json();
 
-    // Fetch existing product-level rules for this merchant
+    // Fetch all rules (product + tag + collection) for this merchant
     const { data: rules } = await supabase
       .from('negotiation_rules')
       .select('*')
-      .eq('merchant_id', merchantId)
-      .eq('rule_type', 'product');
+      .eq('merchant_id', merchantId);
 
-    const rulesByHandle = {};
-    for (const r of (rules || [])) rulesByHandle[r.entity_id] = r;
+    const productRulesByHandle = {};
+    const tagRulesMap = {};
+    const collectionRulesMap = {};
+    for (const r of (rules || [])) {
+      if (r.rule_type === 'product') productRulesByHandle[r.entity_id] = r;
+      if (r.rule_type === 'tag') tagRulesMap[r.entity_id] = r;
+      if (r.rule_type === 'collection') collectionRulesMap[r.entity_id] = r;
+    }
 
-    // Merge
+    // Merge — include tags so frontend can derive tag groupings
     const merged = products.map(p => ({
       id: p.id,
       title: p.title,
@@ -55,12 +60,79 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
       image: p.image?.src || null,
       price: p.variants?.[0]?.price || null,
       product_type: p.product_type || null,
-      rule: rulesByHandle[p.handle] || null
+      tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      rule: productRulesByHandle[p.handle] || null
     }));
 
-    res.json({ products: merged, has_more: products.length === limit, last_id: products[products.length - 1]?.id });
+    res.json({
+      products: merged,
+      tag_rules: tagRulesMap,
+      collection_rules: collectionRulesMap,
+      has_more: products.length === limit,
+      last_id: products[products.length - 1]?.id
+    });
   } catch (err) {
     console.error('[shopify-products]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch Shopify collections merged with existing collection rules
+router.get('/merchants/:merchantId/shopify-collections', async (req, res) => {
+  const { merchantId } = req.params;
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('shopify_domain, shopify_access_token')
+    .eq('id', merchantId)
+    .single();
+
+  const domain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN;
+  const token = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+
+  if (!domain || !token) {
+    return res.status(200).json({ collections: [], error: 'no_shopify' });
+  }
+
+  try {
+    const headers = { 'X-Shopify-Access-Token': token };
+    const [customRes, smartRes] = await Promise.all([
+      fetch(`https://${domain}/admin/api/2024-01/custom_collections.json?limit=250`, { headers }),
+      fetch(`https://${domain}/admin/api/2024-01/smart_collections.json?limit=250`, { headers })
+    ]);
+
+    const [customData, smartData] = await Promise.all([
+      customRes.ok ? customRes.json() : { custom_collections: [] },
+      smartRes.ok ? smartRes.json() : { smart_collections: [] }
+    ]);
+
+    const all = [
+      ...(customData.custom_collections || []).map(c => ({ ...c, type: 'custom' })),
+      ...(smartData.smart_collections || []).map(c => ({ ...c, type: 'smart' }))
+    ].sort((a, b) => a.title.localeCompare(b.title));
+
+    // Fetch collection-level rules
+    const { data: rules } = await supabase
+      .from('negotiation_rules')
+      .select('*')
+      .eq('merchant_id', merchantId)
+      .eq('rule_type', 'collection');
+
+    const rulesByHandle = {};
+    for (const r of (rules || [])) rulesByHandle[r.entity_id] = r;
+
+    const merged = all.map(c => ({
+      id: c.id,
+      title: c.title,
+      handle: c.handle,
+      type: c.type,
+      products_count: c.products_count || 0,
+      rule: rulesByHandle[c.handle] || null
+    }));
+
+    res.json({ collections: merged });
+  } catch (err) {
+    console.error('[shopify-collections]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -87,8 +159,8 @@ router.post('/merchants/:merchantId/rules', async (req, res) => {
   if (!rule_type || !entity_id) {
     return res.status(400).json({ error: 'rule_type and entity_id required' });
   }
-  if (!['product', 'tag'].includes(rule_type)) {
-    return res.status(400).json({ error: 'rule_type must be product or tag' });
+  if (!['product', 'tag', 'collection'].includes(rule_type)) {
+    return res.status(400).json({ error: 'rule_type must be product, tag, or collection' });
   }
 
   const { data, error } = await supabase
