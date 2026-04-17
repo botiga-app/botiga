@@ -386,47 +386,7 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — Canvas confetti in light DOM (above shadow host stacking context)
-      try {
-        const cv = document.createElement('canvas');
-        cv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647;';
-        cv.width = window.innerWidth;
-        cv.height = window.innerHeight;
-        document.body.appendChild(cv);
-        const ctx = cv.getContext('2d');
-        const cols = ['#FFD700','#FF6B6B','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff'];
-        const pieces = Array.from({ length: 350 }, () => ({
-          x: Math.random() * cv.width,
-          y: Math.random() * -cv.height * 0.6 - 10,
-          w: Math.random() * 14 + 5,
-          h: Math.random() * 7 + 3,
-          color: cols[Math.floor(Math.random() * cols.length)],
-          vx: (Math.random() - 0.5) * 5,
-          vy: Math.random() * 5 + 1.5,
-          rot: Math.random() * Math.PI * 2,
-          vrot: (Math.random() - 0.5) * 0.25,
-          op: 1
-        }));
-        const t0 = Date.now();
-        let raf;
-        (function draw() {
-          ctx.clearRect(0, 0, cv.width, cv.height);
-          const elapsed = Date.now() - t0;
-          let alive = false;
-          for (const p of pieces) {
-            p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.rot += p.vrot;
-            if (elapsed > 2800) p.op = Math.max(0, p.op - 0.018);
-            if (p.op > 0) alive = true;
-            ctx.save(); ctx.globalAlpha = p.op;
-            ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-            ctx.fillStyle = p.color;
-            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-            ctx.restore();
-          }
-          if (alive && elapsed < 5000) { raf = requestAnimationFrame(draw); }
-          else { cancelAnimationFrame(raf); cv.remove(); }
-        })();
-      } catch (e) { console.error('[Botiga] confetti error:', e); }
+      // MOMENT 3 — confetti fires on cart page after redirect (see injectCartBanner)
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
@@ -662,6 +622,50 @@
     });
   }
 
+  // ── CONFETTI ─────────────────────────────────────────────────────────────────
+  function fireConfetti() {
+    try {
+      const cv = document.createElement('canvas');
+      cv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647;';
+      cv.width = window.innerWidth;
+      cv.height = window.innerHeight;
+      document.body.appendChild(cv);
+      const ctx = cv.getContext('2d');
+      const cols = ['#FFD700','#FF6B6B','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff','#fb923c'];
+      const pieces = Array.from({ length: 350 }, () => ({
+        x: Math.random() * cv.width,
+        y: Math.random() * -cv.height * 0.5 - 20,
+        w: Math.random() * 14 + 5,
+        h: Math.random() * 7 + 3,
+        color: cols[Math.floor(Math.random() * cols.length)],
+        vx: (Math.random() - 0.5) * 6,
+        vy: Math.random() * 4 + 2,
+        rot: Math.random() * Math.PI * 2,
+        vrot: (Math.random() - 0.5) * 0.25,
+        op: 1
+      }));
+      const t0 = Date.now();
+      let raf;
+      (function draw() {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const elapsed = Date.now() - t0;
+        let alive = false;
+        for (const p of pieces) {
+          p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.rot += p.vrot;
+          if (elapsed > 2500) p.op = Math.max(0, p.op - 0.02);
+          if (p.op > 0) alive = true;
+          ctx.save(); ctx.globalAlpha = p.op;
+          ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+          ctx.restore();
+        }
+        if (alive && elapsed < 5000) { raf = requestAnimationFrame(draw); }
+        else { cancelAnimationFrame(raf); cv.remove(); }
+      })();
+    } catch (e) { console.error('[Botiga] confetti error:', e); }
+  }
+
   // ── CART DEAL TIMER BANNER ───────────────────────────────────────────────────
   function injectCartBanner() {
     const session = getSession();
@@ -685,6 +689,12 @@
     `;
     document.body.prepend(banner);
     document.body.style.paddingTop = (parseInt(document.body.style.paddingTop || '0') + banner.offsetHeight) + 'px';
+
+    // Fire confetti once when user first arrives on cart after a deal
+    if (!deal.confettiShown) {
+      saveSession({ deal: { ...deal, confettiShown: true } });
+      setTimeout(fireConfetti, 400);
+    }
 
     banner.querySelector('#_bcb_close').addEventListener('click', () => {
       document.body.style.paddingTop = '';
