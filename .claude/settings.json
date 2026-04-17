@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.convertflow.com)",
+      "WebFetch(domain:mobbin.com)",
+      "WebFetch(domain:www.plotline.so)",
+      "WebFetch(domain:dribbble.com)",
+      "WebFetch(domain:www.eleken.co)",
+      "WebFetch(domain:www.shopify.com)"
+    ]
+  }
+}

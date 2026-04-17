@@ -61,16 +61,37 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
   if (!resolvedImage && negotiation.product_url) {
     resolvedImage = await fetchProductImage(negotiation.product_url);
   }
-  const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
-    productUrl: negotiation.product_url,
-    variantId: negotiation.variant_id,
-    dealPrice,
-    listPrice: negotiation.list_price,
-    negotiationId: negotiation.id,
-    expiresAt,
-    shopifyDomain,
-    shopifyAccessToken
-  });
+  let checkoutUrl, discountCode;
+  if (negotiation.is_cart_bundle) {
+    // Cart bundle: items already in cart, just apply discount at checkout
+    discountCode = shopifyDomain && shopifyAccessToken
+      ? await (async () => {
+          try {
+            const { createShopifyDiscountCode } = require('./shopify');
+            return await createShopifyDiscountCode({
+              shop: shopifyDomain, accessToken: shopifyAccessToken,
+              listPrice: negotiation.list_price, dealPrice,
+              negotiationId: negotiation.id, expiresAt
+            });
+          } catch (e) { console.error('[Shopify] Cart bundle discount failed:', e.message); return null; }
+        })()
+      : null;
+    const origin = shopifyDomain ? `https://${shopifyDomain}` : '';
+    checkoutUrl = discountCode
+      ? `${origin}/checkout?discount=${discountCode}`
+      : `${origin}/checkout`;
+  } else {
+    ({ url: checkoutUrl, discountCode } = await generateCheckoutUrl({
+      productUrl: negotiation.product_url,
+      variantId: negotiation.variant_id,
+      dealPrice,
+      listPrice: negotiation.list_price,
+      negotiationId: negotiation.id,
+      expiresAt,
+      shopifyDomain,
+      shopifyAccessToken
+    }));
+  }
 
   const fees = calculateBrokerFee({
     listPrice: negotiation.list_price,
@@ -137,7 +158,7 @@ function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
 async function processNegotiation({
   merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
   sessionId, negotiationId, productName, productUrl, productImage, variantId,
-  listPrice, customerMessage, isOpening
+  listPrice, customerMessage, isOpening, isCartBundle
 }) {
   let negotiation;
 
@@ -164,6 +185,7 @@ async function processNegotiation({
       product_url: productUrl,
       product_image: productImage || null,
       variant_id: variantId || null,
+      is_cart_bundle: isCartBundle || false,
       list_price: listPrice,
       floor_price: engine.floorPrice,
       price_ladder: engine.priceLadder,

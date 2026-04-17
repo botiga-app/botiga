@@ -447,10 +447,11 @@
             api_key: apiKey,
             session_id: getSessionId(),
             product_name: productInfo.name,
-            product_url: productInfo.url,
-            product_image: productInfo.image || null,
-            variant_id: detectVariantId(),
+            product_url: productInfo.isCartBundle ? null : productInfo.url,
+            product_image: productInfo.isCartBundle ? null : (productInfo.image || null),
+            variant_id: productInfo.isCartBundle ? null : detectVariantId(),
             list_price: productInfo.price || 0,
+            is_cart_bundle: productInfo.isCartBundle || false,
             opening: true
           })
         });
@@ -495,10 +496,11 @@
             session_id: getSessionId(),
             negotiation_id: negotiationId,
             product_name: productInfo.name,
-            product_url: productInfo.url,
-            product_image: productInfo.image || null,
-            variant_id: detectVariantId(),
+            product_url: productInfo.isCartBundle ? null : productInfo.url,
+            product_image: productInfo.isCartBundle ? null : (productInfo.image || null),
+            variant_id: productInfo.isCartBundle ? null : detectVariantId(),
             list_price: productInfo.price || 0,
+            is_cart_bundle: productInfo.isCartBundle || false,
             customer_message: text
           })
         });
@@ -696,6 +698,37 @@
 
     // Show deal timer banner on cart page if a deal is active
     if (isCart) injectCartBanner();
+
+    if (isCart) {
+      // Cart bundle negotiation — fetch live cart total then inject button
+      fetch('/cart.js')
+        .then(r => r.json())
+        .then(cart => {
+          if (!cart.item_count || cart.item_count === 0) return;
+          const cartTotal = cart.total_price / 100;
+          const itemWord = cart.item_count === 1 ? 'item' : 'items';
+          const cartInfo = {
+            name: `Your cart (${cart.item_count} ${itemWord})`,
+            price: cartTotal,
+            url: null,
+            image: null,
+            isCartBundle: true
+          };
+          const buttonStyles = detectStyles();
+          const { host, getNegId } = injectButton(settings, buttonStyles, cartInfo, false);
+          // Place before the checkout button
+          const checkoutBtn = document.querySelector('[name="checkout"], .cart__checkout-button, button[data-cart-checkout]');
+          if (checkoutBtn) {
+            checkoutBtn.closest('form,div')?.insertAdjacentElement('beforebegin', host) ||
+              checkoutBtn.parentNode.insertBefore(host, checkoutBtn);
+          } else {
+            document.body.appendChild(host);
+          }
+          if (settings.recovery_enabled) setupExitIntent(getNegId);
+        })
+        .catch(() => {});
+      return; // product button not needed on cart page
+    }
 
     const buttonStyles = detectStyles();
     const productInfo = detectProduct();

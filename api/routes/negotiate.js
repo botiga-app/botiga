@@ -56,6 +56,7 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
     list_price,
     customer_message,
     opening,
+    is_cart_bundle,
   } = req.body;
 
   if (!session_id || !list_price) {
@@ -103,7 +104,8 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       variantId: variant_id || null,
       listPrice: list_price,
       customerMessage: customer_message || null,
-      isOpening: !!opening
+      isOpening: !!opening,
+      isCartBundle: !!is_cart_bundle
     });
 
     res.json({
