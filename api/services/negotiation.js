@@ -79,19 +79,23 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     properties: { list_price: negotiation.list_price, deal_price: dealPrice, broker_fee: fees.brokerFee }
   });
 
-  // Send deal email if we have the customer's email
+  // Send deal email — must await so Vercel doesn't terminate before SMTP completes
   const emailTo = negotiation.customer_email || null;
   if (emailTo) {
-    sendDealEmail({
-      to: emailTo,
-      productName: negotiation.product_name,
-      dealPrice,
-      listPrice: negotiation.list_price,
-      discountCode,
-      checkoutUrl,
-      expiresAt,
-      productImage: productImage || null
-    }).catch(err => console.error('[Email] strikeDeal send failed:', err.message));
+    try {
+      await sendDealEmail({
+        to: emailTo,
+        productName: negotiation.product_name,
+        dealPrice,
+        listPrice: negotiation.list_price,
+        discountCode,
+        checkoutUrl,
+        expiresAt,
+        productImage: productImage || null
+      });
+    } catch (err) {
+      console.error('[Email] strikeDeal send failed:', err.message);
+    }
   } else {
     console.warn('[Email] No customer_email on negotiation', negotiation.id);
   }
