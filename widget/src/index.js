@@ -386,32 +386,29 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti in light DOM, above shadow host stacking context
+      // MOMENT 3 — canvas-confetti via CDN (same approach as Shopify theme tutorials)
       setTimeout(() => {
         try {
-          const uid = '_btgc' + Date.now();
-          const st = document.createElement('style');
-          st.textContent = `@keyframes ${uid}{0%{transform:translateY(0) rotate(0deg);opacity:1}90%{opacity:1}100%{transform:translateY(110vh) rotate(900deg);opacity:0}}`;
-          document.head.appendChild(st);
-          const wrap = document.createElement('div');
-          wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2147483647;';
-          const cols = ['#FFD700','#FF4444','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff176','#fb923c'];
-          for (let i = 0; i < 300; i++) {
-            const el = document.createElement('div');
-            const isRect = Math.random() > 0.4;
-            const w = isRect ? (Math.random() * 12 + 6) : (Math.random() * 10 + 5);
-            const h = isRect ? (Math.random() * 6 + 3) : w;
-            const col = cols[Math.floor(Math.random() * cols.length)];
-            const left = Math.random() * 110 - 5;
-            const dur = (Math.random() * 2 + 2).toFixed(2);
-            const delay = (Math.random() * 1.2).toFixed(2);
-            el.style.cssText = `position:absolute;left:${left}%;top:-20px;width:${w}px;height:${h}px;background:${col};border-radius:${isRect ? '2px' : '50%'};animation:${uid} ${dur}s ${delay}s ease-in forwards;`;
-            wrap.appendChild(el);
+          if (typeof confetti === 'function') {
+            _btgBurst();
+          } else {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
+            s.onload = _btgBurst;
+            document.head.appendChild(s);
           }
-          document.body.appendChild(wrap);
-          setTimeout(() => { wrap.remove(); st.remove(); }, 5000);
-        } catch(e) { console.error('[Botiga] confetti error:', e); }
+        } catch(e) { console.error('[Botiga] confetti load error:', e); }
       }, 300);
+
+      function _btgBurst() {
+        try {
+          const go = confetti;
+          go({ particleCount: 120, spread: 160, origin: { y: 0.5 }, zIndex: 2147483647 });
+          setTimeout(() => go({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 }, zIndex: 2147483647 }), 250);
+          setTimeout(() => go({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 }, zIndex: 2147483647 }), 250);
+          setTimeout(() => go({ particleCount: 60, spread: 200, origin: { y: 0.3 }, zIndex: 2147483647 }), 700);
+        } catch(e) { console.error('[Botiga] confetti burst error:', e); }
+      }
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
