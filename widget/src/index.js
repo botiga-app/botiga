@@ -326,8 +326,8 @@
       const listPrice = productInfo.price || dealPrice;
       const saved = Math.round(listPrice - dealPrice);
       const savedPct = Math.round((saved / listPrice) * 100);
-      // Deal expires 10 minutes from now (or use server value)
-      const exp = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 10 * 60 * 1000);
+      // Always show 15-min display countdown (actual checkout link stays valid 48h)
+      const exp = new Date(Date.now() + 15 * 60 * 1000);
 
       // Build deal screen
       const ds = document.createElement('div');
@@ -541,7 +541,7 @@
         console.log('[Botiga] status:', d.status, '| deal_price:', d.deal_price, '| email_sent_to:', d.debug_email_sent_to);
 
         if (d.status === 'won' && d.deal_price) {
-          saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, discountCode: d.discount_code, productName: productInfo.name } });
+          saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), discountCode: d.discount_code, productName: productInfo.name } });
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
         }
       } catch (err) {
@@ -651,8 +651,9 @@
     const deal = session.deal;
     if (!deal || !deal.expiresAt || !deal.checkoutUrl) return;
 
-    const exp = new Date(deal.expiresAt);
+    const exp = new Date(deal.expiresAt); // real 48h expiry — checkout link valid
     if (Date.now() >= exp) return; // already expired
+    const displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
 
     const banner = document.createElement('div');
     banner.id = '_botiga_cart_banner';
@@ -673,7 +674,7 @@
 
     const timerEl = banner.querySelector('#_bcb_timer');
     const tick = setInterval(() => {
-      const remaining = Math.max(0, exp - Date.now());
+      const remaining = Math.max(0, displayExp - Date.now());
       const mins = Math.floor(remaining / 60000);
       const secs = Math.floor((remaining % 60000) / 1000);
       timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');

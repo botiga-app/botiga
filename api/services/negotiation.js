@@ -91,7 +91,7 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
         discountCode,
         checkoutUrl,
         expiresAt,
-        productImage: productImage || null
+        productImage: productImage || negotiation.product_image || null
       });
     } catch (err) {
       console.error('[Email] strikeDeal send failed:', err.message);
@@ -142,6 +142,7 @@ async function processNegotiation({
       session_id: sessionId,
       product_name: productName,
       product_url: productUrl,
+      product_image: productImage || null,
       variant_id: variantId || null,
       list_price: listPrice,
       floor_price: engine.floorPrice,
