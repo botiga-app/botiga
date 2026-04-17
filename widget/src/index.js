@@ -518,6 +518,8 @@
 
         if (d.status === 'won' && d.deal_price) {
           saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), discountCode: d.discount_code, productName: productInfo.name } });
+          // Dispatch event for confetti.js Script Tag (runs in main document)
+          try { document.dispatchEvent(new CustomEvent('botiga:deal', { detail: { price: d.deal_price } })); } catch {}
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
         }
       } catch (err) {

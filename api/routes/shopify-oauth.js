@@ -101,6 +101,14 @@ router.get('/shopify/callback', async (req, res) => {
     } else {
       saveStatus = `Saved to merchant ${merchant.id}`;
       console.log('[Shopify OAuth] Token saved to merchant', merchant.id);
+      // Auto-register confetti Script Tag on install
+      try {
+        const { registerScriptTag } = require('./script-tags');
+        const tagResult = await registerScriptTag(storeDomain, access_token);
+        console.log('[Shopify OAuth] Script tag:', tagResult);
+      } catch (e) {
+        console.warn('[Shopify OAuth] Script tag registration failed:', e.message);
+      }
     }
   }
 

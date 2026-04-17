@@ -28,6 +28,14 @@ app.use('/api', require('./routes/recovery'));
 app.use('/api', require('./routes/shopify-oauth'));
 app.use('/api', require('./routes/cron'));
 app.use('/api', require('./routes/admin'));
+app.use('/api', require('./routes/script-tags').router);
+
+// Serve public assets (confetti.js etc) — CORS open for Shopify Script Tags
+app.use('/public', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  next();
+}, require('express').static(path.join(__dirname, 'public')));
 
 // Serve widget script — CORS open so any Shopify store can load it
 app.get('/n.js', (req, res) => {
