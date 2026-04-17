@@ -386,29 +386,16 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — canvas-confetti via CDN (same approach as Shopify theme tutorials)
+      // MOMENT 3 — canvas-confetti bundled (no CDN, no CSP issues)
       setTimeout(() => {
         try {
-          if (typeof confetti === 'function') {
-            _btgBurst();
-          } else {
-            const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
-            s.onload = _btgBurst;
-            document.head.appendChild(s);
-          }
-        } catch(e) { console.error('[Botiga] confetti load error:', e); }
-      }, 300);
-
-      function _btgBurst() {
-        try {
-          const go = confetti;
+          const go = require('canvas-confetti');
           go({ particleCount: 120, spread: 160, origin: { y: 0.5 }, zIndex: 2147483647 });
           setTimeout(() => go({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 }, zIndex: 2147483647 }), 250);
           setTimeout(() => go({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 }, zIndex: 2147483647 }), 250);
           setTimeout(() => go({ particleCount: 60, spread: 200, origin: { y: 0.3 }, zIndex: 2147483647 }), 700);
-        } catch(e) { console.error('[Botiga] confetti burst error:', e); }
-      }
+        } catch(e) { console.error('[Botiga] confetti error:', e); }
+      }, 300);
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
