@@ -30,7 +30,7 @@ if (process.env.AWS_SES_SMTP_USER && process.env.AWS_SES_SMTP_PASS) {
 const FROM_NAME = 'Botiga Deals';
 const FROM = process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || (resend ? 'onboarding@resend.dev' : process.env.GMAIL_USER) || 'deals@botiga.live';
 
-async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCode, checkoutUrl, expiresAt }) {
+async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCode, checkoutUrl, expiresAt, productImage }) {
   if (!to) return;
 
   if (!brevo && !resend && !nodemailerTransport) {
@@ -40,10 +40,11 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
 
   const saved = Math.round(listPrice - dealPrice);
   const savedPct = Math.round((saved / listPrice) * 100);
-  const expiry = new Date(expiresAt);
-  const expiryStr = expiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   const subject = `Your deal on ${productName} — $${dealPrice} (${savedPct}% off)`;
+  const imgBlock = productImage
+    ? `<div style="text-align:center;padding:24px 36px 0;"><img src="${productImage}" alt="${productName}" style="max-width:100%;max-height:260px;object-fit:contain;border-radius:8px;" /></div>`
+    : '';
   const html = `
 <!DOCTYPE html>
 <html>
@@ -54,8 +55,10 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
     <div style="background:#111;padding:32px 36px;text-align:center;">
       <div style="font-size:28px;margin-bottom:8px;">🎁</div>
       <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Your deal is waiting</div>
-      <div style="color:#888;font-size:13px;margin-top:6px;">Held until ${expiryStr}</div>
+      <div style="color:#e55;font-size:13px;font-weight:600;margin-top:6px;">Hurry — this price expires in 15 minutes</div>
     </div>
+
+    ${imgBlock}
 
     <div style="padding:32px 36px;">
       <div style="font-size:13px;color:#888;margin-bottom:4px;">${productName}</div>

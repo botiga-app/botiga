@@ -40,7 +40,7 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
 }
 
 async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId, productImage }) {
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48h — link valid 2 days
   const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
     productUrl: negotiation.product_url,
     variantId: negotiation.variant_id,
