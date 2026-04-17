@@ -143,6 +143,53 @@ router.get('/shopify/callback', async (req, res) => {
         console.warn('[Shopify OAuth] Script tag registration failed:', e.message);
       }
 
+      // Auto-create dashboard account for App Store installs
+      // Get the shop owner's email from Shopify
+      try {
+        const shopRes = await fetch(`https://${storeDomain}/admin/api/2024-01/shop.json`, {
+          headers: { 'X-Shopify-Access-Token': access_token }
+        });
+        if (shopRes.ok) {
+          const { shop } = await shopRes.json();
+          const ownerEmail = shop.email;
+          const ownerName = shop.shop_owner || shop.name;
+
+          // Check if a Supabase user already exists for this email
+          const { data: existingUsers } = await supabase.auth.admin.listUsers();
+          const existingUser = existingUsers?.users?.find(u => u.email === ownerEmail);
+
+          if (!existingUser) {
+            // New merchant — create account and send invite email
+            const { data: newUser } = await supabase.auth.admin.inviteUserByEmail(ownerEmail, {
+              data: { name: ownerName }
+            });
+            if (newUser?.user) {
+              // Ensure merchant record exists with this user's ID
+              await supabase.from('merchants').upsert({
+                id: newUser.user.id,
+                email: ownerEmail,
+                name: ownerName,
+                shopify_domain: storeDomain,
+                shopify_access_token: access_token
+              }, { onConflict: 'id' });
+              console.log('[Shopify OAuth] New merchant invited:', ownerEmail);
+            }
+          } else {
+            // Existing user — send magic link so they can log in without typing password
+            await supabase.auth.admin.generateLink({
+              type: 'magiclink',
+              email: ownerEmail,
+              options: {
+                redirectTo: `${DASHBOARD_URL}/dashboard/install?shop_connected=1`
+              }
+            });
+            console.log('[Shopify OAuth] Magic link sent to existing merchant:', ownerEmail);
+          }
+        }
+      } catch (e) {
+        console.warn('[Shopify OAuth] Auto-invite failed:', e.message);
+      }
+
       // Redirect to dashboard
       const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://app.botiga.ai';
       return res.redirect(`${DASHBOARD_URL}/dashboard/install?shop_connected=1&shop=${encodeURIComponent(storeDomain)}`);

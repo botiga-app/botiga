@@ -13,7 +13,16 @@ export default function InstallPage() {
   const [shopifyConnected, setShopifyConnected] = useState(false);
   const supabase = createClient();
 
+  const [justInstalled, setJustInstalled] = useState(false);
+
   useEffect(() => {
+    // Detect App Store install redirect
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('shop_connected')) {
+      setJustInstalled(true);
+      window.history.replaceState({}, '', '/dashboard/install');
+    }
+
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -51,6 +60,15 @@ export default function InstallPage() {
 
   return (
     <div className="p-8 max-w-3xl">
+      {justInstalled && (
+        <div className="mb-6 bg-green-50 border border-green-100 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-green-500 text-lg">✓</span>
+          <div>
+            <p className="text-sm font-medium text-green-800">Shopify connected successfully!</p>
+            <p className="text-xs text-green-600 mt-0.5">Check your email — we sent you a link to set your password and access the dashboard.</p>
+          </div>
+        </div>
+      )}
       <div className="mb-6">
         <h2 className="text-xl font-bold text-gray-900">Install Botiga</h2>
         <p className="text-sm text-gray-500">One line of code — works on any website</p>
