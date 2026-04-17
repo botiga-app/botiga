@@ -386,16 +386,7 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — canvas-confetti bundled (no CDN, no CSP issues)
-      setTimeout(() => {
-        try {
-          const go = require('canvas-confetti');
-          go({ particleCount: 120, spread: 160, origin: { y: 0.5 }, zIndex: 2147483647 });
-          setTimeout(() => go({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 }, zIndex: 2147483647 }), 250);
-          setTimeout(() => go({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 }, zIndex: 2147483647 }), 250);
-          setTimeout(() => go({ particleCount: 60, spread: 200, origin: { y: 0.3 }, zIndex: 2147483647 }), 700);
-        } catch(e) { console.error('[Botiga] confetti error:', e); }
-      }, 300);
+      // MOMENT 3 — confetti fires on /cart page after button click (see injectCartBanner)
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
@@ -415,13 +406,29 @@
         }
       }, 1000);
 
-      // MOMENT 4 — show checkout button after brief delay (no auto-redirect)
+      // MOMENT 4 — show checkout button, AJAX add to cart then go to /cart (confetti fires there)
       setTimeout(() => {
         const fb = shadow.querySelector('#_dfb');
         if (fb) {
           fb.style.display = 'block';
           fb.textContent = 'Complete my order →';
-          fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; };
+          fb.onclick = async () => {
+            fb.textContent = 'Adding to cart...';
+            fb.disabled = true;
+            try {
+              const vid = detectVariantId();
+              if (vid) {
+                await fetch('/cart/add.js', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: parseInt(vid), quantity: 1 })
+                });
+              }
+            } catch {}
+            // Go to /cart — widget fires confetti there, no Shopify auto-redirect
+            const cartPath = discountCode ? `/cart?discount=${discountCode}` : '/cart';
+            window.location.href = cartPath;
+          };
         }
       }, 1800);
     }
@@ -616,32 +623,13 @@
 
   // ── CONFETTI ─────────────────────────────────────────────────────────────────
   function fireConfetti() {
-    console.log('[Botiga] fireConfetti called');
     try {
-      const uid = '_btgc' + Date.now();
-      const st = document.createElement('style');
-      st.textContent = `@keyframes ${uid}{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(900deg);opacity:0}}`;
-      document.head.appendChild(st);
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2147483647;';
-      const cols = ['#FFD700','#FF4444','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff176','#fb923c'];
-      for (let i = 0; i < 300; i++) {
-        const el = document.createElement('div');
-        const isRect = Math.random() > 0.4;
-        const w = isRect ? (Math.random() * 12 + 6) : (Math.random() * 10 + 5);
-        const h = isRect ? (Math.random() * 6 + 3) : w;
-        const col = cols[Math.floor(Math.random() * cols.length)];
-        const left = Math.random() * 110 - 5;
-        const dur = (Math.random() * 2 + 2).toFixed(2);
-        const delay = (Math.random() * 1.5).toFixed(2);
-        const br = isRect ? '2px' : '50%';
-        el.style.cssText = `position:absolute;left:${left}%;top:-20px;width:${w}px;height:${h}px;background:${col};border-radius:${br};animation:${uid} ${dur}s ${delay}s ease-in forwards;`;
-        wrap.appendChild(el);
-      }
-      document.body.appendChild(wrap);
-      console.log('[Botiga] confetti wrap appended, children:', wrap.children.length);
-      setTimeout(() => { wrap.remove(); st.remove(); }, 5000);
-    } catch (e) { console.error('[Botiga] confetti error:', e); }
+      const go = require('canvas-confetti');
+      go({ particleCount: 120, spread: 160, origin: { y: 0.5 }, zIndex: 2147483647 });
+      setTimeout(() => go({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 }, zIndex: 2147483647 }), 250);
+      setTimeout(() => go({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 }, zIndex: 2147483647 }), 250);
+      setTimeout(() => go({ particleCount: 60, spread: 200, origin: { y: 0.3 }, zIndex: 2147483647 }), 700);
+    } catch(e) { console.error('[Botiga] confetti error:', e); }
   }
 
   // ── CART DEAL TIMER BANNER ───────────────────────────────────────────────────
