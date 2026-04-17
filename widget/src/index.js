@@ -624,45 +624,31 @@
 
   // ── CONFETTI ─────────────────────────────────────────────────────────────────
   function fireConfetti() {
+    console.log('[Botiga] fireConfetti called');
     try {
-      const cv = document.createElement('canvas');
-      cv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647;';
-      cv.width = window.innerWidth;
-      cv.height = window.innerHeight;
-      document.body.appendChild(cv);
-      const ctx = cv.getContext('2d');
-      const cols = ['#FFD700','#FF6B6B','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff','#fb923c'];
-      const pieces = Array.from({ length: 350 }, () => ({
-        x: Math.random() * cv.width,
-        y: Math.random() * -cv.height * 0.5 - 20,
-        w: Math.random() * 14 + 5,
-        h: Math.random() * 7 + 3,
-        color: cols[Math.floor(Math.random() * cols.length)],
-        vx: (Math.random() - 0.5) * 6,
-        vy: Math.random() * 4 + 2,
-        rot: Math.random() * Math.PI * 2,
-        vrot: (Math.random() - 0.5) * 0.25,
-        op: 1
-      }));
-      const t0 = Date.now();
-      let raf;
-      (function draw() {
-        ctx.clearRect(0, 0, cv.width, cv.height);
-        const elapsed = Date.now() - t0;
-        let alive = false;
-        for (const p of pieces) {
-          p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.rot += p.vrot;
-          if (elapsed > 2500) p.op = Math.max(0, p.op - 0.02);
-          if (p.op > 0) alive = true;
-          ctx.save(); ctx.globalAlpha = p.op;
-          ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-          ctx.fillStyle = p.color;
-          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-          ctx.restore();
-        }
-        if (alive && elapsed < 5000) { raf = requestAnimationFrame(draw); }
-        else { cancelAnimationFrame(raf); cv.remove(); }
-      })();
+      const uid = '_btgc' + Date.now();
+      const st = document.createElement('style');
+      st.textContent = `@keyframes ${uid}{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(105vh) rotate(900deg);opacity:0}}`;
+      document.head.appendChild(st);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2147483647;';
+      const cols = ['#FFD700','#FF4444','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff176','#fb923c'];
+      for (let i = 0; i < 300; i++) {
+        const el = document.createElement('div');
+        const isRect = Math.random() > 0.4;
+        const w = isRect ? (Math.random() * 12 + 6) : (Math.random() * 10 + 5);
+        const h = isRect ? (Math.random() * 6 + 3) : w;
+        const col = cols[Math.floor(Math.random() * cols.length)];
+        const left = Math.random() * 110 - 5;
+        const dur = (Math.random() * 2 + 2).toFixed(2);
+        const delay = (Math.random() * 1.5).toFixed(2);
+        const br = isRect ? '2px' : '50%';
+        el.style.cssText = `position:absolute;left:${left}%;top:-20px;width:${w}px;height:${h}px;background:${col};border-radius:${br};animation:${uid} ${dur}s ${delay}s ease-in forwards;`;
+        wrap.appendChild(el);
+      }
+      document.body.appendChild(wrap);
+      console.log('[Botiga] confetti wrap appended, children:', wrap.children.length);
+      setTimeout(() => { wrap.remove(); st.remove(); }, 5000);
     } catch (e) { console.error('[Botiga] confetti error:', e); }
   }
 
@@ -690,11 +676,8 @@
     document.body.prepend(banner);
     document.body.style.paddingTop = (parseInt(document.body.style.paddingTop || '0') + banner.offsetHeight) + 'px';
 
-    // Fire confetti once when user first arrives on cart after a deal
-    if (!deal.confettiShown) {
-      saveSession({ deal: { ...deal, confettiShown: true } });
-      setTimeout(fireConfetti, 400);
-    }
+    // Fire confetti every time for now (debug — will gate once confirmed working)
+    setTimeout(fireConfetti, 400);
 
     banner.querySelector('#_bcb_close').addEventListener('click', () => {
       document.body.style.paddingTop = '';
