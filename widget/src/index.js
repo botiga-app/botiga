@@ -624,11 +624,17 @@
   // ── CONFETTI ─────────────────────────────────────────────────────────────────
   function fireConfetti() {
     try {
-      const go = require('canvas-confetti');
-      go({ particleCount: 120, spread: 160, origin: { y: 0.5 }, zIndex: 2147483647 });
-      setTimeout(() => go({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 }, zIndex: 2147483647 }), 250);
-      setTimeout(() => go({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 }, zIndex: 2147483647 }), 250);
-      setTimeout(() => go({ particleCount: 60, spread: 200, origin: { y: 0.3 }, zIndex: 2147483647 }), 700);
+      // Append canvas to <html> not <body> — Shopify themes often use CSS transforms
+      // on body (mobile menus etc.) which breaks position:fixed confetti canvas
+      const cv = document.createElement('canvas');
+      cv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;';
+      document.documentElement.appendChild(cv);
+      const fire = require('canvas-confetti').create(cv, { resize: true, useWorker: false });
+      fire({ particleCount: 120, spread: 160, origin: { y: 0.5 } });
+      setTimeout(() => fire({ particleCount: 80, angle: 60,  spread: 80, origin: { x: 0, y: 0.6 } }), 250);
+      setTimeout(() => fire({ particleCount: 80, angle: 120, spread: 80, origin: { x: 1, y: 0.6 } }), 250);
+      setTimeout(() => fire({ particleCount: 60, spread: 200, origin: { y: 0.3 } }), 700);
+      setTimeout(() => cv.remove(), 6000);
     } catch(e) { console.error('[Botiga] confetti error:', e); }
   }
 
