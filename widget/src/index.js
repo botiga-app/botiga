@@ -386,17 +386,29 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti immediately, then follow-up bursts
+      // MOMENT 3 — CSS confetti inside shadow DOM (guaranteed above overlay)
       try {
-        console.log('[Botiga] firing confetti');
-        const fire = require('canvas-confetti');
-        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
-        const opts = { zIndex: 2147483647, colors };
-        fire({ ...opts, particleCount: 150, spread: 80, origin: { x: 0.3, y: 0.6 } });
-        setTimeout(() => fire({ ...opts, particleCount: 150, spread: 80, origin: { x: 0.7, y: 0.6 } }), 200);
-        setTimeout(() => fire({ ...opts, particleCount: 120, spread: 130, origin: { x: 0.5, y: 0.4 } }), 500);
-        setTimeout(() => fire({ ...opts, particleCount: 80, spread: 70, origin: { x: 0.2, y: 0.5 } }), 1000);
-        setTimeout(() => fire({ ...opts, particleCount: 80, spread: 70, origin: { x: 0.8, y: 0.5 } }), 1200);
+        const colors = ['#FFD700','#FF6B6B','#4ECDC4','#fff','#FF8E53','#a78bfa','#34d399'];
+        const ks = document.createElement('style');
+        ks.textContent = '@keyframes _btgfall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}';
+        shadow.appendChild(ks);
+        const c = document.createElement('div');
+        c.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;overflow:hidden';
+        for (let i = 0; i < 220; i++) {
+          const el = document.createElement('div');
+          const isStrip = Math.random() < 0.3;
+          const w = isStrip ? (Math.random() * 4 + 2) : (Math.random() * 10 + 5);
+          const h = isStrip ? (Math.random() * 16 + 8) : w;
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          const x = Math.random() * 120 - 10;
+          const dur = (Math.random() * 2 + 1.5).toFixed(2);
+          const delay = (Math.random() * 1.2).toFixed(2);
+          const br = isStrip ? '1px' : (Math.random() > 0.5 ? '50%' : '2px');
+          el.style.cssText = `position:absolute;left:${x}%;top:-20px;width:${w}px;height:${h}px;background:${color};border-radius:${br};animation:_btgfall ${dur}s ${delay}s ease-in forwards`;
+          c.appendChild(el);
+        }
+        shadow.appendChild(c);
+        setTimeout(() => { c.remove(); ks.remove(); }, 4500);
       } catch (e) { console.error('[Botiga] confetti error:', e); }
 
       // Countdown timer (deal expiry)
