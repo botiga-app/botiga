@@ -389,13 +389,14 @@
       // MOMENT 3 — confetti (bundled, above widget z-index)
       setTimeout(() => {
         try {
+          console.log('[Botiga] firing confetti');
           const fire = require('canvas-confetti');
           const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#ffffff', '#FF8E53'];
           const opts = { zIndex: 2147483647, colors };
           fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.3, y: 0.6 } });
           setTimeout(() => fire({ ...opts, particleCount: 120, spread: 70, origin: { x: 0.7, y: 0.6 } }), 150);
           setTimeout(() => fire({ ...opts, particleCount: 100, spread: 130, origin: { x: 0.5, y: 0.5 } }), 350);
-        } catch (e) {}
+        } catch (e) { console.error('[Botiga] confetti error:', e); }
       }, 700);
 
       // Countdown timer (deal expiry)
@@ -525,11 +526,14 @@
         saveSession({ negotiationId });
         appendMsg('bot', d.bot_reply, d.needs_lead_capture);
 
+        console.log('[Botiga] status:', d.status, '| deal_price:', d.deal_price, '| email_sent_to:', d.debug_email_sent_to);
+
         if (d.status === 'won' && d.deal_price) {
           saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, discountCode: d.discount_code, productName: productInfo.name } });
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
         }
-      } catch {
+      } catch (err) {
+        console.error('[Botiga] sendMessage error:', err);
         removeTyping();
         appendMsg('bot', "Connection issue — please try again.");
       } finally {
