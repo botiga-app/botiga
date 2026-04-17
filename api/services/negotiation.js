@@ -39,8 +39,28 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
   return { url: url.toString(), discountCode };
 }
 
+async function fetchProductImage(productUrl) {
+  try {
+    const u = new URL(productUrl);
+    // Strip query string and append .json to get Shopify product JSON
+    const jsonUrl = u.origin + u.pathname.split('?')[0].replace(/\/$/, '') + '.json';
+    const resp = await fetch(jsonUrl, { headers: { 'Accept': 'application/json' } });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.product?.images?.[0]?.src || null;
+  } catch {
+    return null;
+  }
+}
+
 async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId, productImage }) {
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48h — link valid 2 days
+
+  // Resolve product image: widget → DB → fetch from Shopify product JSON
+  let resolvedImage = productImage || negotiation.product_image || null;
+  if (!resolvedImage && negotiation.product_url) {
+    resolvedImage = await fetchProductImage(negotiation.product_url);
+  }
   const { url: checkoutUrl, discountCode } = await generateCheckoutUrl({
     productUrl: negotiation.product_url,
     variantId: negotiation.variant_id,
@@ -91,7 +111,7 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
         discountCode,
         checkoutUrl,
         expiresAt,
-        productImage: productImage || negotiation.product_image || null
+        productImage: resolvedImage
       });
     } catch (err) {
       console.error('[Email] strikeDeal send failed:', err.message);
