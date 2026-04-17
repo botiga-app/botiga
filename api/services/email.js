@@ -41,7 +41,10 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
   const saved = Math.round(listPrice - dealPrice);
   const savedPct = Math.round((saved / listPrice) * 100);
 
-  const subject = `Your deal on ${productName} — $${dealPrice} (${savedPct}% off)`;
+  const phrases = ['You made it', 'You won it', 'Deal unlocked', 'You got it'];
+  const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+  const savingsStr = savedPct > saved ? `${savedPct}% off` : `$${saved} off`;
+  const subject = `🏆 ${phrase}! ${savingsStr} on ${productName}`;
   const imgBlock = productImage
     ? `<div style="text-align:center;padding:24px 36px 0;"><img src="${productImage}" alt="${productName}" style="max-width:100%;max-height:260px;object-fit:contain;border-radius:8px;" /></div>`
     : '';

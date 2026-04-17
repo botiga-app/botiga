@@ -348,7 +348,7 @@
         <div class="deal-savings" id="_ds">${saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in'}</div>
         ${discountCode ? `<div class="deal-code-line">${escHtml(discountCode)} applied automatically</div>` : ''}
         <div class="deal-timer-wrap">
-          <div class="deal-timer-digits" id="_dtd">10:00</div>
+          <div class="deal-timer-digits" id="_dtd">15:00</div>
           <div class="deal-timer-label">Deal expires in</div>
         </div>
         <div class="deal-redirect-label" id="_drl" style="opacity:0">Heading to your cart...</div>
@@ -386,29 +386,46 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — CSS confetti inside shadow DOM (guaranteed above overlay)
+      // MOMENT 3 — Canvas confetti in light DOM (above shadow host stacking context)
       try {
-        const colors = ['#FFD700','#FF6B6B','#4ECDC4','#fff','#FF8E53','#a78bfa','#34d399'];
-        const ks = document.createElement('style');
-        ks.textContent = '@keyframes _btgfall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}';
-        shadow.appendChild(ks);
-        const c = document.createElement('div');
-        c.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;overflow:hidden';
-        for (let i = 0; i < 220; i++) {
-          const el = document.createElement('div');
-          const isStrip = Math.random() < 0.3;
-          const w = isStrip ? (Math.random() * 4 + 2) : (Math.random() * 10 + 5);
-          const h = isStrip ? (Math.random() * 16 + 8) : w;
-          const color = colors[Math.floor(Math.random() * colors.length)];
-          const x = Math.random() * 120 - 10;
-          const dur = (Math.random() * 2 + 1.5).toFixed(2);
-          const delay = (Math.random() * 1.2).toFixed(2);
-          const br = isStrip ? '1px' : (Math.random() > 0.5 ? '50%' : '2px');
-          el.style.cssText = `position:absolute;left:${x}%;top:-20px;width:${w}px;height:${h}px;background:${color};border-radius:${br};animation:_btgfall ${dur}s ${delay}s ease-in forwards`;
-          c.appendChild(el);
-        }
-        shadow.appendChild(c);
-        setTimeout(() => { c.remove(); ks.remove(); }, 4500);
+        const cv = document.createElement('canvas');
+        cv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647;';
+        cv.width = window.innerWidth;
+        cv.height = window.innerHeight;
+        document.body.appendChild(cv);
+        const ctx = cv.getContext('2d');
+        const cols = ['#FFD700','#FF6B6B','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff'];
+        const pieces = Array.from({ length: 350 }, () => ({
+          x: Math.random() * cv.width,
+          y: Math.random() * -cv.height * 0.6 - 10,
+          w: Math.random() * 14 + 5,
+          h: Math.random() * 7 + 3,
+          color: cols[Math.floor(Math.random() * cols.length)],
+          vx: (Math.random() - 0.5) * 5,
+          vy: Math.random() * 5 + 1.5,
+          rot: Math.random() * Math.PI * 2,
+          vrot: (Math.random() - 0.5) * 0.25,
+          op: 1
+        }));
+        const t0 = Date.now();
+        let raf;
+        (function draw() {
+          ctx.clearRect(0, 0, cv.width, cv.height);
+          const elapsed = Date.now() - t0;
+          let alive = false;
+          for (const p of pieces) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.rot += p.vrot;
+            if (elapsed > 2800) p.op = Math.max(0, p.op - 0.018);
+            if (p.op > 0) alive = true;
+            ctx.save(); ctx.globalAlpha = p.op;
+            ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+          }
+          if (alive && elapsed < 5000) { raf = requestAnimationFrame(draw); }
+          else { cancelAnimationFrame(raf); cv.remove(); }
+        })();
       } catch (e) { console.error('[Botiga] confetti error:', e); }
 
       // Countdown timer (deal expiry)
@@ -653,7 +670,9 @@
 
     const exp = new Date(deal.expiresAt); // real 48h expiry — checkout link valid
     if (Date.now() >= exp) return; // already expired
-    const displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
+    const savedDisplay = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : null;
+    // If display timer already ran out (old session), restart from now for urgency
+    const displayExp = (savedDisplay && savedDisplay > new Date()) ? savedDisplay : new Date(Date.now() + 15 * 60 * 1000);
 
     const banner = document.createElement('div');
     banner.id = '_botiga_cart_banner';
