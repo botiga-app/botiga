@@ -386,7 +386,32 @@
         requestAnimationFrame(step);
       }
 
-      // MOMENT 3 — confetti fires on cart page after redirect (see injectCartBanner)
+      // MOMENT 3 — confetti in light DOM, above shadow host stacking context
+      setTimeout(() => {
+        try {
+          const uid = '_btgc' + Date.now();
+          const st = document.createElement('style');
+          st.textContent = `@keyframes ${uid}{0%{transform:translateY(0) rotate(0deg);opacity:1}90%{opacity:1}100%{transform:translateY(110vh) rotate(900deg);opacity:0}}`;
+          document.head.appendChild(st);
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2147483647;';
+          const cols = ['#FFD700','#FF4444','#4ECDC4','#FF8E53','#a78bfa','#34d399','#60a5fa','#f472b6','#fff176','#fb923c'];
+          for (let i = 0; i < 300; i++) {
+            const el = document.createElement('div');
+            const isRect = Math.random() > 0.4;
+            const w = isRect ? (Math.random() * 12 + 6) : (Math.random() * 10 + 5);
+            const h = isRect ? (Math.random() * 6 + 3) : w;
+            const col = cols[Math.floor(Math.random() * cols.length)];
+            const left = Math.random() * 110 - 5;
+            const dur = (Math.random() * 2 + 2).toFixed(2);
+            const delay = (Math.random() * 1.2).toFixed(2);
+            el.style.cssText = `position:absolute;left:${left}%;top:-20px;width:${w}px;height:${h}px;background:${col};border-radius:${isRect ? '2px' : '50%'};animation:${uid} ${dur}s ${delay}s ease-in forwards;`;
+            wrap.appendChild(el);
+          }
+          document.body.appendChild(wrap);
+          setTimeout(() => { wrap.remove(); st.remove(); }, 5000);
+        } catch(e) { console.error('[Botiga] confetti error:', e); }
+      }, 300);
 
       // Countdown timer (deal expiry)
       const timerEl = shadow.querySelector('#_dtd');
@@ -406,32 +431,15 @@
         }
       }, 1000);
 
-      // MOMENT 4 — redirect label, progress bar, auto-redirect
+      // MOMENT 4 — show checkout button after brief delay (no auto-redirect)
       setTimeout(() => {
-        const lbl = shadow.querySelector('#_drl');
-        if (lbl) lbl.style.opacity = '1';
-      }, 1500);
-
-      setTimeout(() => {
-        const bar = shadow.querySelector('#_dpr');
-        if (bar) bar.style.width = '100%';
-        setTimeout(() => {
-          if (checkoutUrl) {
-            try { window.location.href = checkoutUrl; }
-            catch {
-              const fb = shadow.querySelector('#_dfb');
-              if (fb) { fb.style.display = 'block'; fb.onclick = () => { window.location.href = checkoutUrl; }; }
-            }
-          } else {
-            const fb = shadow.querySelector('#_dfb');
-            if (fb) { fb.style.display = 'block'; fb.onclick = () => window.history.back(); }
-          }
-        }, 500);
-      }, 4000);
-
-      // Fallback button always wired
-      const fb = shadow.querySelector('#_dfb');
-      if (fb) fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; };
+        const fb = shadow.querySelector('#_dfb');
+        if (fb) {
+          fb.style.display = 'block';
+          fb.textContent = 'Complete my order →';
+          fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; };
+        }
+      }, 1800);
     }
 
     // Lead capture is now handled inline by the bot's message — no form widget needed
