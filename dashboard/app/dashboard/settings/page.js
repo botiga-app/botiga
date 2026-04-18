@@ -52,6 +52,9 @@ export default function SettingsPage() {
           recovery_enabled: true,
           recovery_channel: 'whatsapp',
           dwell_time_seconds: 30,
+          proactive_delay: 7,
+          proactive_message: '',
+          auto_open_delay: 0,
           brand_value_statements: ['', '', '', '', '']
         });
       }
@@ -245,14 +248,49 @@ export default function SettingsPage() {
             </div>
           </label>
 
-          <div className="pl-7">
-            <label className="block text-sm text-gray-600 mb-1">
-              Dwell time before button appears: <strong>{settings.dwell_time_seconds}s</strong>
-            </label>
-            <input type="range" min={0} max={120} step={5}
-              value={settings.dwell_time_seconds || 30}
-              onChange={e => update({ dwell_time_seconds: Number(e.target.value) })}
-              className="w-full max-w-xs" />
+          <div className="pl-7 space-y-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">
+                Dwell time before button appears: <strong>{settings.dwell_time_seconds || 30}s</strong>
+              </label>
+              <input type="range" min={0} max={120} step={5}
+                value={settings.dwell_time_seconds || 30}
+                onChange={e => update({ dwell_time_seconds: Number(e.target.value) })}
+                className="w-full max-w-xs" />
+            </div>
+
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Proactive engagement</p>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  Proactive message — appears above the button after <strong>{settings.proactive_delay ?? 7}s</strong>
+                </label>
+                <input type="range" min={3} max={30} step={1}
+                  value={settings.proactive_delay ?? 7}
+                  onChange={e => update({ proactive_delay: Number(e.target.value) })}
+                  className="w-full max-w-xs" />
+                <input
+                  type="text"
+                  value={settings.proactive_message || ''}
+                  onChange={e => update({ proactive_message: e.target.value })}
+                  placeholder="Still thinking? I can work on the price 👀"
+                  className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Leave blank to use the default message. Set delay to 0 to disable.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  Auto-open chat after: <strong>{settings.auto_open_delay ? `${settings.auto_open_delay}s` : 'Off'}</strong>
+                </label>
+                <input type="range" min={0} max={60} step={5}
+                  value={settings.auto_open_delay || 0}
+                  onChange={e => update({ auto_open_delay: Number(e.target.value) })}
+                  className="w-full max-w-xs" />
+                <p className="text-xs text-gray-400 mt-1">0 = disabled. When set, chat opens automatically — proactive message appears first, then chat.</p>
+              </div>
+            </div>
           </div>
 
           <label className="flex items-center gap-3 cursor-pointer">
