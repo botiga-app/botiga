@@ -5,9 +5,9 @@ const supabase = require('../lib/supabase');
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 
-// Webhooks need raw body for HMAC verification.
-// This router is mounted BEFORE express.json() in index.js.
-router.use(express.raw({ type: 'application/json' }));
+// Webhooks need raw body for HMAC verification — scoped to /webhooks/* only.
+const rawBody = express.raw({ type: 'application/json' });
+router.use('/webhooks', rawBody);
 
 function verifyShopifyWebhook(req) {
   const hmac = req.headers['x-shopify-hmac-sha256'];
