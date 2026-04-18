@@ -41,6 +41,9 @@ router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => 
     negotiate_on_cart: settings?.negotiate_on_cart ?? true,
     recovery_enabled: settings?.recovery_enabled ?? true,
     dwell_time_seconds: settings?.dwell_time_seconds ?? 5,
+    proactive_delay: settings?.proactive_delay ?? 7,
+    proactive_message: settings?.proactive_message || null,
+    auto_open_delay: settings?.auto_open_delay ?? 0,
     plan: merchant.plan
   });
 });

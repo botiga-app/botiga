@@ -1,6 +1,6 @@
 'use client';
 
-export default function ButtonCustomizer({ label, color, textColor, onChange }) {
+export default function ButtonCustomizer({ label, color, textColor, position, onChange }) {
   const bg = color || '#1a1a2e';
   const fg = textColor || '#ffffff';
 
@@ -20,11 +20,12 @@ export default function ButtonCustomizer({ label, color, textColor, onChange }) 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
           <select
+            value={position || 'below-cart'}
             onChange={e => onChange({ position: e.target.value })}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
           >
             <option value="below-cart">Below Add to Cart</option>
-            <option value="floating">Floating (bottom right)</option>
+            <option value="floating">Floating bubble (bottom right)</option>
             <option value="inline">Inline</option>
           </select>
         </div>

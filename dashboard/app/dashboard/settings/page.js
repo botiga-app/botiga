@@ -127,6 +127,7 @@ export default function SettingsPage() {
           label={settings.button_label}
           color={settings.button_color}
           textColor={settings.button_text_color}
+          position={settings.button_position}
           onChange={patch => update({
             ...(patch.label !== undefined ? { button_label: patch.label } : {}),
             ...(patch.color !== undefined ? { button_color: patch.color } : {}),

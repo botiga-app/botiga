@@ -48,7 +48,8 @@ router.put('/merchants/:id/settings', async (req, res) => {
     'tone', 'button_label', 'button_color', 'button_text_color', 'button_position',
     'max_discount_pct', 'cart_max_discount_pct', 'floor_price_pct', 'floor_price_fixed', 'broker_fee_pct',
     'negotiate_on_product', 'negotiate_on_cart', 'recovery_enabled', 'recovery_channel',
-    'dwell_time_seconds', 'brand_value_statements'
+    'dwell_time_seconds', 'brand_value_statements',
+    'proactive_delay', 'proactive_message', 'auto_open_delay'
   ];
 
   const updates = {};
