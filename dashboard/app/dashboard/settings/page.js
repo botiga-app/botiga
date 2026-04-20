@@ -55,6 +55,10 @@ export default function SettingsPage() {
           proactive_delay: 7,
           proactive_message: '',
           auto_open_delay: 0,
+          widget_type: 'bubble',
+          show_trigger: 'always',
+          chat_popup_delay: 0,
+          cart_trigger: 'always',
           brand_value_statements: ['', '', '', '', '']
         });
       }
@@ -236,103 +240,117 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* Triggers */}
-      <Section title="Triggers & Recovery">
-        <div className="space-y-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.negotiate_on_product}
-              onChange={e => update({ negotiate_on_product: e.target.checked })}
-              className="w-4 h-4 rounded text-indigo-600" />
-            <div>
-              <div className="text-sm font-medium text-gray-700">Show on product pages</div>
-              <div className="text-xs text-gray-400">Inject button on individual product pages</div>
-            </div>
-          </label>
+      {/* Widget behaviour */}
+      <Section title="Widget behaviour">
+        <div className="space-y-6">
 
-          <div className="pl-7 space-y-4">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                Dwell time before button appears: <strong>{settings.dwell_time_seconds || 30}s</strong>
-              </label>
-              <input type="range" min={0} max={120} step={5}
-                value={settings.dwell_time_seconds || 30}
-                onChange={e => update({ dwell_time_seconds: Number(e.target.value) })}
-                className="w-full max-w-xs" />
-            </div>
-
-            <div className="border-t border-gray-100 pt-4 space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Proactive engagement</p>
-
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  Proactive message — appears above the button after <strong>{settings.proactive_delay ?? 7}s</strong>
-                </label>
-                <input type="range" min={3} max={30} step={1}
-                  value={settings.proactive_delay ?? 7}
-                  onChange={e => update({ proactive_delay: Number(e.target.value) })}
-                  className="w-full max-w-xs" />
-                <input
-                  type="text"
-                  value={settings.proactive_message || ''}
-                  onChange={e => update({ proactive_message: e.target.value })}
-                  placeholder="Still thinking? I can work on the price 👀"
-                  className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                />
-                <p className="text-xs text-gray-400 mt-1">Leave blank to use the default message. Set delay to 0 to disable.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  Auto-open chat after: <strong>{settings.auto_open_delay ? `${settings.auto_open_delay}s` : 'Off'}</strong>
-                </label>
-                <input type="range" min={0} max={60} step={5}
-                  value={settings.auto_open_delay || 0}
-                  onChange={e => update({ auto_open_delay: Number(e.target.value) })}
-                  className="w-full max-w-xs" />
-                <p className="text-xs text-gray-400 mt-1">0 = disabled. When set, chat opens automatically — proactive message appears first, then chat.</p>
-              </div>
+          {/* Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">How it looks</label>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { value: 'bubble', label: '💬 Bubble', sub: 'Floating circle, bottom right' },
+                { value: 'button', label: '🔘 Button', sub: 'Sits below Add to Cart' },
+                { value: 'banner', label: '📢 Banner', sub: 'Pinned bar across the top' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => update({ widget_type: opt.value })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${settings.widget_type === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <div className="text-sm font-semibold text-gray-800">{opt.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+                </button>
+              ))}
             </div>
           </div>
 
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.negotiate_on_cart}
-              onChange={e => update({ negotiate_on_cart: e.target.checked })}
-              className="w-4 h-4 rounded text-indigo-600" />
-            <div>
-              <div className="text-sm font-medium text-gray-700">Cart negotiation</div>
-              <div className="text-xs text-gray-400">Let customers negotiate their entire cart as a bundle — works with abandoned cart emails via <code className="bg-gray-100 px-1 rounded">/cart?negotiate=1</code></div>
+          {/* When the chat opens */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">When the chat opens</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 0, label: 'Right away', sub: 'Chat opens the moment the widget appears' },
+                { value: -1, label: 'After a delay', sub: 'Widget appears first, then typing animation, then chat' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => update({ chat_popup_delay: opt.value === -1 ? (settings.chat_popup_delay > 0 ? settings.chat_popup_delay : 10) : 0 })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${(opt.value === 0 ? settings.chat_popup_delay === 0 : settings.chat_popup_delay > 0) ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <div className="text-sm font-semibold text-gray-800">{opt.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+                </button>
+              ))}
             </div>
-          </label>
+            {settings.chat_popup_delay > 0 && (
+              <div className="mt-3 pl-1">
+                <label className="text-xs text-gray-500">Open after <strong>{settings.chat_popup_delay}s</strong></label>
+                <input type="range" min={3} max={60} step={1}
+                  value={settings.chat_popup_delay}
+                  onChange={e => update({ chat_popup_delay: Number(e.target.value) })}
+                  className="w-full max-w-xs mt-1" />
+              </div>
+            )}
+          </div>
 
-          {settings.negotiate_on_cart && (
-            <div className="pl-7">
-              <label className="block text-sm text-gray-600 mb-1">
-                Cart max discount % <span className="text-gray-400 font-normal">(keeps cart-level deals tighter than per-product)</span>
-              </label>
-              <div className="flex items-center gap-3 max-w-xs">
+          {/* When to appear */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">When to appear</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 'always',   label: 'Right away',           sub: 'Shows as soon as the page loads' },
+                { value: 'on_scroll', label: 'When they\'ve read enough', sub: 'Appears after scrolling 60% down' },
+                { value: 'on_exit',  label: 'When they\'re leaving', sub: 'Last chance before they close the tab' },
+                { value: 'on_click', label: 'Only when tapped',     sub: 'Visible but opens only on click' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => update({ show_trigger: opt.value })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${settings.show_trigger === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <div className="text-sm font-semibold text-gray-800">{opt.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* On cart */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">On the cart page</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 'always',   label: 'Always show',         sub: 'Widget appears whenever they visit cart' },
+                { value: 'on_exit',  label: 'Only when leaving',   sub: 'Last chance to save the sale' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => update({ cart_trigger: opt.value })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${settings.cart_trigger === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <div className="text-sm font-semibold text-gray-800">{opt.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+            {settings.cart_trigger === 'always' && (
+              <div className="mt-3 pl-1">
+                <label className="text-xs text-gray-500">Cart max discount: <strong>{settings.cart_max_discount_pct || 10}%</strong></label>
                 <input type="range" min={1} max={30} step={1}
                   value={settings.cart_max_discount_pct || 10}
                   onChange={e => update({ cart_max_discount_pct: Number(e.target.value) })}
-                  className="flex-1" />
-                <span className="text-sm font-semibold w-10 text-right">{settings.cart_max_discount_pct || 10}%</span>
+                  className="w-full max-w-xs mt-1" />
               </div>
-              <p className="text-xs text-gray-400 mt-1">Default: 10% — lower than product discount since cart totals are larger</p>
-            </div>
-          )}
+            )}
+          </div>
 
+        </div>
+      </Section>
+
+      {/* Recovery */}
+      <Section title="Abandoned deal recovery">
+        <div className="space-y-4">
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.recovery_enabled}
               onChange={e => update({ recovery_enabled: e.target.checked })}
               className="w-4 h-4 rounded text-indigo-600" />
             <div>
-              <div className="text-sm font-medium text-gray-700">Abandoned deal recovery</div>
-              <div className="text-xs text-gray-400">Send follow-up messages when deals are abandoned</div>
+              <div className="text-sm font-medium text-gray-700">Send follow-ups when a deal is left at checkout</div>
+              <div className="text-xs text-gray-400">Customer got a price but didn't complete the order</div>
             </div>
           </label>
-
           {settings.recovery_enabled && (
             <div className="pl-7">
-              <label className="block text-sm text-gray-600 mb-2">Recovery channel</label>
+              <label className="block text-sm text-gray-600 mb-2">Send via</label>
               <div className="flex gap-3">
                 {['whatsapp', 'email', 'both'].map(ch => (
                   <label key={ch} className="flex items-center gap-2 cursor-pointer">

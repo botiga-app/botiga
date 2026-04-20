@@ -44,6 +44,10 @@ router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => 
     proactive_delay: settings?.proactive_delay ?? 7,
     proactive_message: settings?.proactive_message || null,
     auto_open_delay: settings?.auto_open_delay ?? 0,
+    widget_type: settings?.widget_type || 'bubble',
+    show_trigger: settings?.show_trigger || 'always',
+    chat_popup_delay: settings?.chat_popup_delay ?? 0,
+    cart_trigger: settings?.cart_trigger || 'always',
     plan: merchant.plan
   });
 });

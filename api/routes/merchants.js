@@ -49,7 +49,8 @@ router.put('/merchants/:id/settings', async (req, res) => {
     'max_discount_pct', 'cart_max_discount_pct', 'floor_price_pct', 'floor_price_fixed', 'broker_fee_pct',
     'negotiate_on_product', 'negotiate_on_cart', 'recovery_enabled', 'recovery_channel',
     'dwell_time_seconds', 'brand_value_statements',
-    'proactive_delay', 'proactive_message', 'auto_open_delay'
+    'proactive_delay', 'proactive_message', 'auto_open_delay',
+    'widget_type', 'show_trigger', 'chat_popup_delay', 'cart_trigger'
   ];
 
   const updates = {};
