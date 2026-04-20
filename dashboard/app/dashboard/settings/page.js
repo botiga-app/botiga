@@ -111,14 +111,36 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 max-w-3xl space-y-6">
+      {/* Floating save pill */}
+      <div style={{
+        position: 'fixed', top: 24, left: '50%',
+        transform: `translateX(-50%) translateY(${saveState === 'idle' ? '-80px' : '0'})`,
+        opacity: saveState === 'idle' ? 0 : 1,
+        transition: 'transform .35s cubic-bezier(.34,1.56,.64,1), opacity .3s',
+        background: saveState === 'saved' ? '#16a34a' : '#111',
+        color: 'white', padding: '8px 18px', borderRadius: 30,
+        fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8,
+        boxShadow: '0 4px 20px rgba(0,0,0,.25)', zIndex: 9999, whiteSpace: 'nowrap',
+        pointerEvents: 'none'
+      }}>
+        {saveState === 'saving' ? (
+          <><span style={{
+            width: 12, height: 12, border: '2px solid rgba(255,255,255,.4)',
+            borderTopColor: 'white', borderRadius: '50%',
+            display: 'inline-block',
+            animation: 'spin .7s linear infinite'
+          }} />Saving…</>
+        ) : (
+          <>✓ Saved</>
+        )}
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Bot Settings</h2>
           <p className="text-sm text-gray-500">Configure your negotiation bot</p>
         </div>
-        <span className="text-sm text-gray-400 transition-all">
-          {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? '✓ Saved' : ''}
-        </span>
       </div>
 
       {/* Bot Personality */}
