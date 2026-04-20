@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '../../../lib/supabase';
 import TonePicker from '../../../components/TonePicker';
 import ButtonCustomizer from '../../../components/ButtonCustomizer';
@@ -19,13 +19,13 @@ function Section({ title, children }) {
 export default function SettingsPage() {
   const [settings, setSettings] = useState(null);
   const [merchantId, setMerchantId] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [aboutText, setAboutText] = useState('');
   const [generating, setGenerating] = useState(false);
   const supabase = createClient();
+  const debounceRef = useRef(null);
+  const isFirstLoad = useRef(true);
 
-  // Example prices for fee calc
   const [exampleList, setExampleList] = useState(89);
   const [exampleFloor, setExampleFloor] = useState(72);
 
@@ -66,6 +66,23 @@ export default function SettingsPage() {
     load();
   }, []);
 
+  // Auto-save: debounce 900ms after any settings change
+  useEffect(() => {
+    if (!settings || !merchantId) return;
+    if (isFirstLoad.current) { isFirstLoad.current = false; return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setSaveState('saving');
+    debounceRef.current = setTimeout(async () => {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      setSaveState(res.ok ? 'saved' : 'idle');
+      if (res.ok) setTimeout(() => setSaveState('idle'), 2000);
+    }, 900);
+  }, [settings]);
+
   async function generateStatements() {
     if (!aboutText.trim()) return;
     setGenerating(true);
@@ -84,21 +101,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function save() {
-    if (!merchantId || !settings) return;
-    setSaving(true);
-    const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings)
-    });
-    setSaving(false);
-    if (res.ok) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    }
-  }
-
   function update(patch) {
     setSettings(s => ({ ...s, ...patch }));
   }
@@ -114,10 +116,9 @@ export default function SettingsPage() {
           <h2 className="text-xl font-bold text-gray-900">Bot Settings</h2>
           <p className="text-sm text-gray-500">Configure your negotiation bot</p>
         </div>
-        <button onClick={save} disabled={saving}
-          className="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60">
-          {saving ? 'Saving...' : saved ? '✓ Saved' : 'Save changes'}
-        </button>
+        <span className="text-sm text-gray-400 transition-all">
+          {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? '✓ Saved' : ''}
+        </span>
       </div>
 
       {/* Bot Personality */}
@@ -305,6 +306,32 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Opening message */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">What to say when the widget opens</label>
+            <input
+              type="text"
+              value={settings.proactive_message || ''}
+              onChange={e => update({ proactive_message: e.target.value })}
+              placeholder="Still eyeing this? I might be able to work on the price…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">Shown as the first message when the chat opens. Leave blank for the default greeting.</p>
+          </div>
+
+          {/* CTA label */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Button label</label>
+            <input
+              type="text"
+              value={settings.button_label || ''}
+              onChange={e => update({ button_label: e.target.value })}
+              placeholder="Make an offer"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">The text on the negotiate button customers see on product pages.</p>
           </div>
 
           {/* On cart */}
