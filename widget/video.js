@@ -139,23 +139,40 @@
       '._btgv_sv_tl{position:absolute;left:0;top:0;width:30%;height:60%;z-index:5}',
       '._btgv_sv_tr{position:absolute;right:0;top:0;width:70%;height:60%;z-index:5}',
 
-      // Watch & Shop — horizontal carousel, 4 visible on desktop, 2 on mobile
+      // Watch & Shop carousel wrapper
       '#btgv-grid{width:100%;max-width:1200px;margin:0 auto;padding-top:8px}',
       '._btgv_gh{font-size:20px;font-weight:800;color:#111;text-align:center;padding:20px 16px 12px;letter-spacing:.5px;text-transform:uppercase}',
-      '#_btgv_gi_wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}',
+      // Outer: relative for arrow positioning
+      '._btgv_gi_outer{position:relative;padding:0 44px}',
+      '@media(max-width:480px){._btgv_gi_outer{padding:0 36px}}',
+      // Scroll container — horizontal only, no scrollbar
+      '#_btgv_gi_wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scroll-behavior:smooth}',
       '#_btgv_gi_wrap::-webkit-scrollbar{display:none}',
-      '#_btgv_gi{display:flex;gap:3px;padding:0 0 4px}',
-      // 2 per view on mobile, 3 on tablet, 4 on desktop — slight peek on right edge
-      '._btgv_gc{flex-shrink:0;width:calc(47% - 1px);scroll-snap-align:start;position:relative;aspect-ratio:9/16;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:10px}',
-      '@media(min-width:600px){._btgv_gc{width:calc(32% - 1px)}}',
-      '@media(min-width:900px){._btgv_gc{width:calc(24% - 2px)}}',
+      '#_btgv_gi{display:flex;gap:8px}',
+      // Cell: 4 per view desktop, 3 tablet, 2 mobile — with slight right-edge peek
+      '._btgv_gc{flex-shrink:0;width:calc(25% - 6px);scroll-snap-align:start;position:relative;aspect-ratio:9/16;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:12px}',
+      '@media(max-width:900px){._btgv_gc{width:calc(33.333% - 6px)}}',
+      '@media(max-width:540px){._btgv_gc{width:calc(50% - 4px)}}',
       '._btgv_gc video{width:100%;height:100%;object-fit:cover;display:block}',
-      '._btgv_gc_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.65) 0%,transparent 55%);pointer-events:none}',
-      '._btgv_gc_tags{position:absolute;bottom:8px;left:8px;right:8px;pointer-events:none}',
-      '._btgv_gc_tag{font-size:10px;font-weight:500;color:#fff;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);border-radius:20px;padding:2px 8px;display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}',
-      // Play icon shown on hover
-      '._btgv_gc_play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s}',
-      '._btgv_gc:hover ._btgv_gc_play{opacity:1}',
+      '._btgv_gc_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,transparent 50%);pointer-events:none}',
+      // Arrow buttons
+      '._btgv_arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,.92);color:#111;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.18);transition:opacity .2s,transform .15s;-webkit-tap-highlight-color:transparent}',
+      '._btgv_arrow:hover{background:#fff;transform:translateY(-50%) scale(1.08)}',
+      '._btgv_arrow_l{left:4px}',
+      '._btgv_arrow_r{right:4px}',
+      '._btgv_arrow.hidden{opacity:0;pointer-events:none}',
+      // Product overlay on carousel cell — bottom portion only
+      '._btgv_gc_prod{position:absolute;bottom:0;left:0;right:0;padding:6px 8px 9px;z-index:3;pointer-events:none}',
+      '._btgv_gc_prod_nm{color:#fff;font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;text-shadow:0 1px 3px rgba(0,0,0,.8)}',
+      '._btgv_gc_prod_pr{color:rgba(255,255,255,.85);font-size:10px;font-weight:500;margin-bottom:6px;text-shadow:0 1px 3px rgba(0,0,0,.8)}',
+      '._btgv_gc_prod_btns{display:flex;gap:4px;pointer-events:all}',
+      '._btgv_gc_prod_btn{flex:1;border:none;border-radius:8px;padding:5px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;-webkit-tap-highlight-color:transparent;transition:opacity .15s}',
+      '._btgv_gc_prod_btn:active{opacity:.7}',
+      '._btgv_gc_prod_btn span:first-child{font-size:13px;line-height:1}',
+      '._btgv_gc_prod_btn span:last-child{font-size:7px;font-weight:700;line-height:1;white-space:nowrap}',
+      '._btgv_gc_pb_cart{background:rgba(255,255,255,.18)}',
+      '._btgv_gc_pb_buy{background:rgba(99,102,241,.8)}',
+      '._btgv_gc_pb_neg{background:rgba(236,72,153,.8)}',
 
       // TikTok feed overlay
       '#_btgv_feed{position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s}',
@@ -173,7 +190,7 @@
       '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s}',
       '._btgv_rail button:active{transform:scale(.9)}',
 
-      // Product shelf — landscape cards (image left, content right)
+      // Product shelf in feed/story — landscape cards
       '._btgv_pshelf{position:absolute;bottom:0;left:0;right:0;z-index:8;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.25) 80%,transparent 100%);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px)}',
       '@media(min-width:640px){._btgv_pshelf{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_prow{display:flex;gap:10px;padding:14px 12px 0;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}',
@@ -196,7 +213,7 @@
     document.head.appendChild(s);
   }
 
-  // ─── Product shelf ───────────────────────────────────────────────────────────
+  // ─── Product shelf for feed/story overlay ────────────────────────────────────
   function buildProductShelf(tags, videoId) {
     var shelf = document.createElement('div');
     shelf.className = '_btgv_pshelf';
@@ -255,14 +272,12 @@
           }
         });
       }));
-
       actions.appendChild(iconBtn('_btgv_ib_buy', '⚡', 'Buy', function () {
         track(videoId, 'add_to_cart', tag.shopify_product_id);
         addToCart(tag.shopify_variant_id, function (ok) {
           if (ok) { fireConfetti(); window.location.href = '/checkout'; }
         });
       }));
-
       actions.appendChild(iconBtn('_btgv_ib_neg', '🤝', 'Offer', function (btn) {
         track(videoId, 'negotiate', tag.shopify_product_id);
         fireConfetti();
@@ -437,7 +452,7 @@
     }
   }
 
-  // ─── Watch & Shop horizontal carousel ───────────────────────────────────────
+  // ─── Watch & Shop carousel ───────────────────────────────────────────────────
   function buildGrid(container, vids) {
     if (!vids.length) return;
 
@@ -448,62 +463,155 @@
       container.appendChild(gh);
     }
 
+    // Outer wrapper — holds arrows + scroll area
+    var outer = document.createElement('div');
+    outer.className = '_btgv_gi_outer';
+
+    // ← Prev arrow
+    var prevBtn = document.createElement('button');
+    prevBtn.className = '_btgv_arrow _btgv_arrow_l hidden';
+    prevBtn.innerHTML = '&#8249;';
+    prevBtn.setAttribute('aria-label', 'Previous');
+
+    // → Next arrow
+    var nextBtn = document.createElement('button');
+    nextBtn.className = '_btgv_arrow _btgv_arrow_r';
+    nextBtn.innerHTML = '&#8250;';
+    nextBtn.setAttribute('aria-label', 'Next');
+
+    // Horizontal scroll container
     var wrap = document.createElement('div');
     wrap.id = '_btgv_gi_wrap';
     var grid = document.createElement('div');
     grid.id = '_btgv_gi';
 
+    // Page by the visible width on arrow click
+    prevBtn.onclick = function () {
+      wrap.scrollBy({ left: -wrap.clientWidth, behavior: 'smooth' });
+    };
+    nextBtn.onclick = function () {
+      wrap.scrollBy({ left: wrap.clientWidth, behavior: 'smooth' });
+    };
+
+    // Show/hide arrows based on scroll position
+    function updateArrows() {
+      prevBtn.classList.toggle('hidden', wrap.scrollLeft <= 2);
+      nextBtn.classList.toggle('hidden', wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2);
+    }
+    wrap.addEventListener('scroll', updateArrows, { passive: true });
+
+    // Build cells
     vids.forEach(function (vid, i) {
       var cell = document.createElement('div');
       cell.className = '_btgv_gc';
 
       var video = document.createElement('video');
-      // Lazy src: store in data-src, only load when cell enters viewport
-      video.dataset.src = vid.s3_url;
+      video.dataset.src = vid.s3_url; // lazy — src set when visible
       video.muted = true; video.loop = true;
       video.playsInline = true; video.preload = 'none';
 
       var ov = document.createElement('div'); ov.className = '_btgv_gc_ov';
+      cell.appendChild(video); cell.appendChild(ov);
 
-      // Play icon overlay
-      var pi = document.createElement('div'); pi.className = '_btgv_gc_play';
-      pi.innerHTML = '<svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="rgba(0,0,0,.45)"/><polygon points="14,11 28,18 14,25" fill="white"/></svg>';
-
-      cell.appendChild(video); cell.appendChild(ov); cell.appendChild(pi);
-
+      // Product overlay directly on the card (first product + action buttons)
       var tags = vid.video_product_tags || [];
-      if (tags.length) {
-        var tw = document.createElement('div'); tw.className = '_btgv_gc_tags';
-        tags.slice(0, 2).forEach(function (t) {
-          var tg = document.createElement('div'); tg.className = '_btgv_gc_tag';
-          tg.textContent = (t.price ? '$' + parseFloat(t.price).toFixed(0) + ' · ' : '') + t.product_name;
-          tw.appendChild(tg);
-        });
-        cell.appendChild(tw);
+      if (tags.length > 0) {
+        var tag = tags[0];
+        var price = parseFloat(tag.price || 0);
+
+        var prod = document.createElement('div');
+        prod.className = '_btgv_gc_prod';
+
+        var pnm = document.createElement('div');
+        pnm.className = '_btgv_gc_prod_nm';
+        pnm.textContent = tag.product_name + (tags.length > 1 ? '  +' + (tags.length - 1) + ' more' : '');
+        prod.appendChild(pnm);
+
+        if (price > 0) {
+          var ppr = document.createElement('div');
+          ppr.className = '_btgv_gc_prod_pr';
+          ppr.textContent = '$' + price.toFixed(2);
+          prod.appendChild(ppr);
+        }
+
+        var pbtns = document.createElement('div');
+        pbtns.className = '_btgv_gc_prod_btns';
+
+        function cellBtn(cls, icon, lbl, fn) {
+          var btn = document.createElement('button');
+          btn.className = '_btgv_gc_prod_btn ' + cls;
+          btn.innerHTML = '<span>' + icon + '</span><span>' + lbl + '</span>';
+          btn.onclick = function (e) { e.stopPropagation(); fn(btn); };
+          return btn;
+        }
+
+        pbtns.appendChild(cellBtn('_btgv_gc_pb_cart', '🛒', 'Cart', function (btn) {
+          track(vid.id, 'add_to_cart', tag.shopify_product_id);
+          addToCart(tag.shopify_variant_id, function (ok) {
+            fireConfetti();
+            if (ok) {
+              btn.innerHTML = '<span>✓</span><span>Added</span>';
+              setTimeout(function () { btn.innerHTML = '<span>🛒</span><span>Cart</span>'; }, 2500);
+            }
+          });
+        }));
+
+        pbtns.appendChild(cellBtn('_btgv_gc_pb_buy', '⚡', 'Buy', function () {
+          track(vid.id, 'add_to_cart', tag.shopify_product_id);
+          addToCart(tag.shopify_variant_id, function (ok) {
+            if (ok) { fireConfetti(); window.location.href = '/checkout'; }
+          });
+        }));
+
+        pbtns.appendChild(cellBtn('_btgv_gc_pb_neg', '🤝', 'Offer', function (btn) {
+          track(vid.id, 'negotiate', tag.shopify_product_id);
+          fireConfetti();
+          if (window._btg && window._btg.openNegotiate) {
+            window._btg.openNegotiate(tag.shopify_product_id);
+          } else {
+            addToCart(tag.shopify_variant_id, function () {});
+            btn.innerHTML = '<span>✓</span><span>Sent</span>';
+            setTimeout(function () { btn.innerHTML = '<span>🤝</span><span>Offer</span>'; }, 2500);
+          }
+        }));
+
+        prod.appendChild(pbtns);
+        cell.appendChild(prod);
       }
 
+      // Tap video area (not buttons) → open TikTok feed
       cell.onclick = function () { openFeed(i, vids); };
       grid.appendChild(cell);
     });
 
     wrap.appendChild(grid);
-    container.appendChild(wrap);
+    outer.appendChild(prevBtn);
+    outer.appendChild(wrap);
+    outer.appendChild(nextBtn);
+    container.appendChild(outer);
 
-    // Lazy-load + autoplay only for visible cells
+    // Lazy load + autoplay — IO root is the horizontal scroll wrapper
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         var v = e.target.querySelector('video');
         if (!v) return;
         if (e.isIntersecting) {
-          if (v.dataset.src && !v.src) { v.src = v.dataset.src; } // lazy load on first view
+          if (v.dataset.src && !v.src) { v.src = v.dataset.src; }
           v.play().catch(function () {});
         } else {
           v.pause();
         }
       });
-    }, { rootMargin: '0px 100px 0px 100px', threshold: 0.1 });
+    }, {
+      root: wrap,           // observe relative to horizontal scroll container
+      rootMargin: '0px 40px 0px 40px', // pre-load 1 cell ahead
+      threshold: 0.1
+    });
 
     grid.querySelectorAll('._btgv_gc').forEach(function (c) { io.observe(c); });
+
+    // Check if next arrow should be hidden (≤4 videos that all fit)
+    requestAnimationFrame(updateArrows);
   }
 
   // ─── TikTok feed ────────────────────────────────────────────────────────────
@@ -537,7 +645,6 @@
       slide.className = '_btgv_slide';
 
       var video = document.createElement('video');
-      // Lazy src for feed slides too
       video.dataset.src = vid.s3_url;
       video.muted = muted; video.loop = false;
       video.playsInline = true; video.preload = 'none';
@@ -579,7 +686,7 @@
       scroll.appendChild(slide);
     });
 
-    // Lazy load + play only the visible slide
+    // Lazy load per slide as it scrolls into view
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var v = entry.target.querySelector('video');
