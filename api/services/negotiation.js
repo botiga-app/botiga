@@ -159,7 +159,7 @@ function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
 async function processNegotiation({
   merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
   sessionId, negotiationId, productName, productUrl, productImage, variantId,
-  listPrice, customerMessage, isOpening, isCartBundle
+  listPrice, customerMessage, isOpening, isCartBundle, customerEmail
 }) {
   let negotiation;
 
@@ -212,7 +212,8 @@ async function processNegotiation({
       tone_used: merchantSettings.tone,
       messages: [],
       customer_insights: [],
-      status: 'active'
+      status: 'active',
+      ...(customerEmail ? { customer_email: customerEmail.toLowerCase().trim() } : {})
     }).select().single();
 
     if (error) throw new Error('Failed to create negotiation: ' + error.message);
@@ -304,7 +305,7 @@ async function processNegotiation({
       updated_at: new Date().toISOString()
     }).eq('id', negotiation.id);
 
-    return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null, needsLeadCapture: !hasContactAlready };
+    return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null, needsLeadCapture: !hasContactAlready, offeredPrice: nextPrice };
   }
 
   // ── STEP 1: ACCEPTANCE CHECK (before anything else, no LLM) ────────────────

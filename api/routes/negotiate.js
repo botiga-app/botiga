@@ -95,6 +95,7 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
     customer_message,
     opening,
     is_cart_bundle,
+    customer_email,
   } = req.body;
 
   if (!session_id || !list_price) {
@@ -163,7 +164,8 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       listPrice: list_price,
       customerMessage: customer_message || null,
       isOpening: !!opening,
-      isCartBundle: !!is_cart_bundle
+      isCartBundle: !!is_cart_bundle,
+      customerEmail: customer_email || null,
     });
 
     res.json({
@@ -177,12 +179,25 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       broker_fee: result.brokerFee,
       expires_at: result.expiresAt,
       needs_lead_capture: result.needsLeadCapture || false,
+      offered_price: result.offeredPrice || null,
       debug_email_sent_to: result.emailSentTo || null
     });
   } catch (err) {
     console.error('[negotiate] Error:', err.message, err.stack);
     res.status(500).json({ error: 'Negotiation service temporarily unavailable', detail: err.message });
   }
+});
+
+// Save customer contact captured via the price-gate UI (no auth needed — neg ID is the token)
+router.put('/negotiate/:id/contact', widgetCors, async (req, res) => {
+  const { email, phone } = req.body;
+  if (!email && !phone) return res.status(400).json({ error: 'email or phone required' });
+  const updates = {};
+  if (email) updates.customer_email = email.toLowerCase().trim();
+  if (phone) updates.customer_whatsapp = phone.trim();
+  const { error } = await supabase.from('negotiations').update(updates).eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // Debug endpoint — walks through opening flow step by step, returns exact failure point
