@@ -70,6 +70,15 @@ const ITEMS = [
   { product: 'Shopify App', feature: 'Shopify Billing API integration', status: 'Later', size: 'M', impact: 'Monetization', origin: 'Suggested', notes: 'In-app subscription via Shopify Payments' },
   { product: 'Shopify App', feature: 'GDPR webhooks (customer/shop redact)', status: 'Later', size: 'M', impact: 'Compliance', origin: 'Suggested', notes: 'Required for App Store approval' },
   { product: 'Shopify App', feature: 'App Store submission & review', status: 'Later', size: 'L', impact: 'Distribution', origin: 'Suggested', notes: 'Design review, listing copy, screenshots' },
+  // Admin Dashboard
+  { product: 'Admin Dashboard', feature: 'Live negotiation feed — all active sessions, auto-refresh 5s', status: 'Shipped', size: 'M', impact: 'Operations', origin: 'Discussed', notes: 'Real-time view of every active negotiation across all merchants' },
+  { product: 'Admin Dashboard', feature: 'Conversation replay per negotiation', status: 'Shipped', size: 'S', impact: 'Operations', origin: 'Discussed', notes: 'Expand any row to see full chat transcript' },
+  { product: 'Admin Dashboard', feature: 'Floor risk flag (⚠ after 5+ turns)', status: 'Shipped', size: 'S', impact: 'Operations', origin: 'Suggested', notes: 'Highlights negotiations approaching floor price' },
+  { product: 'Admin Dashboard', feature: 'All merchants — revenue / win rate / LLM cost / churn risk', status: 'Shipped', size: 'M', impact: 'Operations', origin: 'Discussed', notes: 'Full merchant health overview in one table' },
+  { product: 'Admin Dashboard', feature: 'Merchant detail expand — tone / discount / floor / broker fee', status: 'Shipped', size: 'S', impact: 'Operations', origin: 'Discussed', notes: 'Click any merchant row to see their settings' },
+  { product: 'Admin Dashboard', feature: 'Alerts — floor breach / high LLM cost / churn risk / idle', status: 'Shipped', size: 'M', impact: 'Operations', origin: 'Discussed', notes: 'Grouped by severity: critical / warning / info' },
+  { product: 'Admin Dashboard', feature: 'Alert resolve action', status: 'Shipped', size: 'S', impact: 'Operations', origin: 'Discussed', notes: 'One-click resolve; dismissed from list' },
+  { product: 'Admin Dashboard', feature: 'Roadmap kanban board', status: 'Shipped', size: 'M', impact: 'Internal', origin: 'Discussed', notes: 'Admin-only; Shipped/Next/Backlog/Later/Icebox columns' },
   // Infrastructure
   { product: 'Infrastructure', feature: 'Vercel deployment (API + dashboard)', status: 'Shipped', size: 'S', impact: 'Core', origin: 'Discussed', notes: 'api: botiga-api-two.vercel.app' },
   { product: 'Infrastructure', feature: 'Supabase (Postgres + auth)', status: 'Shipped', size: 'M', impact: 'Core', origin: 'Discussed', notes: 'Multi-tenant; per-merchant rows' },
@@ -79,7 +88,7 @@ const ITEMS = [
 ];
 
 const STATUSES = ['Shipped', 'Next', 'Backlog', 'Later', 'Icebox'];
-const PRODUCTS = ['All', 'Shopify Widget', 'Merchant Dashboard', 'Negotiation API', 'Email & Notifications', 'Shopify App', 'Infrastructure'];
+const PRODUCTS = ['All', 'Shopify Widget', 'Merchant Dashboard', 'Admin Dashboard', 'Negotiation API', 'Email & Notifications', 'Shopify App', 'Infrastructure'];
 const ORIGINS = ['All', 'Discussed', 'Suggested'];
 
 const STATUS_STYLE = {
@@ -96,6 +105,7 @@ const PRODUCT_COLORS = {
   'Negotiation API':     'bg-orange-100 text-orange-700',
   'Email & Notifications': 'bg-pink-100 text-pink-700',
   'Shopify App':         'bg-green-100 text-green-700',
+  'Admin Dashboard':     'bg-red-100 text-red-700',
   'Infrastructure':      'bg-gray-100 text-gray-600',
 };
 

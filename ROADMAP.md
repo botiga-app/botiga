@@ -104,6 +104,21 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 ---
 
+## Admin Dashboard (/admin/*)
+
+| Feature | Status | Size | Impact | Origin |
+|---|---|---|---|---|
+| Live negotiation feed — all active sessions, auto-refresh 5s | Shipped | M | Operations | Discussed |
+| Conversation replay per negotiation in live feed | Shipped | S | Operations | Discussed |
+| Floor risk flag (⚠ after 5+ turns) | Shipped | S | Operations | Suggested |
+| All merchants view — revenue, win rate, LLM cost, churn risk | Shipped | M | Operations | Discussed |
+| Merchant detail expand — tone, discount, floor, broker fee | Shipped | S | Operations | Discussed |
+| Alerts — floor breach, high LLM cost, churn risk, idle merchants | Shipped | M | Operations | Discussed |
+| Alert resolve action | Shipped | S | Operations | Discussed |
+| Roadmap kanban board | Shipped | M | Internal | Discussed |
+
+---
+
 ## Infrastructure & Platform
 
 | Feature | Status | Size | Impact | Origin |

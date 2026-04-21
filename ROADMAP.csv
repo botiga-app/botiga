@@ -63,6 +63,14 @@ Shopify App,Shopify Billing API integration,Later,M,Monetization,Suggested by Cl
 Shopify App,GDPR webhooks (customer/shop redact),Later,M,Compliance,Suggested by Claude,Required for App Store approval
 Shopify App,Shopify Flow trigger on deal close,Backlog,M,Integrations,Suggested by Claude,Merchant can wire up their own automations
 Shopify App,App Store submission & review,Later,L,Distribution,Suggested by Claude,"Design review, listing copy, screenshots"
+Admin Dashboard,Live negotiation feed — all active sessions auto-refresh 5s,Shipped,M,Operations,Discussed,Real-time view of every active negotiation across all merchants
+Admin Dashboard,Conversation replay per negotiation in live feed,Shipped,S,Operations,Discussed,Expand any row to see full chat transcript
+Admin Dashboard,Floor risk flag (⚠ after 5+ turns),Shipped,S,Operations,Suggested,Highlights negotiations approaching floor price
+Admin Dashboard,All merchants view — revenue / win rate / LLM cost / churn risk,Shipped,M,Operations,Discussed,Full merchant health overview in one table
+Admin Dashboard,Merchant detail expand — tone / discount / floor / broker fee,Shipped,S,Operations,Discussed,Click any merchant row to see their settings
+Admin Dashboard,Alerts — floor breach / high LLM cost / churn risk / idle merchants,Shipped,M,Operations,Discussed,Grouped by severity: critical / warning / info
+Admin Dashboard,Alert resolve action,Shipped,S,Operations,Discussed,One-click resolve; dismissed from list
+Admin Dashboard,Roadmap kanban board,Shipped,M,Internal,Discussed,Shipped/Next/Backlog/Later/Icebox columns; admin-only
 Infrastructure,Vercel deployment (API + dashboard),Shipped,S,Core,Discussed,api: botiga-api-two.vercel.app
 Infrastructure,Supabase (Postgres + auth),Shipped,M,Core,Discussed,Multi-tenant; per-merchant rows
 Infrastructure,DB migrations (001–008),Shipped,S,Core,Discussed,User hit missing column errors — ran migrations manually in Supabase SQL editor
