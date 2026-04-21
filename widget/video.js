@@ -199,104 +199,203 @@
     });
     rail.appendChild(shareObj.btn);
 
-    // Negotiate (if product tagged)
-    var firstProduct = (video.video_product_tags || [])[0];
+    var products = video.video_product_tags || [];
+    var firstProduct = products[0] || null;
+    var activeProductIndex = 0;
+
+    // Negotiate rail button — updates when active product changes
+    var negRailObj = null;
     if (firstProduct) {
-      var negObj = makeRailBtn('✦', 'Negotiate', function (e) {
+      negRailObj = makeRailBtn('✦', 'Negotiate', function (e) {
         e.stopPropagation();
-        openNegSheet(slide, vid, video, firstProduct);
-        track(video.id, 'negotiate', firstProduct.shopify_product_id);
+        var p = products[activeProductIndex] || firstProduct;
+        openNegSheet(slide, vid, video, p);
+        track(video.id, 'negotiate', p.shopify_product_id);
       });
-      negObj.btn.style.background = 'linear-gradient(135deg,rgba(99,102,241,.7),rgba(139,92,246,.7))';
-      rail.appendChild(negObj.btn);
+      negRailObj.btn.style.background = 'linear-gradient(135deg,rgba(99,102,241,.7),rgba(139,92,246,.7))';
+      rail.appendChild(negRailObj.btn);
     }
 
     slide.appendChild(rail);
 
-    // Bottom bar: product + CTAs
+    // Bottom bar: swipeable product carousel + CTAs
     var bar = document.createElement('div');
     bar.className = '_btgv_bar';
 
-    // Product cards (show first tagged product prominently)
-    if (firstProduct) {
+    if (products.length > 0) {
+      // ── Product card (swipeable) ──
+      var productWrap = document.createElement('div');
+      productWrap.style.cssText = 'position:relative;margin-bottom:10px;touch-action:pan-y';
+
       var productEl = document.createElement('div');
       productEl.className = '_btgv_product';
+      productEl.style.cssText += ';cursor:' + (products.length > 1 ? 'grab' : 'default') + ';user-select:none';
+      productWrap.appendChild(productEl);
 
-      if (firstProduct.image_url) {
-        var img = document.createElement('img');
-        img.src = firstProduct.image_url;
-        img.alt = firstProduct.product_name;
-        productEl.appendChild(img);
+      // Dots (only if multiple products)
+      var dotsEl = null;
+      if (products.length > 1) {
+        dotsEl = document.createElement('div');
+        dotsEl.style.cssText = 'display:flex;justify-content:center;gap:5px;margin-top:6px';
+        products.forEach(function (_, i) {
+          var dot = document.createElement('div');
+          dot.style.cssText = 'width:5px;height:5px;border-radius:50%;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.4)') + ';transition:background .2s';
+          dotsEl.appendChild(dot);
+        });
+        productWrap.appendChild(dotsEl);
       }
 
-      var info = document.createElement('div');
-      info.className = '_btgv_product_info';
+      bar.appendChild(productWrap);
 
-      var nameEl = document.createElement('div');
-      nameEl.className = '_btgv_product_name';
-      nameEl.textContent = firstProduct.product_name;
-      info.appendChild(nameEl);
-
-      var priceEl = document.createElement('div');
-      priceEl.className = '_btgv_product_price';
-      if (firstProduct.price) {
-        priceEl.textContent = '$' + parseFloat(firstProduct.price).toFixed(2);
-        if (firstProduct.compare_at_price && firstProduct.compare_at_price > firstProduct.price) {
-          var wasEl = document.createElement('span');
-          wasEl.className = '_btgv_product_was';
-          wasEl.textContent = '$' + parseFloat(firstProduct.compare_at_price).toFixed(2);
-          priceEl.appendChild(wasEl);
-          var pct = Math.round((1 - firstProduct.price / firstProduct.compare_at_price) * 100);
-          var discEl = document.createElement('span');
-          discEl.className = '_btgv_discount';
-          discEl.textContent = pct + '% off';
-          priceEl.appendChild(discEl);
-        }
-      }
-      info.appendChild(priceEl);
-      productEl.appendChild(info);
-      bar.appendChild(productEl);
-
-      // CTAs
+      // ── CTAs ──
       var ctas = document.createElement('div');
       ctas.className = '_btgv_ctas';
 
       var cartBtn = document.createElement('button');
       cartBtn.className = '_btgv_btn _btgv_btn_cart';
       cartBtn.textContent = 'Add to Cart';
-      cartBtn.onclick = function (e) {
-        e.stopPropagation();
-        addToCart(firstProduct);
-        track(video.id, 'add_to_cart', firstProduct.shopify_product_id);
-      };
 
       var buyBtn = document.createElement('button');
       buyBtn.className = '_btgv_btn _btgv_btn_buy';
       buyBtn.textContent = 'Buy Now';
-      buyBtn.onclick = function (e) {
-        e.stopPropagation();
-        buyNow(firstProduct);
-        track(video.id, 'buy_now', firstProduct.shopify_product_id);
-      };
 
       var negBtn = document.createElement('button');
       negBtn.className = '_btgv_btn _btgv_btn_neg';
       negBtn.textContent = '✦ Negotiate';
-      negBtn.onclick = function (e) {
-        e.stopPropagation();
-        openNegSheet(slide, vid, video, firstProduct);
-        track(video.id, 'negotiate', firstProduct.shopify_product_id);
-      };
 
       ctas.appendChild(cartBtn);
       ctas.appendChild(buyBtn);
       ctas.appendChild(negBtn);
       bar.appendChild(ctas);
+
+      // ── Render active product into card ──
+      function renderProduct(idx) {
+        activeProductIndex = idx;
+        var p = products[idx];
+
+        // Clear card
+        while (productEl.firstChild) productEl.removeChild(productEl.firstChild);
+
+        if (p.image_url) {
+          var img = document.createElement('img');
+          img.src = p.image_url;
+          img.alt = p.product_name;
+          productEl.appendChild(img);
+        }
+
+        var info = document.createElement('div');
+        info.className = '_btgv_product_info';
+
+        var nameEl = document.createElement('div');
+        nameEl.className = '_btgv_product_name';
+        nameEl.textContent = p.product_name;
+        info.appendChild(nameEl);
+
+        var priceEl = document.createElement('div');
+        priceEl.className = '_btgv_product_price';
+        if (p.price) {
+          priceEl.textContent = '$' + parseFloat(p.price).toFixed(2);
+          if (p.compare_at_price && parseFloat(p.compare_at_price) > parseFloat(p.price)) {
+            var wasEl = document.createElement('span');
+            wasEl.className = '_btgv_product_was';
+            wasEl.textContent = '$' + parseFloat(p.compare_at_price).toFixed(2);
+            priceEl.appendChild(wasEl);
+            var pct = Math.round((1 - p.price / p.compare_at_price) * 100);
+            var discEl = document.createElement('span');
+            discEl.className = '_btgv_discount';
+            discEl.textContent = pct + '% off';
+            priceEl.appendChild(discEl);
+          }
+        }
+        info.appendChild(priceEl);
+
+        // Counter badge if multiple products
+        if (products.length > 1) {
+          var badge = document.createElement('div');
+          badge.style.cssText = 'font-size:10px;color:rgba(255,255,255,.7);margin-top:1px';
+          badge.textContent = (idx + 1) + ' / ' + products.length;
+          info.appendChild(badge);
+        }
+
+        productEl.appendChild(info);
+
+        // Arrow hint (right side)
+        if (products.length > 1) {
+          var arrow = document.createElement('div');
+          arrow.style.cssText = 'font-size:14px;color:rgba(255,255,255,.6);flex-shrink:0;padding-left:4px';
+          arrow.textContent = idx < products.length - 1 ? '›' : '‹';
+          productEl.appendChild(arrow);
+        }
+
+        // Update dots
+        if (dotsEl) {
+          Array.from(dotsEl.children).forEach(function (dot, i) {
+            dot.style.background = i === idx ? '#fff' : 'rgba(255,255,255,.4)';
+          });
+        }
+
+        // Update CTA buttons
+        cartBtn.onclick = function (e) {
+          e.stopPropagation();
+          addToCart(p);
+          track(video.id, 'add_to_cart', p.shopify_product_id);
+        };
+        buyBtn.onclick = function (e) {
+          e.stopPropagation();
+          buyNow(p);
+          track(video.id, 'buy_now', p.shopify_product_id);
+        };
+        negBtn.onclick = function (e) {
+          e.stopPropagation();
+          openNegSheet(slide, vid, video, p);
+          track(video.id, 'negotiate', p.shopify_product_id);
+        };
+      }
+
+      renderProduct(0);
+
+      // ── Swipe gesture (touch + mouse) ──
+      if (products.length > 1) {
+        var swipeStartX = 0;
+        var swipeStartY = 0;
+        var swiping = false;
+
+        productEl.addEventListener('touchstart', function (e) {
+          swipeStartX = e.touches[0].clientX;
+          swipeStartY = e.touches[0].clientY;
+          swiping = true;
+        }, { passive: true });
+
+        productEl.addEventListener('touchend', function (e) {
+          if (!swiping) return;
+          swiping = false;
+          var dx = e.changedTouches[0].clientX - swipeStartX;
+          var dy = e.changedTouches[0].clientY - swipeStartY;
+          if (Math.abs(dx) < 30 || Math.abs(dy) > Math.abs(dx)) return; // not horizontal
+          if (dx < 0 && activeProductIndex < products.length - 1) renderProduct(activeProductIndex + 1);
+          if (dx > 0 && activeProductIndex > 0) renderProduct(activeProductIndex - 1);
+        }, { passive: true });
+
+        // Mouse drag (desktop)
+        productEl.addEventListener('mousedown', function (e) {
+          swipeStartX = e.clientX;
+          swiping = true;
+        });
+        productEl.addEventListener('mouseup', function (e) {
+          if (!swiping) return;
+          swiping = false;
+          var dx = e.clientX - swipeStartX;
+          if (Math.abs(dx) < 20) return;
+          if (dx < 0 && activeProductIndex < products.length - 1) renderProduct(activeProductIndex + 1);
+          if (dx > 0 && activeProductIndex > 0) renderProduct(activeProductIndex - 1);
+        });
+        productEl.addEventListener('mouseleave', function () { swiping = false; });
+      }
     }
 
     slide.appendChild(bar);
 
-    // Negotiate sheet (injected inside slide)
+    // Negotiate sheet (injected inside slide, uses active product)
     var negSheet = buildNegSheet(slide, vid, video, firstProduct);
     slide.appendChild(negSheet);
 
