@@ -1,0 +1,70 @@
+Product,Feature,Status,Size,Impact,Origin,Notes
+Shopify Widget,Core widget embed — bubble + button modes,Shipped,M,Core,Discussed,Injects into any Shopify theme via script tag
+Shopify Widget,Proactive chat open (dwell-time trigger),Shipped,S,Conversion,Discussed,Opens after N seconds of page idle
+Shopify Widget,Immediate open mode,Shipped,S,Conversion,Discussed,User reported it wasn't firing — fixed missing else branch
+Shopify Widget,On-click trigger mode,Shipped,S,UX,Discussed,Part of show_trigger setting user was configuring
+Shopify Widget,Cart bundle negotiation,Shipped,M,Conversion,Discussed,User worked with cart page context throughout
+Shopify Widget,Accept / counter chips after each bot offer,Shipped,S,Conversion,Discussed,User explicitly asked: "accept the price after each bid from the bot to close faster"
+Shopify Widget,Email gate — blur-reveal private price,Shipped,S,Lead capture,Discussed,"User designed this: blurred price, email to reveal, 🔒 private price copy"
+Shopify Widget,Shopify auto-email from signed-in account,Shipped,S,Lead capture,Discussed,User asked: "if they already sign in their Shopify account are we capturing the email?"
+Shopify Widget,WhatsApp / phone capture option in gate,Next,S,Lead capture,Discussed,User mentioned wanting phone/WhatsApp as second capture option
+Shopify Widget,Gradient color for chat icon / button,Next,S,Merchant UX,Discussed,User asked: "is there a way to give gradient color for the chat icon or the button"
+Shopify Widget,Product-aware bot messages — Phase 1,Next,M,Conversion,Discussed,User asked: "how do we make it more about the product" after seeing generic bot message
+Shopify Widget,Product-aware bot messages — Phase 2,Backlog,M,Conversion,Suggested by Claude,Pull Shopify reviews/metafields; surface social proof mid-negotiation
+Shopify Widget,Product-aware bot messages — Phase 3,Backlog,L,Conversion,Suggested by Claude,Dynamic justification library per product category
+Shopify Widget,Multi-language widget,Later,M,Growth,Suggested by Claude,Auto-detect navigator.language; bot replies in customer's language
+Shopify Widget,Voice negotiation (TTS bot replies),Icebox,L,Delight,Suggested by Claude,Widget speaks bot messages aloud
+Shopify Widget,Browser extension for non-Shopify stores,Icebox,L,Growth,Suggested by Claude,"WooCommerce, BigCommerce, etc."
+Merchant Dashboard,Settings page — tone / discount % / floor price,Shipped,M,Merchant UX,Discussed,User was actively configuring and testing settings throughout session
+Merchant Dashboard,Floating save bar (Unsaved changes → Save / Discard),Shipped,S,Merchant UX,Discussed,User asked: "I need a floating bar on the top if anything is changed prompting the user to click save"
+Merchant Dashboard,Button label / color / text color controls,Shipped,S,Merchant UX,Discussed,User was updating button style and color settings
+Merchant Dashboard,Widget position selector,Shipped,S,Merchant UX,Discussed,Part of settings user was configuring
+Merchant Dashboard,Proactive message customization,Shipped,S,Merchant UX,Discussed,User updated proactive_message field in settings
+Merchant Dashboard,Cart-specific max discount setting,Shipped,S,Conversion,Discussed,User was configuring cart discount cap; hit missing column bug
+Merchant Dashboard,Plan enforcement (free 50 / starter 500 monthly limit),Shipped,S,Monetization,Discussed,Part of core product design discussed with user
+Merchant Dashboard,Negotiation history view,Shipped,M,Analytics,Discussed,Existing dashboard feature used during session
+Merchant Dashboard,Settings page — tabbed redesign,Backlog,M,Merchant UX,Suggested by Claude,User said "make this setting page more intuitive" — Claude proposed tabs
+Merchant Dashboard,Live preview panel in settings,Backlog,M,Merchant UX,Suggested by Claude,Right-side widget preview updates as settings change
+Merchant Dashboard,Per-product rules UI,Backlog,M,Control,Suggested by Claude,Visual rule builder: product tag → max discount override
+Merchant Dashboard,Negotiation funnel chart,Backlog,M,Analytics,Suggested by Claude,Opened → first offer → counter → deal vs. walk-away
+Merchant Dashboard,Revenue recovered KPI card,Backlog,S,Analytics,Suggested by Claude,Deals closed × avg discount
+Merchant Dashboard,Per-product analytics,Backlog,M,Analytics,Suggested by Claude,Which SKUs negotiate most; avg accepted discount
+Merchant Dashboard,A/B tone testing,Backlog,L,Optimization,Suggested by Claude,Friendly vs. professional tone; compare close rate
+Merchant Dashboard,CSV export of captured leads,Backlog,S,CRM,Suggested by Claude,Download all emails + deal details
+Merchant Dashboard,Real-time merchant notifications,Later,M,Engagement,Suggested by Claude,Slack/email ping on deal close or high-value negotiation
+Merchant Dashboard,Negotiation replay viewer,Icebox,M,Analytics,Suggested by Claude,Full conversation timeline in dashboard
+Negotiation API,Core negotiate endpoint (POST /negotiate),Shipped,L,Core,Discussed,Full engine: ladder pricing + tone + LLM + Shopify discount creation
+Negotiation API,Nibble-inspired price ladder engine,Shipped,L,Conversion,Discussed,4-step concession ladder; rewritten based on Nibble strategy discussion
+Negotiation API,4-moment deal screen (accepted state),Shipped,M,Conversion,Discussed,Built in prior sprint — checkout URL + discount code + expiry on deal close
+Negotiation API,Tone-matched human escalation,Shipped,M,Trust,Discussed,Built in prior sprint — bot hands off gracefully at floor
+Negotiation API,Lead capture endpoint (PUT /negotiate/:id/contact),Shipped,S,Lead capture,Discussed,Built as part of email gate — user explicitly designed the gate flow
+Negotiation API,Product eligibility check (GET /widget/product-rules),Shipped,M,Control,Discussed,Per-product rule resolution; tag-based overrides
+Negotiation API,Widget settings endpoint (GET /widget/settings),Shipped,S,Core,Discussed,Returns merchant settings safe for public consumption
+Negotiation API,Rate limiting,Shipped,S,Stability,Discussed,Per-IP limits; part of core security design
+Negotiation API,API key auth middleware,Shipped,S,Security,Discussed,Validates k= query param; core to multi-tenant design
+Negotiation API,CORS — wide-open for widget / strict for dashboard,Shipped,S,Security,Discussed,User hit CORS errors ("network error when I update merchant settings") — Claude fixed PUT method
+Negotiation API,Debug endpoints (opening / LLM / email / merchant),Shipped,S,DX,Suggested by Claude,Claude added /debug/* routes proactively for production diagnosis
+Negotiation API,Counter-offer floor warnings,Backlog,S,Conversion,Suggested by Claude,Bot signals final offer one step before hard floor
+Negotiation API,Escalation path tuning by product tag,Backlog,M,Control,Suggested by Claude,slow-mover tag → bot concedes faster
+Negotiation API,Bundle negotiation — smarter cart discounts,Backlog,M,Conversion,Suggested by Claude,Cross-product bundle logic; not just % off total
+Negotiation API,Post-deal follow-up email (24h reminder),Backlog,S,Recovery,Suggested by Claude,If checkout URL unused after 24h; send urgency email
+Negotiation API,Abandoned negotiation recovery email,Backlog,M,Recovery,Suggested by Claude,"Trigger if session drops after 2+ messages, no deal"
+Negotiation API,AI buyer persona detection,Later,L,Conversion,Suggested by Claude,Detect price-sensitive vs. brand-loyal from tone; adapt concession speed
+Email & Notifications,Deal email — discount code + checkout link,Shipped,M,Conversion,Discussed,"User tested email sending; supports Resend, Gmail SMTP, AWS SES"
+Email & Notifications,Debug email test endpoint,Shipped,S,DX,Suggested by Claude,Claude added /debug/email?to= proactively for production diagnosis
+Email & Notifications,Post-deal 24h follow-up email,Backlog,S,Recovery,Suggested by Claude,If checkout URL unused after 24h; send urgency email
+Email & Notifications,Abandoned negotiation email,Backlog,M,Recovery,Suggested by Claude,"Trigger if session drops after 2+ messages, no deal"
+Email & Notifications,Klaviyo connector,Backlog,M,CRM,Suggested by Claude,Push captured emails + deal status to Klaviyo list
+Email & Notifications,Postscript / SMSBump integration,Backlog,M,CRM,Suggested by Claude,WhatsApp/SMS deal notifications
+Email & Notifications,Real-time merchant deal alerts,Later,M,Engagement,Suggested by Claude,Slack/email to merchant on deal close
+Shopify App,Script tag install via API key,Shipped,S,Core,Discussed,Merchant pastes one script tag — no app required today
+Shopify App,Shopify OAuth embedded app,Later,L,Distribution,Suggested by Claude,Required for App Store listing
+Shopify App,Shopify Billing API integration,Later,M,Monetization,Suggested by Claude,In-app subscription via Shopify Payments
+Shopify App,GDPR webhooks (customer/shop redact),Later,M,Compliance,Suggested by Claude,Required for App Store approval
+Shopify App,Shopify Flow trigger on deal close,Backlog,M,Integrations,Suggested by Claude,Merchant can wire up their own automations
+Shopify App,App Store submission & review,Later,L,Distribution,Suggested by Claude,"Design review, listing copy, screenshots"
+Infrastructure,Vercel deployment (API + dashboard),Shipped,S,Core,Discussed,api: botiga-api-two.vercel.app
+Infrastructure,Supabase (Postgres + auth),Shipped,M,Core,Discussed,Multi-tenant; per-merchant rows
+Infrastructure,DB migrations (001–008),Shipped,S,Core,Discussed,User hit missing column errors — ran migrations manually in Supabase SQL editor
+Infrastructure,Merchant white-label,Later,M,Revenue,Suggested by Claude,Custom sender domain; no Botiga branding; for higher tiers
+Infrastructure,Competitor price matching,Icebox,L,Conversion,Suggested by Claude,Surface competitor prices mid-negotiation

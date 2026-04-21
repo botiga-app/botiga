@@ -10,7 +10,8 @@ const navItems = [
   { href: '/dashboard/rules', label: 'Product Rules', icon: '🎯' },
   { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
   { href: '/dashboard/billing', label: 'Billing', icon: '💳' },
-  { href: '/dashboard/install', label: 'Install', icon: '🔧' }
+  { href: '/dashboard/install', label: 'Install', icon: '🔧' },
+  { href: '/dashboard/roadmap', label: 'Roadmap', icon: '🗺️' }
 ];
 
 export default function DashboardLayout({ children, merchantId, apiKey }) {
