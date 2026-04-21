@@ -26,10 +26,21 @@
   function fetchVideos(cb) {
     var url = API_BASE + '/api/widget/videos?k=' + API_KEY;
     if (WIDGET_ID) url += '&w=' + WIDGET_ID;
+    console.log('[Botiga Video] fetching:', url);
     fetch(url)
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (data) { videos = data || []; cb(); })
-      .catch(function () { cb(); });
+      .then(function (r) {
+        console.log('[Botiga Video] fetch status:', r.status);
+        return r.ok ? r.json() : [];
+      })
+      .then(function (data) {
+        videos = data || [];
+        console.log('[Botiga Video] videos received:', videos.length, videos.map(function(v){ return v.title; }));
+        cb();
+      })
+      .catch(function (err) {
+        console.error('[Botiga Video] fetch error:', err);
+        cb();
+      });
   }
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
@@ -834,12 +845,17 @@
       container.style.outline = '';
       if (!videos.length) {
         console.warn('[Botiga Video] No active videos found for this API key.');
+        container.style.background = 'rgba(239,68,68,0.1)';
+        container.style.minHeight = '40px';
+        container.innerHTML = '<div style="padding:8px;font-size:11px;color:#ef4444;font-family:sans-serif">[Botiga] No videos found — check API key or upload videos</div>';
         return;
       }
+      console.log('[Botiga Video] building mode:', MODE);
       if (MODE === 'stories') buildStories(container);
       else if (MODE === 'carousel') buildCarousel(container);
       else if (MODE === 'feed') buildFeedButton(container);
       else buildStories(container);
+      console.log('[Botiga Video] done — container children:', container.childNodes.length);
     });
   }
 
