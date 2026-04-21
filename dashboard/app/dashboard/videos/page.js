@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '../../../lib/supabase';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.live';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
 
 // ─── Upload zone ─────────────────────────────────────────────────────────────
 function UploadZone({ merchantId, onUploaded }) {
