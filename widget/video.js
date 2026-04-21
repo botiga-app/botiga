@@ -115,11 +115,11 @@
       '#_btgv_sr{display:flex;gap:16px;padding:14px 20px 16px;overflow-x:auto;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}',
       '#_btgv_sr::-webkit-scrollbar{display:none}',
       '._btgv_story{flex-shrink:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent}',
-      '._btgv_story_ring{width:72px;height:72px;border-radius:50%;padding:2.5px;background:linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)}',
+      '._btgv_story_ring{width:90px;height:90px;border-radius:50%;padding:3px;background:linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)}',
       '._btgv_story_ring.seen{background:#c7c7c7}',
-      '._btgv_story_inner{width:100%;height:100%;border-radius:50%;overflow:hidden;border:2.5px solid #fff;background:#222}',
-      '._btgv_story_inner img{width:100%;height:100%;object-fit:cover;display:block}',
-      '._btgv_story_lbl{font-size:11px;color:#262626;max-width:72px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}',
+      '._btgv_story_inner{width:100%;height:100%;border-radius:50%;overflow:hidden;border:3px solid #fff;background:#222}',
+      '._btgv_story_inner img,._btgv_story_inner video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}',
+      '._btgv_story_lbl{font-size:11px;color:#262626;max-width:90px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}',
 
       // Story viewer
       '#_btgv_sv{position:fixed;inset:0;z-index:99999;background:#000;opacity:0;pointer-events:none;transition:opacity .2s;overflow:hidden;touch-action:none}',
@@ -320,6 +320,19 @@
         inner.appendChild(img);
       } else {
         inner.style.background = 'linear-gradient(135deg,#6366f1,#ec4899)';
+        // Auto-preview: fetch first video and play it silently as a GIF substitute
+        (function (innerEl) {
+          fetchCollectionVideos(col.id, function (vids) {
+            if (!vids.length || !vids[0].s3_url) return;
+            var tv = document.createElement('video');
+            tv.src = vids[0].s3_url;
+            tv.muted = true; tv.playsInline = true;
+            tv.preload = 'metadata'; tv.loop = true;
+            tv.play().catch(function () {});
+            innerEl.style.background = '';
+            innerEl.appendChild(tv);
+          });
+        })(inner);
       }
       ring.appendChild(inner);
 
