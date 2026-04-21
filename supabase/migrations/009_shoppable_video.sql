@@ -57,3 +57,18 @@ CREATE INDEX IF NOT EXISTS video_events_merchant_id_idx ON video_events(merchant
 COMMENT ON TABLE videos IS 'Shoppable video library per merchant';
 COMMENT ON TABLE video_product_tags IS 'Products tagged to videos for overlay display';
 COMMENT ON TABLE video_events IS 'Per-session analytics events on video interactions';
+
+-- RLS: enable on all tables (service role key bypasses these — policies only matter for direct anon/auth access)
+ALTER TABLE videos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_product_tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_events ENABLE ROW LEVEL SECURITY;
+
+-- Merchants can only access their own videos
+CREATE POLICY "merchants_own_videos" ON videos
+  USING (merchant_id = auth.uid());
+
+CREATE POLICY "merchants_own_video_product_tags" ON video_product_tags
+  USING (merchant_id = auth.uid());
+
+CREATE POLICY "merchants_own_video_events" ON video_events
+  USING (merchant_id = auth.uid());
