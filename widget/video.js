@@ -1130,10 +1130,85 @@
     setTimeout(function () { if (feedEl) { feedEl.remove(); feedEl = null; } }, 280);
   }
 
+  // ─── Cart deal banner + confetti ────────────────────────────────────────────
+  function handleCartPage() {
+    try {
+      var raw = sessionStorage.getItem('_botiga_session');
+      if (!raw) return;
+      var sess = JSON.parse(raw);
+      var deal = sess.deal;
+      if (!deal || !deal.price) return;
+      if (deal.expiresAt && Date.now() >= new Date(deal.expiresAt).getTime()) return;
+    } catch (e) { return; }
+
+    // Confetti — multiple bursts like the main widget
+    setTimeout(fireConfetti, 400);
+
+    // Deal banner
+    var banner = document.createElement('div');
+    banner.id = '_btgv_deal_banner';
+    banner.style.cssText = [
+      'position:fixed;top:0;left:0;right:0;z-index:2147483645;',
+      'background:#111;color:#fff;font-family:system-ui,sans-serif;',
+      'padding:12px 20px;display:flex;align-items:center;justify-content:center;',
+      'gap:14px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.3);flex-wrap:wrap;'
+    ].join('');
+
+    var textEl = document.createElement('span');
+    textEl.innerHTML = '🎁 Your negotiated deal on <strong>' +
+      (deal.productName || 'this item') + '</strong> — <strong>$' + deal.price + '</strong>' +
+      (deal.discountCode
+        ? ' &middot; code <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:12px">' + deal.discountCode + '</code>'
+        : '');
+
+    var timerEl = document.createElement('span');
+    timerEl.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:46px;text-align:right;';
+
+    var closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function () {
+      document.body.style.paddingTop = origPad;
+      banner.remove();
+    };
+
+    banner.appendChild(textEl);
+    banner.appendChild(timerEl);
+    if (deal.checkoutUrl) {
+      var chkBtn = document.createElement('a');
+      chkBtn.href = deal.checkoutUrl;
+      chkBtn.style.cssText = 'background:#16a34a;color:#fff;padding:7px 16px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;flex-shrink:0;';
+      chkBtn.textContent = 'Checkout →';
+      banner.appendChild(chkBtn);
+    }
+    banner.appendChild(closeBtn);
+
+    document.body.prepend(banner);
+    var origPad = document.body.style.paddingTop || '';
+    document.body.style.paddingTop = (parseInt(origPad || '0') + banner.offsetHeight) + 'px';
+
+    var displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
+    var tick = setInterval(function () {
+      var remaining = Math.max(0, displayExp - Date.now());
+      var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
+      timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      if (remaining <= 120000) timerEl.style.color = '#ef4444';
+      if (remaining <= 0) {
+        clearInterval(tick);
+        timerEl.textContent = 'Expired';
+        banner.style.background = '#333';
+        var chk = banner.querySelector('a'); if (chk) chk.style.display = 'none';
+      }
+    }, 1000);
+  }
+
   // ─── Init ────────────────────────────────────────────────────────────────────
   function init() {
-    // Don't inject on product pages — only on homepage/collection pages
-    if (window.location.pathname.match(/\/products\//)) return;
+    var path = window.location.pathname;
+    // Cart page: show deal banner + confetti only
+    if (path === '/cart' || path.startsWith('/cart/')) { handleCartPage(); return; }
+    // Product pages: skip entirely
+    if (path.match(/\/products\//)) return;
     injectStyles();
     var storiesCont = getStoriesContainer();
     var gridCont = getGridContainer();
