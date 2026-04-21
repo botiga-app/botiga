@@ -3,7 +3,7 @@ const router = express.Router();
 const supabase = require('../lib/supabase');
 const { validateAdminSecret } = require('../middleware/auth');
 
-router.use(validateAdminSecret);
+router.use('/admin', validateAdminSecret);
 
 // All active negotiations (live feed)
 router.get('/admin/negotiations', async (req, res) => {
