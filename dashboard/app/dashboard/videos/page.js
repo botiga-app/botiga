@@ -126,36 +126,31 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
   const [allProducts, setAllProducts] = useState([]);
   const [tags, setTags] = useState(video.video_product_tags || []);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState({}); // productId → true while saving
+  const [pending, setPending] = useState({});
   const inputRef = useRef();
 
-  // Load all products once on open
   useEffect(() => {
     if (!shopifyDomain) { setLoading(false); return; }
     fetch(`${API}/api/merchants/${merchantId}/shopify-products`)
       .then(r => r.ok ? r.json() : { products: [] })
       .then(data => { setAllProducts(data.products || []); setLoading(false); })
       .catch(() => setLoading(false));
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
-  // Client-side filter — instant, no debounce needed
   const q = query.trim().toLowerCase();
   const taggedIds = new Set(tags.map(t => t.shopify_product_id));
+
   const filtered = allProducts.filter(p =>
-    !q || p.title.toLowerCase().includes(q) || (p.variants?.[0]?.sku || '').toLowerCase().includes(q)
+    !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
   );
-  // Tagged products first, then untagged
-  const sorted = [
-    ...filtered.filter(p => taggedIds.has(String(p.id))),
-    ...filtered.filter(p => !taggedIds.has(String(p.id))),
-  ];
+  const tagged = filtered.filter(p => taggedIds.has(String(p.id)));
+  const untagged = filtered.filter(p => !taggedIds.has(String(p.id)));
 
   async function toggleTag(product) {
     const pid = String(product.id);
     const existing = tags.find(t => t.shopify_product_id === pid);
     setPending(prev => ({ ...prev, [pid]: true }));
-
     if (existing) {
       await fetch(`${API}/api/videos/${video.id}/tags/${existing.id}`, { method: 'DELETE' });
       const updated = tags.filter(t => t.id !== existing.id);
@@ -186,91 +181,162 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
     setPending(prev => ({ ...prev, [pid]: false }));
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85dvh]" onClick={e => e.stopPropagation()}>
+  function ProductRow({ p, isTagged }) {
+    const pid = String(p.id);
+    const isSaving = !!pending[pid];
+    const price = parseFloat(p.price || 0);
+    const compareAt = parseFloat(p.compare_at_price || 0);
+    const discount = compareAt > price ? Math.round((1 - price / compareAt) * 100) : 0;
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h3 className="font-semibold text-gray-900">Tag Products</h3>
-            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[260px]">{video.title || 'Untitled'} · {tags.length} tagged</p>
+    return (
+      <button
+        onClick={() => !isSaving && toggleTag(p)}
+        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all duration-150 ${
+          isTagged ? 'bg-indigo-50' : 'hover:bg-gray-50'
+        }`}
+      >
+        {p.image
+          ? <img src={p.image} className="w-11 h-11 rounded-xl object-cover flex-shrink-0 shadow-sm" alt="" />
+          : <div className="w-11 h-11 rounded-xl bg-gray-100 flex-shrink-0 flex items-center justify-center text-base">📦</div>
+        }
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${isTagged ? 'text-indigo-900' : 'text-gray-900'}`}>{p.title}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {price > 0 ? (
+              <>
+                <span className="text-xs font-semibold text-gray-700">${price.toFixed(2)}</span>
+                {discount > 0 && (
+                  <>
+                    <span className="text-xs text-gray-400 line-through">${compareAt.toFixed(2)}</span>
+                    <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full">{discount}% off</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-gray-400">No price set</span>
+            )}
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-lg transition-colors">×</button>
+        </div>
+        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+          isTagged
+            ? 'bg-indigo-600 shadow-md shadow-indigo-200'
+            : 'border-2 border-gray-200 bg-white'
+        }`}>
+          {isSaving
+            ? <span className="text-[10px] text-gray-400 animate-pulse">•</span>
+            : isTagged
+            ? <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            : null
+          }
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+
+      {/* Sheet */}
+      <div
+        className="relative bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+        style={{ maxHeight: '88dvh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden flex-shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
         </div>
 
-        {/* Search */}
-        <div className="px-5 py-3 flex-shrink-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pb-3 pt-2 flex-shrink-0">
+          <div>
+            <h3 className="font-bold text-gray-900 text-base">Tag Products</h3>
+            <p className="text-xs text-gray-400 truncate max-w-[240px] mt-0.5">{video.title || 'Untitled'}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-1.5 rounded-full transition-colors"
+          >
+            {tags.length > 0 ? `Done (${tags.length})` : 'Done'}
+          </button>
+        </div>
+
+        {/* Search bar */}
+        <div className="px-4 pb-3 flex-shrink-0">
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             <input
               ref={inputRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search products..."
-              className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-gray-50"
+              placeholder="Search by name..."
+              className="w-full bg-gray-100 border-0 rounded-2xl pl-9 pr-9 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
             />
             {query && (
-              <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">×</button>
+              <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             )}
           </div>
         </div>
 
+        {/* Tagged chips strip */}
+        {tags.length > 0 && !query && (
+          <div className="flex-shrink-0 px-4 pb-3">
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+              {tags.map(tag => (
+                <div key={tag.id} className="flex items-center gap-1.5 bg-indigo-100 text-indigo-800 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap flex-shrink-0">
+                  {tag.image_url && <img src={tag.image_url} className="w-4 h-4 rounded-full object-cover" alt="" />}
+                  <span className="max-w-[100px] truncate">{tag.product_name}</span>
+                  <button
+                    onClick={() => toggleTag({ id: tag.shopify_product_id, ...tag })}
+                    className="text-indigo-500 hover:text-indigo-700 ml-0.5 text-sm leading-none"
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="h-px bg-gray-100 flex-shrink-0" />
+
         {/* Product list */}
-        <div className="flex-1 overflow-y-auto px-3 pb-3">
+        <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="py-10 text-center text-sm text-gray-400">Loading products...</div>
+            <div className="py-12 text-center">
+              <div className="text-2xl mb-2">⏳</div>
+              <p className="text-sm text-gray-400">Loading products...</p>
+            </div>
           ) : !shopifyDomain ? (
-            <div className="mx-2 p-4 bg-amber-50 rounded-xl text-xs text-amber-700">
+            <div className="m-4 p-4 bg-amber-50 rounded-2xl text-sm text-amber-700">
               Connect your Shopify store in Settings to tag products.
             </div>
-          ) : sorted.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">No products found</div>
-          ) : (
-            <div className="space-y-0.5">
-              {sorted.map(p => {
-                const pid = String(p.id);
-                const isTagged = taggedIds.has(pid);
-                const isSaving = pending[pid];
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => !isSaving && toggleTag(p)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
-                      isTagged
-                        ? 'bg-indigo-50 hover:bg-indigo-100'
-                        : 'hover:bg-gray-50'
-                    } ${isSaving ? 'opacity-60' : ''}`}
-                  >
-                    {p.image
-                      ? <img src={p.image} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" alt="" />
-                      : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-lg">📦</div>
-                    }
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{p.title}</p>
-                      <p className="text-xs text-gray-400">${parseFloat(p.variants?.[0]?.price || 0).toFixed(2)}</p>
-                    </div>
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                      isTagged ? 'bg-indigo-600 text-white' : 'border-2 border-gray-200'
-                    }`}>
-                      {isSaving ? (
-                        <span className="text-xs">…</span>
-                      ) : isTagged ? (
-                        <span className="text-xs">✓</span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center">
+              <div className="text-2xl mb-2">🔍</div>
+              <p className="text-sm text-gray-400">No products match "{query}"</p>
             </div>
+          ) : (
+            <>
+              {tagged.length > 0 && (
+                <>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-4 pt-3 pb-1">Tagged</p>
+                  {tagged.map(p => <ProductRow key={p.id} p={p} isTagged={true} />)}
+                </>
+              )}
+              {tagged.length > 0 && untagged.length > 0 && (
+                <div className="h-px bg-gray-100 mx-4 my-1" />
+              )}
+              {untagged.length > 0 && (
+                <>
+                  {tagged.length > 0 && <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-4 pt-2 pb-1">All Products</p>}
+                  {untagged.map(p => <ProductRow key={p.id} p={p} isTagged={false} />)}
+                </>
+              )}
+              <div className="h-4" />
+            </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="w-full bg-indigo-600 text-white text-sm font-semibold rounded-xl py-3 hover:bg-indigo-700 transition-colors">
-            Done — {tags.length} product{tags.length !== 1 ? 's' : ''} tagged
-          </button>
         </div>
       </div>
     </div>

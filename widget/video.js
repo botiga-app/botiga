@@ -705,6 +705,12 @@
 
   // ─── Stories mode ───────────────────────────────────────────────────────────
   function buildStories(container) {
+    // Ensure container is visible — Shopify themes sometimes collapse bare divs
+    container.style.display = 'block';
+    container.style.width = '100%';
+    container.style.minHeight = '96px';
+    container.style.overflow = 'hidden';
+
     var row = document.createElement('div');
     row.id = '_btgv_stories';
 
