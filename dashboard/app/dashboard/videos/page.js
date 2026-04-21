@@ -123,133 +123,152 @@ function UploadZone({ merchantId, onUploaded }) {
 // ─── Product tagger ───────────────────────────────────────────────────────────
 function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdated }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [tags, setTags] = useState(video.video_product_tags || []);
-  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState({}); // productId → true while saving
+  const inputRef = useRef();
 
-  async function search(q) {
-    if (!q.trim() || !shopifyDomain) return;
-    setSearching(true);
-    try {
-      // Search Shopify products via our API proxy
-      const res = await fetch(`${API}/api/merchants/${merchantId}/shopify-products?q=${encodeURIComponent(q)}`);
-      if (res.ok) setResults(await res.json());
-    } catch {}
-    setSearching(false);
-  }
-
+  // Load all products once on open
   useEffect(() => {
-    const t = setTimeout(() => search(query), 350);
-    return () => clearTimeout(t);
-  }, [query]);
+    if (!shopifyDomain) { setLoading(false); return; }
+    fetch(`${API}/api/merchants/${merchantId}/shopify-products?q=`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { setAllProducts(data || []); setLoading(false); })
+      .catch(() => setLoading(false));
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
 
-  async function addTag(product) {
-    const res = await fetch(`${API}/api/videos/${video.id}/tags`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        merchant_id: merchantId,
-        shopify_product_id: String(product.id),
-        product_name: product.title,
-        product_handle: product.handle,
-        price: parseFloat(product.variants?.[0]?.price || 0),
-        compare_at_price: parseFloat(product.variants?.[0]?.compare_at_price || 0) || null,
-        image_url: product.image?.src || null,
-      }),
-    });
-    if (res.ok) {
-      const tag = await res.json();
-      const updated = [...tags, tag];
+  // Client-side filter — instant, no debounce needed
+  const q = query.trim().toLowerCase();
+  const taggedIds = new Set(tags.map(t => t.shopify_product_id));
+  const filtered = allProducts.filter(p =>
+    !q || p.title.toLowerCase().includes(q) || (p.variants?.[0]?.sku || '').toLowerCase().includes(q)
+  );
+  // Tagged products first, then untagged
+  const sorted = [
+    ...filtered.filter(p => taggedIds.has(String(p.id))),
+    ...filtered.filter(p => !taggedIds.has(String(p.id))),
+  ];
+
+  async function toggleTag(product) {
+    const pid = String(product.id);
+    const existing = tags.find(t => t.shopify_product_id === pid);
+    setPending(prev => ({ ...prev, [pid]: true }));
+
+    if (existing) {
+      await fetch(`${API}/api/videos/${video.id}/tags/${existing.id}`, { method: 'DELETE' });
+      const updated = tags.filter(t => t.id !== existing.id);
       setTags(updated);
       onTagsUpdated(video.id, updated);
+    } else {
+      const res = await fetch(`${API}/api/videos/${video.id}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchant_id: merchantId,
+          shopify_product_id: pid,
+          product_name: product.title,
+          product_handle: product.handle,
+          price: parseFloat(product.variants?.[0]?.price || 0),
+          compare_at_price: parseFloat(product.variants?.[0]?.compare_at_price || 0) || null,
+          image_url: product.image?.src || null,
+        }),
+      });
+      if (res.ok) {
+        const tag = await res.json();
+        const updated = [...tags, tag];
+        setTags(updated);
+        onTagsUpdated(video.id, updated);
+      }
     }
-  }
-
-  async function removeTag(tagId) {
-    await fetch(`${API}/api/videos/${video.id}/tags/${tagId}`, { method: 'DELETE' });
-    const updated = tags.filter(t => t.id !== tagId);
-    setTags(updated);
-    onTagsUpdated(video.id, updated);
+    setPending(prev => ({ ...prev, [pid]: false }));
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85dvh]" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
           <div>
             <h3 className="font-semibold text-gray-900">Tag Products</h3>
-            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{video.title || 'Untitled video'}</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[260px]">{video.title || 'Untitled'} · {tags.length} tagged</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-lg transition-colors">×</button>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Tagged products */}
-          {tags.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tagged ({tags.length})</p>
-              {tags.map(tag => (
-                <div key={tag.id} className="flex items-center gap-3 bg-indigo-50 rounded-xl px-3 py-2">
-                  {tag.image_url && <img src={tag.image_url} className="w-8 h-8 rounded-lg object-cover" alt="" />}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{tag.product_name}</p>
-                    {tag.price && <p className="text-xs text-gray-500">${tag.price}</p>}
-                  </div>
-                  <button onClick={() => removeTag(tag.id)} className="text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Search */}
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Search Products</p>
+        {/* Search */}
+        <div className="px-5 py-3 flex-shrink-0">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
             <input
+              ref={inputRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by product name or SKU..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="Search products..."
+              className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-gray-50"
             />
+            {query && (
+              <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">×</button>
+            )}
           </div>
+        </div>
 
-          {searching && <p className="text-xs text-gray-400 text-center">Searching...</p>}
-
-          {results.length > 0 && (
-            <div className="space-y-1 max-h-52 overflow-y-auto">
-              {results.map(p => {
-                const alreadyTagged = tags.some(t => t.shopify_product_id === String(p.id));
+        {/* Product list */}
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          {loading ? (
+            <div className="py-10 text-center text-sm text-gray-400">Loading products...</div>
+          ) : !shopifyDomain ? (
+            <div className="mx-2 p-4 bg-amber-50 rounded-xl text-xs text-amber-700">
+              Connect your Shopify store in Settings to tag products.
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">No products found</div>
+          ) : (
+            <div className="space-y-0.5">
+              {sorted.map(p => {
+                const pid = String(p.id);
+                const isTagged = taggedIds.has(pid);
+                const isSaving = pending[pid];
                 return (
-                  <button key={p.id} disabled={alreadyTagged}
-                    onClick={() => addTag(p)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-colors ${
-                      alreadyTagged ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'
-                    }`}
+                  <button
+                    key={p.id}
+                    onClick={() => !isSaving && toggleTag(p)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                      isTagged
+                        ? 'bg-indigo-50 hover:bg-indigo-100'
+                        : 'hover:bg-gray-50'
+                    } ${isSaving ? 'opacity-60' : ''}`}
                   >
-                    {p.image?.src && <img src={p.image.src} className="w-8 h-8 rounded-lg object-cover" alt="" />}
+                    {p.image?.src
+                      ? <img src={p.image.src} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" alt="" />
+                      : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-lg">📦</div>
+                    }
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{p.title}</p>
-                      <p className="text-xs text-gray-400">${p.variants?.[0]?.price}</p>
+                      <p className="text-xs text-gray-400">${parseFloat(p.variants?.[0]?.price || 0).toFixed(2)}</p>
                     </div>
-                    {alreadyTagged
-                      ? <span className="text-xs text-indigo-500">Tagged</span>
-                      : <span className="text-xs text-gray-400">+ Tag</span>
-                    }
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                      isTagged ? 'bg-indigo-600 text-white' : 'border-2 border-gray-200'
+                    }`}>
+                      {isSaving ? (
+                        <span className="text-xs">…</span>
+                      ) : isTagged ? (
+                        <span className="text-xs">✓</span>
+                      ) : null}
+                    </div>
                   </button>
                 );
               })}
             </div>
           )}
-
-          {!shopifyDomain && (
-            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg p-3">
-              Connect your Shopify store in Settings to search products.
-            </p>
-          )}
         </div>
 
-        <div className="px-5 pb-5">
-          <button onClick={onClose} className="w-full bg-indigo-600 text-white text-sm font-medium rounded-xl py-2.5 hover:bg-indigo-700 transition-colors">
-            Done
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
+          <button onClick={onClose} className="w-full bg-indigo-600 text-white text-sm font-semibold rounded-xl py-3 hover:bg-indigo-700 transition-colors">
+            Done — {tags.length} product{tags.length !== 1 ? 's' : ''} tagged
           </button>
         </div>
       </div>
