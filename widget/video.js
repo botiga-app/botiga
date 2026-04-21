@@ -110,7 +110,7 @@
     var s = document.createElement('style');
     s.id = '_btgv_css';
     s.textContent = [
-      // Stories bar — centered, scrolls on overflow
+      // Stories bar
       '#btgv-stories{width:100%;background:#fff;border-bottom:1px solid #efefef;display:flex;justify-content:center}',
       '#_btgv_sr{display:flex;gap:16px;padding:14px 20px 16px;overflow-x:auto;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}',
       '#_btgv_sr::-webkit-scrollbar{display:none}',
@@ -139,22 +139,25 @@
       '._btgv_sv_tl{position:absolute;left:0;top:0;width:30%;height:60%;z-index:5}',
       '._btgv_sv_tr{position:absolute;right:0;top:0;width:70%;height:60%;z-index:5}',
 
-      // Watch & Shop grid — centered
+      // Watch & Shop — horizontal carousel, 4 visible on desktop, 2 on mobile
       '#btgv-grid{width:100%;max-width:1200px;margin:0 auto;padding-top:8px}',
       '._btgv_gh{font-size:20px;font-weight:800;color:#111;text-align:center;padding:20px 16px 12px;letter-spacing:.5px;text-transform:uppercase}',
-      '#_btgv_gi_wrap{overflow-y:scroll;height:min(85vh,720px);scrollbar-width:none;-webkit-overflow-scrolling:touch}',
-      '#_btgv_gi_wrap.static{overflow-y:hidden;height:auto}',
+      '#_btgv_gi_wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}',
       '#_btgv_gi_wrap::-webkit-scrollbar{display:none}',
-      '#_btgv_gi{display:grid;grid-template-columns:repeat(2,1fr);gap:3px}',
-      '@media(min-width:600px){#_btgv_gi{grid-template-columns:repeat(3,1fr)}}',
-      '@media(min-width:900px){#_btgv_gi{grid-template-columns:repeat(4,1fr)}}',
-      '._btgv_gc{position:relative;aspect-ratio:9/16;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent}',
+      '#_btgv_gi{display:flex;gap:3px;padding:0 0 4px}',
+      // 2 per view on mobile, 3 on tablet, 4 on desktop — slight peek on right edge
+      '._btgv_gc{flex-shrink:0;width:calc(47% - 1px);scroll-snap-align:start;position:relative;aspect-ratio:9/16;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:10px}',
+      '@media(min-width:600px){._btgv_gc{width:calc(32% - 1px)}}',
+      '@media(min-width:900px){._btgv_gc{width:calc(24% - 2px)}}',
       '._btgv_gc video{width:100%;height:100%;object-fit:cover;display:block}',
       '._btgv_gc_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.65) 0%,transparent 55%);pointer-events:none}',
       '._btgv_gc_tags{position:absolute;bottom:8px;left:8px;right:8px;pointer-events:none}',
       '._btgv_gc_tag{font-size:10px;font-weight:500;color:#fff;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);border-radius:20px;padding:2px 8px;display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}',
+      // Play icon shown on hover
+      '._btgv_gc_play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s}',
+      '._btgv_gc:hover ._btgv_gc_play{opacity:1}',
 
-      // TikTok feed
+      // TikTok feed overlay
       '#_btgv_feed{position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s}',
       '#_btgv_feed.open{opacity:1;pointer-events:all}',
       '#_btgv_scroll{flex:1;overflow-y:scroll;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}',
@@ -170,12 +173,11 @@
       '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s}',
       '._btgv_rail button:active{transform:scale(.9)}',
 
-      // Product shelf — horizontal scroll, landscape cards (image left, content right)
+      // Product shelf — landscape cards (image left, content right)
       '._btgv_pshelf{position:absolute;bottom:0;left:0;right:0;z-index:8;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.25) 80%,transparent 100%);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px)}',
       '@media(min-width:640px){._btgv_pshelf{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_prow{display:flex;gap:10px;padding:14px 12px 0;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}',
       '._btgv_prow::-webkit-scrollbar{display:none}',
-      // Landscape card: image on left, body (name+price+actions) on right
       '._btgv_pcard{flex-shrink:0;width:240px;scroll-snap-align:start;background:rgba(18,18,18,.85);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.13);border-radius:16px;padding:10px 12px;display:flex;flex-direction:row;gap:10px;align-items:center}',
       '._btgv_pcard_img{width:60px;height:60px;border-radius:12px;object-fit:cover;flex-shrink:0;background:#333}',
       '._btgv_pcard_body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}',
@@ -194,7 +196,7 @@
     document.head.appendChild(s);
   }
 
-  // ─── Product shelf (landscape card: image left, text+actions right) ──────────
+  // ─── Product shelf ───────────────────────────────────────────────────────────
   function buildProductShelf(tags, videoId) {
     var shelf = document.createElement('div');
     shelf.className = '_btgv_pshelf';
@@ -205,14 +207,12 @@
       var card = document.createElement('div');
       card.className = '_btgv_pcard';
 
-      // Left: product image
       var img = document.createElement('img');
       img.className = '_btgv_pcard_img';
       img.src = tag.image_url || '';
       img.alt = '';
       img.onerror = function () { this.style.display = 'none'; };
 
-      // Right: name, price, actions
       var body = document.createElement('div');
       body.className = '_btgv_pcard_body';
 
@@ -245,7 +245,7 @@
         return btn;
       }
 
-      var cartBtn = iconBtn('_btgv_ib_cart', '🛒', 'Cart', function (btn) {
+      actions.appendChild(iconBtn('_btgv_ib_cart', '🛒', 'Cart', function (btn) {
         track(videoId, 'add_to_cart', tag.shopify_product_id);
         addToCart(tag.shopify_variant_id, function (ok) {
           fireConfetti();
@@ -254,16 +254,16 @@
             setTimeout(function () { btn.innerHTML = '<span style="font-size:16px">🛒</span><span class="_btgv_icon_lbl">Cart</span>'; }, 2500);
           }
         });
-      });
+      }));
 
-      var buyBtn = iconBtn('_btgv_ib_buy', '⚡', 'Buy', function () {
+      actions.appendChild(iconBtn('_btgv_ib_buy', '⚡', 'Buy', function () {
         track(videoId, 'add_to_cart', tag.shopify_product_id);
         addToCart(tag.shopify_variant_id, function (ok) {
           if (ok) { fireConfetti(); window.location.href = '/checkout'; }
         });
-      });
+      }));
 
-      var negBtn = iconBtn('_btgv_ib_neg', '🤝', 'Offer', function (btn) {
+      actions.appendChild(iconBtn('_btgv_ib_neg', '🤝', 'Offer', function (btn) {
         track(videoId, 'negotiate', tag.shopify_product_id);
         fireConfetti();
         if (window._btg && window._btg.openNegotiate) {
@@ -273,9 +273,8 @@
           btn.innerHTML = '<span style="font-size:16px">✓</span><span class="_btgv_icon_lbl">Sent</span>';
           setTimeout(function () { btn.innerHTML = '<span style="font-size:16px">🤝</span><span class="_btgv_icon_lbl">Offer</span>'; }, 2500);
         }
-      });
+      }));
 
-      actions.appendChild(cartBtn); actions.appendChild(buyBtn); actions.appendChild(negBtn);
       body.appendChild(nm); body.appendChild(pr); body.appendChild(actions);
       card.appendChild(img); card.appendChild(body);
       row.appendChild(card);
@@ -285,9 +284,8 @@
     return shelf;
   }
 
-  // ─── Stories bar (type === 'stories' only) ───────────────────────────────────
+  // ─── Stories bar (type='stories' only) ──────────────────────────────────────
   function buildStoriesBar(container, cols) {
-    // Only show story-type collections
     var storyCols = cols.filter(function (c) { return c.type === 'stories'; });
     if (!storyCols.length) return;
 
@@ -342,7 +340,6 @@
     videoEl.loop = false;
     storyEl.appendChild(videoEl);
 
-    // Progress bars (one per video in collection)
     var progWrap = document.createElement('div');
     progWrap.className = '_btgv_sv_prog';
     vids.forEach(function () {
@@ -352,7 +349,6 @@
     });
     storyEl.appendChild(progWrap);
 
-    // Header
     var hd = document.createElement('div'); hd.className = '_btgv_sv_hd';
     var av = document.createElement('div'); av.className = '_btgv_sv_av';
     if (col.thumbnail_url) {
@@ -364,14 +360,12 @@
     hd.appendChild(av); hd.appendChild(nm); hd.appendChild(xBtn);
     storyEl.appendChild(hd);
 
-    // Tap zones — upper 60% only so product shelf remains interactive
     var tl = document.createElement('div'); tl.className = '_btgv_sv_tl';
     var tr = document.createElement('div'); tr.className = '_btgv_sv_tr';
     tl.onclick = function (e) { e.stopPropagation(); stepStory(-1); };
     tr.onclick = function (e) { e.stopPropagation(); stepStory(1); };
     storyEl.appendChild(tl); storyEl.appendChild(tr);
 
-    // Keyboard nav
     function onKey(e) {
       if (e.key === 'Escape') closeStory();
       if (e.key === 'ArrowRight') stepStory(1);
@@ -389,7 +383,6 @@
     if (!vid) { closeStory(); return; }
     track(vid.id, 'view');
 
-    // Reset progress bars: filled for past, empty for current+future
     var fills = progWrap.querySelectorAll('._btgv_sv_fill');
     fills.forEach(function (f, i) {
       f.style.transition = 'none';
@@ -397,14 +390,12 @@
     });
     var fill = fills[storyIdx];
 
-    // Load and play
     videoEl.src = vid.s3_url;
     videoEl.muted = false;
     videoEl.currentTime = 0;
     var p = videoEl.play();
     if (p && p.catch) p.catch(function () { videoEl.muted = true; videoEl.play().catch(function () {}); });
 
-    // Animate progress bar via rAF
     if (storyAnimFrame) cancelAnimationFrame(storyAnimFrame);
     function tick() {
       if (!videoEl.duration || !fill) return;
@@ -413,14 +404,12 @@
     }
     storyAnimFrame = requestAnimationFrame(tick);
 
-    // Auto-advance when video ends
     videoEl.onended = function () {
       if (fill) fill.style.width = '100%';
       if (storyAnimFrame) { cancelAnimationFrame(storyAnimFrame); storyAnimFrame = null; }
       stepStory(1);
     };
 
-    // Update product shelf
     var oldShelf = storyEl.querySelector('._btgv_pshelf');
     if (oldShelf) oldShelf.remove();
     var tags = vid.video_product_tags || [];
@@ -448,7 +437,7 @@
     }
   }
 
-  // ─── Watch & Shop grid ──────────────────────────────────────────────────────
+  // ─── Watch & Shop horizontal carousel ───────────────────────────────────────
   function buildGrid(container, vids) {
     if (!vids.length) return;
 
@@ -464,18 +453,23 @@
     var grid = document.createElement('div');
     grid.id = '_btgv_gi';
 
-    function makeCell(vid, idx) {
+    vids.forEach(function (vid, i) {
       var cell = document.createElement('div');
       cell.className = '_btgv_gc';
-      cell.dataset.idx = idx;
 
       var video = document.createElement('video');
-      video.src = vid.s3_url;
+      // Lazy src: store in data-src, only load when cell enters viewport
+      video.dataset.src = vid.s3_url;
       video.muted = true; video.loop = true;
-      video.playsInline = true; video.preload = 'metadata';
+      video.playsInline = true; video.preload = 'none';
 
       var ov = document.createElement('div'); ov.className = '_btgv_gc_ov';
-      cell.appendChild(video); cell.appendChild(ov);
+
+      // Play icon overlay
+      var pi = document.createElement('div'); pi.className = '_btgv_gc_play';
+      pi.innerHTML = '<svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="rgba(0,0,0,.45)"/><polygon points="14,11 28,18 14,25" fill="white"/></svg>';
+
+      cell.appendChild(video); cell.appendChild(ov); cell.appendChild(pi);
 
       var tags = vid.video_product_tags || [];
       if (tags.length) {
@@ -488,61 +482,28 @@
         cell.appendChild(tw);
       }
 
-      cell.onclick = function () { openFeed(idx, vids); };
-      return cell;
-    }
+      cell.onclick = function () { openFeed(i, vids); };
+      grid.appendChild(cell);
+    });
 
-    // Render original cells
-    vids.forEach(function (vid, i) { grid.appendChild(makeCell(vid, i)); });
     wrap.appendChild(grid);
     container.appendChild(wrap);
 
-    // Autoplay via IntersectionObserver
+    // Lazy-load + autoplay only for visible cells
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         var v = e.target.querySelector('video');
         if (!v) return;
-        if (e.isIntersecting) v.play().catch(function () {}); else v.pause();
-      });
-    }, { threshold: 0.3 });
-    grid.querySelectorAll('._btgv_gc').forEach(function (c) { io.observe(c); });
-
-    // After render: decide if auto-scroll is needed
-    requestAnimationFrame(function () {
-      var gridH = grid.offsetHeight;
-      var wrapH = wrap.clientHeight;
-
-      if (gridH <= wrapH) {
-        // Content fits — no scroll, no duplication needed
-        wrap.classList.add('static');
-        return;
-      }
-
-      // Content overflows — duplicate for seamless infinite scroll
-      vids.forEach(function (vid, i) {
-        var cell = makeCell(vid, i);
-        io.observe(cell);
-        grid.appendChild(cell);
-      });
-
-      // Pause on hover/touch
-      var paused = false;
-      wrap.addEventListener('mouseenter', function () { paused = true; });
-      wrap.addEventListener('mouseleave', function () { paused = false; });
-      wrap.addEventListener('touchstart', function () { paused = true; }, { passive: true });
-      wrap.addEventListener('touchend', function () {
-        setTimeout(function () { paused = false; }, 3000);
-      }, { passive: true });
-
-      function scrollLoop() {
-        if (!paused && wrap.parentNode) {
-          wrap.scrollTop += 0.5;
-          if (wrap.scrollTop >= wrap.scrollHeight / 2) wrap.scrollTop = 0;
+        if (e.isIntersecting) {
+          if (v.dataset.src && !v.src) { v.src = v.dataset.src; } // lazy load on first view
+          v.play().catch(function () {});
+        } else {
+          v.pause();
         }
-        requestAnimationFrame(scrollLoop);
-      }
-      requestAnimationFrame(scrollLoop);
-    });
+      });
+    }, { rootMargin: '0px 100px 0px 100px', threshold: 0.1 });
+
+    grid.querySelectorAll('._btgv_gc').forEach(function (c) { io.observe(c); });
   }
 
   // ─── TikTok feed ────────────────────────────────────────────────────────────
@@ -576,10 +537,10 @@
       slide.className = '_btgv_slide';
 
       var video = document.createElement('video');
-      video.src = vid.s3_url;
+      // Lazy src for feed slides too
+      video.dataset.src = vid.s3_url;
       video.muted = muted; video.loop = false;
-      video.playsInline = true; video.preload = 'metadata';
-      // Auto-advance to next video when this one ends
+      video.playsInline = true; video.preload = 'none';
       video.onended = function () {
         var next = scroll.children[i + 1];
         if (next) next.scrollIntoView({ behavior: 'smooth' });
@@ -618,11 +579,13 @@
       scroll.appendChild(slide);
     });
 
+    // Lazy load + play only the visible slide
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var v = entry.target.querySelector('video');
         if (!v) return;
         if (entry.isIntersecting) {
+          if (v.dataset.src && !v.src) { v.src = v.dataset.src; }
           v.play().catch(function () {});
           var idx = Array.from(scroll.children).indexOf(entry.target);
           if (idx >= 0 && vids[idx]) track(vids[idx].id, 'view');
@@ -659,7 +622,6 @@
     var gridCont = getGridContainer();
 
     fetchCollections(function (cols) {
-      // Only type='stories' collections go in the stories bar
       if (cols.length) buildStoriesBar(storiesCont, cols);
     });
 
