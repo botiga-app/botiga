@@ -1,4 +1,18 @@
 Product,Feature,Status,Size,Impact,Origin,Notes
+Shoppable Video,Video embed widget — inline carousel on homepage / PDP / collection pages,Backlog,L,Core,Discussed,Embedded on any Shopify page; no redirect
+Shoppable Video,Video overlay UI — views / likes / shares / Add to Cart / Buy Now / Negotiate,Backlog,L,Conversion,Discussed,All actions surface on top of the video without leaving it
+Shoppable Video,In-video checkout — uses merchant's Shopify cart; no page leave,Backlog,L,Conversion,Discussed,Customer completes purchase inside the video player
+Shoppable Video,Negotiate from video — opens Botiga chat overlay; same engine as today,Backlog,M,Conversion,Discussed,Tapping Negotiate surfaces the existing negotiation widget as an overlay
+Shoppable Video,Instagram import — merchant enters @handle; pulls recent videos,Backlog,M,Merchant UX,Discussed,Imports from Instagram via handle; same flow as Whatmore
+Shoppable Video,TikTok import — merchant enters @handle; pulls recent videos,Backlog,M,Merchant UX,Discussed,Imports from TikTok via handle
+Shoppable Video,Phone / direct upload — upload MP4 from device,Backlog,S,Merchant UX,Discussed,Manual upload fallback for non-social content
+Shoppable Video,Auto-sync — scheduled re-pull from Instagram/TikTok; new posts appear automatically,Backlog,M,Merchant UX,Discussed,Keeps video feed fresh without manual re-import
+Shoppable Video,AI product tagging — vision model analyses video; Shopify products auto-suggested,Backlog,L,DX,Discussed,Reduces manual tagging effort; merchant confirms suggestions
+Shoppable Video,Manual product tagging — search by title/SKU and tag to video,Backlog,M,Merchant UX,Discussed,Fallback when AI tag is wrong or missing
+Shoppable Video,Video carousel widget types — floating / carousel / story-like,Backlog,M,UX,Discussed,Merchant picks layout style per placement
+Shoppable Video,Video analytics — views / clicks / add-to-cart / negotiate / checkout rate per video,Backlog,M,Analytics,Suggested,Per-video funnel; understand which content converts
+Shoppable Video,A/B testing for video placements,Later,M,Optimization,Suggested,Test carousel vs. floating widget; compare conversion
+Shoppable Video,Meta retargeting integration — fire pixel events from video interactions,Later,M,Marketing,Suggested,Retarget viewers who watched but didn't buy
 Shopify Widget,Core widget embed — bubble + button modes,Shipped,M,Core,Discussed,Injects into any Shopify theme via script tag
 Shopify Widget,Proactive chat open (dwell-time trigger),Shipped,S,Conversion,Discussed,Opens after N seconds of page idle
 Shopify Widget,Immediate open mode,Shipped,S,Conversion,Discussed,User reported it wasn't firing — fixed missing else branch

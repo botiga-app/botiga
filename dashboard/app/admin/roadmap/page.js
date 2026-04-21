@@ -2,6 +2,21 @@
 import { useState } from 'react';
 
 const ITEMS = [
+  // Shoppable Video
+  { product: 'Shoppable Video', feature: 'Video embed widget — carousel on homepage / PDP / collection pages', status: 'Backlog', size: 'L', impact: 'Core', origin: 'Discussed', notes: 'Embedded on any Shopify page; customer never leaves to watch or buy' },
+  { product: 'Shoppable Video', feature: 'Video overlay UI — views / likes / shares / Add to Cart / Buy Now / Negotiate', status: 'Backlog', size: 'L', impact: 'Conversion', origin: 'Discussed', notes: 'All actions surface on top of the video without leaving it' },
+  { product: 'Shoppable Video', feature: 'In-video checkout — uses merchant\'s Shopify cart; no page leave', status: 'Backlog', size: 'L', impact: 'Conversion', origin: 'Discussed', notes: 'Customer completes purchase inside the video player' },
+  { product: 'Shoppable Video', feature: 'Negotiate from video — opens Botiga chat overlay; same engine as today', status: 'Backlog', size: 'M', impact: 'Conversion', origin: 'Discussed', notes: 'Tapping Negotiate surfaces the existing negotiation widget as an overlay on the video' },
+  { product: 'Shoppable Video', feature: 'Instagram import — merchant enters @handle; pulls recent videos', status: 'Backlog', size: 'M', impact: 'Merchant UX', origin: 'Discussed', notes: 'Imports from Instagram via handle with product tag workflow' },
+  { product: 'Shoppable Video', feature: 'TikTok import — merchant enters @handle; pulls recent videos', status: 'Backlog', size: 'M', impact: 'Merchant UX', origin: 'Discussed', notes: 'Same import flow as Instagram' },
+  { product: 'Shoppable Video', feature: 'Phone / direct upload — upload MP4 from device', status: 'Backlog', size: 'S', impact: 'Merchant UX', origin: 'Discussed', notes: 'Manual upload fallback for non-social content' },
+  { product: 'Shoppable Video', feature: 'Auto-sync — scheduled re-pull from Instagram/TikTok', status: 'Backlog', size: 'M', impact: 'Merchant UX', origin: 'Discussed', notes: 'New posts appear automatically without manual re-import' },
+  { product: 'Shoppable Video', feature: 'AI product tagging — vision model analyses video; Shopify products auto-suggested', status: 'Backlog', size: 'L', impact: 'DX', origin: 'Discussed', notes: 'Reduces manual tagging effort; merchant confirms suggestions' },
+  { product: 'Shoppable Video', feature: 'Manual product tagging — search by title/SKU and tag to video', status: 'Backlog', size: 'M', impact: 'Merchant UX', origin: 'Discussed', notes: 'Fallback for when AI tag is wrong or product is unlisted' },
+  { product: 'Shoppable Video', feature: 'Video carousel widget types — floating / carousel / story-like', status: 'Backlog', size: 'M', impact: 'UX', origin: 'Discussed', notes: 'Merchant picks layout style per placement' },
+  { product: 'Shoppable Video', feature: 'Video analytics — views / clicks / add-to-cart / negotiate / checkout rate per video', status: 'Backlog', size: 'M', impact: 'Analytics', origin: 'Suggested', notes: 'Per-video funnel to understand which content converts' },
+  { product: 'Shoppable Video', feature: 'A/B testing for video placements', status: 'Later', size: 'M', impact: 'Optimization', origin: 'Suggested', notes: 'Test carousel vs. floating widget; compare conversion rate' },
+  { product: 'Shoppable Video', feature: 'Meta retargeting — fire pixel events from video interactions', status: 'Later', size: 'M', impact: 'Marketing', origin: 'Suggested', notes: 'Retarget viewers who watched but did not buy' },
   // Shopify Widget
   { product: 'Shopify Widget', feature: 'Core widget embed — bubble + button modes', status: 'Shipped', size: 'M', impact: 'Core', origin: 'Discussed', notes: 'Injects into any Shopify theme via script tag' },
   { product: 'Shopify Widget', feature: 'Proactive chat open (dwell-time trigger)', status: 'Shipped', size: 'S', impact: 'Conversion', origin: 'Discussed', notes: 'Opens after N seconds of page idle' },
@@ -88,7 +103,7 @@ const ITEMS = [
 ];
 
 const STATUSES = ['Shipped', 'Next', 'Backlog', 'Later', 'Icebox'];
-const PRODUCTS = ['All', 'Shopify Widget', 'Merchant Dashboard', 'Admin Dashboard', 'Negotiation API', 'Email & Notifications', 'Shopify App', 'Infrastructure'];
+const PRODUCTS = ['All', 'Shoppable Video', 'Shopify Widget', 'Merchant Dashboard', 'Admin Dashboard', 'Negotiation API', 'Email & Notifications', 'Shopify App', 'Infrastructure'];
 const ORIGINS = ['All', 'Discussed', 'Suggested'];
 
 const STATUS_STYLE = {
@@ -100,6 +115,7 @@ const STATUS_STYLE = {
 };
 
 const PRODUCT_COLORS = {
+  'Shoppable Video':     'bg-rose-100 text-rose-700',
   'Shopify Widget':      'bg-violet-100 text-violet-700',
   'Merchant Dashboard':  'bg-blue-100 text-blue-700',
   'Negotiation API':     'bg-orange-100 text-orange-700',

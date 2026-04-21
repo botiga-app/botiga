@@ -5,6 +5,29 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 ---
 
+## Shoppable Video
+
+> Video shopping overlay — customer watches, negotiates, and checks out without leaving the video. Merchant pulls videos from Instagram/TikTok/phone. AI auto-tags products. Uses Botiga's existing negotiation engine and merchant's Shopify cart.
+
+| Feature | Status | Size | Impact | Origin |
+|---|---|---|---|---|
+| **Video embed widget** — inline carousel on homepage, PDP, collection pages | Backlog | L | Core | Discussed |
+| **Video overlay UI** — views, likes, shares, Add to Cart, Buy Now, Negotiate buttons on video | Backlog | L | Conversion | Discussed |
+| **In-video checkout** — customer checks out without leaving video; uses merchant's Shopify cart | Backlog | L | Conversion | Discussed |
+| **Negotiate from video** — taps Negotiate opens Botiga chat overlay; same engine as today | Backlog | M | Conversion | Discussed |
+| **Instagram import** — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
+| **TikTok import** — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
+| **Phone / direct upload** — upload MP4 from device | Backlog | S | Merchant UX | Discussed |
+| **Auto-sync** — scheduled re-pull from Instagram/TikTok; new posts appear automatically | Backlog | M | Merchant UX | Discussed |
+| **AI product tagging** — video analysed by vision model; Shopify products auto-suggested for tagging | Backlog | L | DX | Discussed |
+| **Manual product tagging** — merchant searches products by title/SKU, tags to video | Backlog | M | Merchant UX | Discussed |
+| **Video carousel widget types** — floating widget, video carousel, story-like carousel | Backlog | M | UX | Discussed |
+| **Video analytics** — views, clicks, add-to-cart rate, negotiate rate, checkout rate per video | Backlog | M | Analytics | Suggested |
+| **A/B testing for video placements** | Later | M | Optimization | Suggested |
+| **Meta retargeting integration** — fire pixel events from video interactions | Later | M | Marketing | Suggested |
+
+---
+
 ## Shopify Widget (n.js embed)
 
 | Feature | Status | Size | Impact | Origin |
