@@ -475,10 +475,10 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
 }
 
 // ─── Widget editor (create / edit a named story or carousel) ─────────────────
-function WidgetEditor({ widget, videos, apiKey, merchantId, onSave, onClose, createWidget }) {
+function WidgetEditor({ widget, defaultType, videos, apiKey, merchantId, onSave, onClose, createWidget }) {
   const isNew = !widget;
   const [name, setName] = useState(widget?.name || '');
-  const [type, setType] = useState(widget?.type || 'stories');
+  const [type, setType] = useState(widget?.type || defaultType || 'stories');
   const [selectedIds, setSelectedIds] = useState(
     (widget?.video_widget_items || [])
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -666,13 +666,17 @@ function WidgetEditor({ widget, videos, apiKey, merchantId, onSave, onClose, cre
   );
 }
 
-// ─── Widget card ──────────────────────────────────────────────────────────────
-function WidgetCard({ widget, apiKey, videos, onEdit, onDelete }) {
+// ─── Widget row (table) ───────────────────────────────────────────────────────
+function WidgetRow({ widget, apiKey, videos, onEdit, onDelete, onToggleActive }) {
   const [copied, setCopied] = useState(false);
+  const [showEmbed, setShowEmbed] = useState(false);
   const items = (widget.video_widget_items || []).sort((a, b) => a.sort_order - b.sort_order);
-  const previewVideos = items.slice(0, 4).map(i => videos.find(v => v.id === i.video_id)).filter(Boolean);
+  const previewVideos = items.slice(0, 3).map(i => videos.find(v => v.id === i.video_id)).filter(Boolean);
+  const typeLabel = { stories: 'Stories', carousel: 'Carousel', feed: 'Feed' }[widget.type] || widget.type;
+  const typeBg = { stories: 'bg-purple-100 text-purple-700', carousel: 'bg-blue-100 text-blue-700', feed: 'bg-emerald-100 text-emerald-700' }[widget.type] || 'bg-gray-100 text-gray-600';
+  const isActive = widget.is_active !== false;
 
-  const embedSnippet = `<script src="https://botiga-api-two.vercel.app/video.js" data-key="${apiKey}" data-mode="${widget.type}" data-widget="${widget.id}"></script>`;
+  const embedSnippet = `<script src="https://botiga-api-two.vercel.app/video.js" data-key="${apiKey}"></script>`;
 
   function copy() {
     navigator.clipboard.writeText(embedSnippet);
@@ -680,61 +684,77 @@ function WidgetCard({ widget, apiKey, videos, onEdit, onDelete }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const typeIcon = { stories: '⭕', carousel: '▦', feed: '▤' }[widget.type] || '⭕';
-  const typeLabel = { stories: 'Stories', carousel: 'Carousel', feed: 'Feed' }[widget.type] || widget.type;
-
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Preview strip */}
-      <div className="flex gap-1 p-3 bg-gray-50">
-        {previewVideos.length > 0 ? previewVideos.map((v, i) => (
-          <div key={v.id} className="relative flex-1 aspect-[9/16] max-h-24 rounded-lg overflow-hidden bg-black">
-            <video src={v.s3_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-            {i === 3 && items.length > 4 && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs font-bold">+{items.length - 4}</div>
-            )}
-          </div>
-        )) : (
-          <div className="w-full h-16 flex items-center justify-center text-gray-300 text-sm">No videos</div>
-        )}
-      </div>
+    <div className="bg-white rounded-2xl border border-gray-100 p-4">
+      <div className="flex items-center gap-4">
+        {/* Preview thumbnails */}
+        <div className="flex gap-1 flex-shrink-0">
+          {previewVideos.length > 0 ? previewVideos.map((v, i) => (
+            <div key={v.id} className="relative w-10 aspect-[9/16] rounded-lg overflow-hidden bg-black">
+              <video src={v.s3_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+            </div>
+          )) : <div className="w-10 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300 text-xs">–</div>}
+        </div>
 
-      {/* Info */}
-      <div className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">{widget.name}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{typeIcon} {typeLabel} · {items.length} video{items.length !== 1 ? 's' : ''}</p>
-          </div>
-          <div className="flex gap-1 flex-shrink-0">
-            <button onClick={onEdit} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg transition-colors">Edit</button>
-            <button onClick={onDelete} className="text-xs bg-red-50 hover:bg-red-100 text-red-500 px-2.5 py-1.5 rounded-lg transition-colors">Delete</button>
+        {/* Name + type */}
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-900 text-sm truncate">{widget.name}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeBg}`}>{typeLabel}</span>
+            <span className="text-xs text-gray-400">{items.length} video{items.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
 
-        {/* Embed snippet */}
-        <div className="bg-gray-900 rounded-xl p-3">
-          <p className="text-[10px] text-gray-400 mb-1.5 font-medium">EMBED CODE</p>
-          <code className="text-[10px] text-emerald-400 break-all leading-relaxed">{embedSnippet}</code>
+        {/* Visibility toggle */}
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => onToggleActive(widget.id, !isActive)}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${isActive ? 'bg-indigo-600' : 'bg-gray-200'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+          <span className={`text-[10px] font-medium ${isActive ? 'text-indigo-600' : 'text-gray-400'}`}>{isActive ? 'Visible' : 'Hidden'}</span>
         </div>
-        <button onClick={copy} className={`w-full text-xs font-medium rounded-lg py-2 transition-colors ${copied ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}>
-          {copied ? '✓ Copied!' : 'Copy Embed Code'}
-        </button>
+
+        {/* Actions */}
+        <div className="flex gap-1.5 flex-shrink-0">
+          <button onClick={() => setShowEmbed(p => !p)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors">Embed</button>
+          <button onClick={onEdit} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg transition-colors font-medium">Edit</button>
+          <button onClick={onDelete} className="text-xs bg-red-50 hover:bg-red-100 text-red-500 px-2.5 py-1.5 rounded-lg transition-colors">✕</button>
+        </div>
       </div>
+
+      {/* Embed code expandable */}
+      {showEmbed && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">Add this once to your Shopify theme — all active story collections will appear automatically:</p>
+          <div className="bg-gray-900 rounded-xl p-3 flex items-start gap-2">
+            <code className="text-[11px] text-emerald-400 flex-1 break-all leading-relaxed">{embedSnippet}</code>
+            <button onClick={copy} className={`flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
+              {copied ? '✓' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+const WIDGET_TYPES = [
+  { type: 'stories', icon: '⭕', label: 'Story Carousel', desc: 'Instagram-style circles. Tap to watch.' },
+  { type: 'carousel', icon: '▦', label: 'Video Carousel', desc: 'Horizontal scroll of video cards.' },
+  { type: 'feed', icon: '▤', label: 'Floating Feed', desc: 'Full-screen video feed button.' },
+];
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function VideosPage() {
-  const [tab, setTab] = useState('library'); // 'library' | 'widgets'
   const [videos, setVideos] = useState([]);
   const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [merchantId, setMerchantId] = useState(null);
   const [shopifyDomain, setShopifyDomain] = useState(null);
   const [apiKey, setApiKey] = useState(null);
-  const [editingWidget, setEditingWidget] = useState(null); // null | widget object | 'new'
+  const [editingWidget, setEditingWidget] = useState(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -742,13 +762,11 @@ export default function VideosPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setMerchantId(user.id);
-
       const [videosRes, merchantRes, widgetsRes] = await Promise.all([
         fetch(`${API}/api/merchants/${user.id}/videos`),
         fetch(`${API}/api/merchants/${user.id}`),
         fetch(`${API}/api/merchants/${user.id}/video-widgets`),
       ]);
-
       if (videosRes.ok) setVideos(await videosRes.json());
       if (widgetsRes.ok) setWidgets(await widgetsRes.json());
       if (merchantRes.ok) {
@@ -790,6 +808,15 @@ export default function VideosPage() {
     setWidgets(prev => prev.filter(w => w.id !== widgetId));
   }
 
+  async function handleToggleActive(widgetId, isActive) {
+    await fetch(`${API}/api/video-widgets/${widgetId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: isActive }),
+    });
+    setWidgets(prev => prev.map(w => w.id === widgetId ? { ...w, is_active: isActive } : w));
+  }
+
   function handleWidgetSaved(saved) {
     setWidgets(prev => {
       const exists = prev.find(w => w.id === saved.id);
@@ -797,8 +824,7 @@ export default function VideosPage() {
     });
   }
 
-  // WidgetEditor needs merchantId injected — wrap create call
-  async function createWidget(name, type, selectedIds) {
+  async function createWidget(name, type) {
     const res = await fetch(`${API}/api/merchants/${merchantId}/video-widgets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -807,107 +833,99 @@ export default function VideosPage() {
     return res.json();
   }
 
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>;
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Shoppable Videos</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Upload, tag products, build widgets, embed on your store.</p>
+    <div className="p-6 max-w-4xl mx-auto space-y-10">
+
+      {/* ── Create Widget ───────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Create Widget</h2>
+        <p className="text-sm text-gray-500 mb-4">Choose a widget type to showcase your shoppable videos.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {WIDGET_TYPES.map(({ type, icon, label, desc }) => (
+            <button
+              key={type}
+              onClick={() => setEditingWidget({ _new: true, _type: type })}
+              className="group bg-white border border-gray-200 hover:border-indigo-400 hover:shadow-md rounded-2xl p-5 text-left transition-all"
+            >
+              <div className="text-2xl mb-3">{icon}</div>
+              <p className="font-semibold text-gray-900 text-sm group-hover:text-indigo-700 transition-colors">{label}</p>
+              <p className="text-xs text-gray-400 mt-1 leading-relaxed">{desc}</p>
+              <div className="mt-4 text-xs font-semibold text-indigo-600 group-hover:underline">Create →</div>
+            </button>
+          ))}
         </div>
-        {tab === 'widgets' && (
-          <button
-            onClick={() => setEditingWidget('new')}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
-          >
-            + New Widget
-          </button>
+      </section>
+
+      {/* ── Manage Widgets ──────────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Manage Widgets</h2>
+            <p className="text-sm text-gray-500">Toggle visibility to show or hide on your store.</p>
+          </div>
+        </div>
+
+        {widgets.length === 0 ? (
+          <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-10 text-center">
+            <p className="text-sm text-gray-500">No widgets yet. Create one above to get started.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {widgets.map(widget => (
+              <WidgetRow
+                key={widget.id}
+                widget={widget}
+                apiKey={apiKey}
+                videos={videos}
+                onEdit={() => setEditingWidget(widget)}
+                onDelete={() => handleDeleteWidget(widget.id)}
+                onToggleActive={handleToggleActive}
+              />
+            ))}
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-6">
-        {[['library', '📁 Library'], ['widgets', '🧩 Widgets']].map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              tab === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ── Video Library ───────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Video Library</h2>
+        <p className="text-sm text-gray-500 mb-4">Upload videos and tag products to make them shoppable.</p>
 
-      {loading ? (
-        <div className="text-center py-16 text-gray-400 text-sm">Loading...</div>
-      ) : tab === 'library' ? (
-        <>
-          {/* Upload zone */}
-          {merchantId && (
-            <div className="mb-6">
-              <UploadZone merchantId={merchantId} onUploaded={handleUploaded} />
-            </div>
-          )}
+        {merchantId && (
+          <div className="mb-6">
+            <UploadZone merchantId={merchantId} onUploaded={handleUploaded} />
+          </div>
+        )}
 
-          {videos.length === 0 ? (
-            <div className="text-center py-16 text-gray-400 text-sm">No videos yet. Upload your first one above.</div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-gray-500">{videos.length} video{videos.length !== 1 ? 's' : ''}</p>
-                <p className="text-xs text-gray-400">Hover to preview · Click title to rename</p>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {videos.map(video => (
-                  <VideoCard
-                    key={video.id}
-                    video={video}
-                    merchantId={merchantId}
-                    shopifyDomain={shopifyDomain}
-                    onDelete={handleDelete}
-                    onToggleStatus={handleToggleStatus}
-                    onTagsUpdated={handleTagsUpdated}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        /* Widgets tab */
-        <>
-          {widgets.length === 0 ? (
-            <div className="text-center py-20">
-              <div className="text-4xl mb-3">🧩</div>
-              <p className="font-semibold text-gray-700 mb-1">No widgets yet</p>
-              <p className="text-sm text-gray-400 mb-4">Create a named story or carousel, pick your videos, and get an embed snippet.</p>
-              <button onClick={() => setEditingWidget('new')} className="bg-indigo-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-colors">
-                Create your first widget
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {widgets.map(widget => (
-                <WidgetCard
-                  key={widget.id}
-                  widget={widget}
-                  apiKey={apiKey}
-                  videos={videos}
-                  onEdit={() => setEditingWidget(widget)}
-                  onDelete={() => handleDeleteWidget(widget.id)}
+        {videos.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No videos yet. Upload your first one above.</p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-3">{videos.length} video{videos.length !== 1 ? 's' : ''}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {videos.map(video => (
+                <VideoCard
+                  key={video.id}
+                  video={video}
+                  merchantId={merchantId}
+                  shopifyDomain={shopifyDomain}
+                  onDelete={handleDelete}
+                  onToggleStatus={handleToggleStatus}
+                  onTagsUpdated={handleTagsUpdated}
                 />
               ))}
             </div>
-          )}
-        </>
-      )}
+          </>
+        )}
+      </section>
 
       {/* Widget editor modal */}
       {editingWidget && (
         <WidgetEditor
-          widget={editingWidget === 'new' ? null : editingWidget}
+          widget={editingWidget._new ? null : editingWidget}
+          defaultType={editingWidget._type}
           videos={videos}
           apiKey={apiKey}
           merchantId={merchantId}

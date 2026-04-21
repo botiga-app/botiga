@@ -8,9 +8,9 @@
   })();
 
   var API_KEY = script.getAttribute('data-key') || '';
-  var MODE = script.getAttribute('data-mode') || 'stories'; // 'stories' | 'carousel' | 'feed'
+  var MODE = script.getAttribute('data-mode') || 'stories';
   var API_BASE = script.getAttribute('data-api') || 'https://botiga-api-two.vercel.app';
-  var WIDGET_ID = script.getAttribute('data-widget') || ''; // optional named collection ID
+  var WIDGET_ID = script.getAttribute('data-widget') || '';
   var SESSION_ID = 'btgv_' + Math.random().toString(36).slice(2);
 
   if (!API_KEY) return console.warn('[Botiga Video] Missing data-key attribute');
@@ -22,25 +22,47 @@
   var feedEl = null;
   var likedSet = {};
 
-  // ─── Fetch videos ──────────────────────────────────────────────────────────
+  // ─── Fetch collections (named widgets) ────────────────────────────────────
+  function fetchCollections(cb) {
+    fetch(API_BASE + '/api/widget/collections?k=' + API_KEY)
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) { cb(data || []); })
+      .catch(function () { cb([]); });
+  }
+
+  // ─── Fetch videos for a specific collection ───────────────────────────────
+  function fetchCollectionVideos(widgetId, cb) {
+    fetch(API_BASE + '/api/widget/videos?k=' + API_KEY + '&w=' + widgetId)
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) { cb(data || []); })
+      .catch(function () { cb([]); });
+  }
+
+  // ─── Fetch all active videos (fallback) ───────────────────────────────────
   function fetchVideos(cb) {
-    var url = API_BASE + '/api/widget/videos?k=' + API_KEY;
-    if (WIDGET_ID) url += '&w=' + WIDGET_ID;
-    console.log('[Botiga Video] fetching:', url);
-    fetch(url)
-      .then(function (r) {
-        console.log('[Botiga Video] fetch status:', r.status);
-        return r.ok ? r.json() : [];
-      })
-      .then(function (data) {
-        videos = data || [];
-        console.log('[Botiga Video] videos received:', videos.length, videos.map(function(v){ return v.title; }));
-        cb();
-      })
-      .catch(function (err) {
-        console.error('[Botiga Video] fetch error:', err);
-        cb();
-      });
+    fetch(API_BASE + '/api/widget/videos?k=' + API_KEY)
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) { videos = data || []; cb(); })
+      .catch(function () { cb(); });
+  }
+
+  // ─── Find or auto-create stories container ────────────────────────────────
+  function findOrCreateContainer() {
+    var el = document.getElementById('btgv-stories');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'btgv-stories';
+    // Try to inject after the page header
+    var header = document.querySelector('header') ||
+                 document.querySelector('[data-section-type="header"]') ||
+                 document.querySelector('#shopify-section-header');
+    if (header && header.parentNode) {
+      header.parentNode.insertBefore(el, header.nextSibling);
+    } else {
+      var main = document.querySelector('main') || document.body;
+      main.insertBefore(el, main.firstChild);
+    }
+    return el;
   }
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
@@ -103,14 +125,17 @@
       '._btgv_btn_cart{background:#fff;color:#111}',
       '._btgv_btn_buy{background:#111;color:#fff}',
       '._btgv_btn_neg{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff}',
+      /* Stories bar wrapper */
+      '#btgv-stories{width:100%;background:#fff;border-bottom:1px solid #f0f0f0}',
       /* Stories row */
-      '#_btgv_stories{display:flex;gap:10px;padding:8px 16px;overflow-x:auto;scrollbar-width:none}',
+      '#_btgv_stories{display:flex;gap:16px;padding:12px 16px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}',
       '#_btgv_stories::-webkit-scrollbar{display:none}',
-      '._btgv_story{flex-shrink:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}',
-      '._btgv_story_ring{width:64px;height:64px;border-radius:50%;padding:2.5px;background:linear-gradient(135deg,#6366f1,#ec4899,#f59e0b)}',
+      '._btgv_story{flex-shrink:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent}',
+      '._btgv_story_ring{width:68px;height:68px;border-radius:50%;padding:2.5px;background:linear-gradient(135deg,#6366f1,#ec4899,#f59e0b)}',
+      '._btgv_story_ring.seen{background:#d1d5db}',
       '._btgv_story_inner{width:100%;height:100%;border-radius:50%;overflow:hidden;border:2.5px solid #fff;background:#111}',
       '._btgv_story_inner video,._btgv_story_inner img{width:100%;height:100%;object-fit:cover}',
-      '._btgv_story_label{font-size:10px;color:#374151;text-align:center;max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '._btgv_story_label{font-size:11px;color:#374151;text-align:center;max-width:68px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}',
       /* Carousel */
       '#_btgv_carousel{display:flex;gap:10px;padding:8px 16px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}',
       '#_btgv_carousel::-webkit-scrollbar{display:none}',
@@ -718,17 +743,14 @@
   }
 
   // ─── Stories mode ───────────────────────────────────────────────────────────
-  function buildStories(container) {
-    // Ensure container is visible — Shopify themes sometimes collapse bare divs
+  function buildStories(container, collections) {
     container.style.display = 'block';
     container.style.width = '100%';
-    container.style.minHeight = '96px';
-    container.style.overflow = 'hidden';
 
     var row = document.createElement('div');
     row.id = '_btgv_stories';
 
-    videos.forEach(function (video, i) {
+    collections.forEach(function (col) {
       var story = document.createElement('div');
       story.className = '_btgv_story';
 
@@ -738,25 +760,41 @@
       var inner = document.createElement('div');
       inner.className = '_btgv_story_inner';
 
-      var vid = document.createElement('video');
-      vid.src = video.s3_url;
-      vid.muted = true;
-      vid.loop = true;
-      vid.playsInline = true;
-      vid.preload = 'metadata';
-      inner.appendChild(vid);
+      // Use thumbnail image if available, otherwise a video preview
+      if (col.thumbnail_url) {
+        var img = document.createElement('img');
+        img.src = col.thumbnail_url;
+        img.alt = col.name;
+        inner.appendChild(img);
+      } else {
+        var vid = document.createElement('video');
+        vid.src = col.thumbnail_url || '';
+        vid.muted = true;
+        vid.loop = true;
+        vid.playsInline = true;
+        vid.preload = 'metadata';
+        inner.appendChild(vid);
+        story.onmouseenter = function () { vid.play().catch(function () {}); };
+        story.onmouseleave = function () { vid.pause(); vid.currentTime = 0; };
+      }
+
       ring.appendChild(inner);
 
       var label = document.createElement('div');
       label.className = '_btgv_story_label';
-      label.textContent = video.title || ('Video ' + (i + 1));
+      label.textContent = col.name;
 
       story.appendChild(ring);
       story.appendChild(label);
-      story.onclick = function () { buildFeed(i); };
 
-      story.onmouseenter = function () { vid.play().catch(function () {}); };
-      story.onmouseleave = function () { vid.pause(); vid.currentTime = 0; };
+      // On click: fetch this collection's videos then open feed
+      story.onclick = function () {
+        fetchCollectionVideos(col.id, function (vids) {
+          if (!vids.length) return;
+          videos = vids;
+          buildFeed(0);
+        });
+      };
 
       row.appendChild(story);
     });
@@ -818,44 +856,23 @@
 
   // ─── Init ───────────────────────────────────────────────────────────────────
   function init() {
-    console.log('[Botiga Video] init() — readyState:', document.readyState, '| API_KEY:', API_KEY, '| MODE:', MODE);
     injectStyles();
 
-    var mountId = script.getAttribute('data-mount') || null;
-    var container = mountId ? document.getElementById(mountId) : null;
-    console.log('[Botiga Video] mount id:', mountId, '| container found:', !!container);
-
-    if (!container) {
-      container = document.createElement('div');
-      container.id = '_btgv_mount';
-      // Insert after script tag, or append to body as last resort
-      if (script.parentNode) {
-        script.parentNode.insertBefore(container, script.nextSibling);
-      } else {
-        document.body.appendChild(container);
-      }
+    // ── Direct widget embed (data-widget set): open that collection's videos as a feed
+    if (WIDGET_ID) {
+      fetchCollectionVideos(WIDGET_ID, function (vids) {
+        if (!vids.length) return;
+        videos = vids;
+        buildFeed(0);
+      });
+      return;
     }
 
-    // Temporary debug outline so we can confirm mount point is visible
-    container.style.outline = '2px dashed rgba(99,102,241,0.4)';
-    container.style.minHeight = '20px';
-
-    fetchVideos(function () {
-      console.log('[Botiga Video] videos fetched:', videos.length);
-      container.style.outline = '';
-      if (!videos.length) {
-        console.warn('[Botiga Video] No active videos found for this API key.');
-        container.style.background = 'rgba(239,68,68,0.1)';
-        container.style.minHeight = '40px';
-        container.innerHTML = '<div style="padding:8px;font-size:11px;color:#ef4444;font-family:sans-serif">[Botiga] No videos found — check API key or upload videos</div>';
-        return;
-      }
-      console.log('[Botiga Video] building mode:', MODE);
-      if (MODE === 'stories') buildStories(container);
-      else if (MODE === 'carousel') buildCarousel(container);
-      else if (MODE === 'feed') buildFeedButton(container);
-      else buildStories(container);
-      console.log('[Botiga Video] done — container children:', container.childNodes.length);
+    // ── Stories bar: show one circle per named collection
+    var container = findOrCreateContainer();
+    fetchCollections(function (collections) {
+      if (!collections.length) return; // nothing to show — merchant hasn't set up collections
+      buildStories(container, collections);
     });
   }
 

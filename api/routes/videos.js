@@ -176,12 +176,13 @@ router.post('/merchants/:merchantId/video-widgets', dashboardCors, async (req, r
   res.json(data);
 });
 
-// ─── Dashboard: update widget (name/type) ────────────────────────────────────
+// ─── Dashboard: update widget (name/type/is_active) ──────────────────────────
 router.put('/video-widgets/:id', dashboardCors, async (req, res) => {
-  const { name, type } = req.body;
+  const { name, type, is_active } = req.body;
   const updates = {};
   if (name !== undefined) updates.name = name;
   if (type !== undefined) updates.type = type;
+  if (is_active !== undefined) updates.is_active = is_active;
   updates.updated_at = new Date().toISOString();
   const { data, error } = await supabase
     .from('video_widgets').update(updates).eq('id', req.params.id).select().single();
@@ -214,6 +215,68 @@ router.put('/video-widgets/:id/items', dashboardCors, async (req, res) => {
   }
 
   res.json({ ok: true, count: video_ids.length });
+});
+
+// ─── Widget: public collections list (one entry per named widget) ────────────
+router.get('/widget/collections', widgetCors, async (req, res) => {
+  try {
+    const { k: apiKey } = req.query;
+    if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+
+    const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+    if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+
+    // Get all active widgets
+    const { data: widgets } = await supabase
+      .from('video_widgets')
+      .select('id, name, type')
+      .eq('merchant_id', merchant.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+
+    if (!widgets || widgets.length === 0) return res.json([]);
+
+    // Get items for all widgets
+    const widgetIds = widgets.map(w => w.id);
+    const { data: items } = await supabase
+      .from('video_widget_items')
+      .select('widget_id, sort_order, video_id')
+      .in('widget_id', widgetIds)
+      .order('sort_order', { ascending: true });
+
+    const itemsByWidget = {};
+    (items || []).forEach(item => {
+      if (!itemsByWidget[item.widget_id]) itemsByWidget[item.widget_id] = [];
+      itemsByWidget[item.widget_id].push(item);
+    });
+
+    // Get thumbnails for first video of each widget
+    const firstVideoIds = widgets.map(w => (itemsByWidget[w.id] || [])[0]?.video_id).filter(Boolean);
+    const thumbMap = {};
+    if (firstVideoIds.length > 0) {
+      const { data: thumbVids } = await supabase
+        .from('videos').select('id, s3_url, thumbnail_url').in('id', firstVideoIds);
+      (thumbVids || []).forEach(v => { thumbMap[v.id] = v; });
+    }
+
+    const collections = widgets.map(w => {
+      const wItems = itemsByWidget[w.id] || [];
+      const firstId = wItems[0]?.video_id;
+      const thumb = firstId ? thumbMap[firstId] : null;
+      return {
+        id: w.id,
+        name: w.name,
+        type: w.type,
+        video_count: wItems.length,
+        thumbnail_url: thumb?.thumbnail_url || thumb?.s3_url || null,
+      };
+    }).filter(c => c.video_count > 0);
+
+    res.json(collections);
+  } catch (err) {
+    console.error('[widget/collections] error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch collections' });
+  }
 });
 
 // ─── Widget: public video feed (called by botiga-video.js) ───────────────────
