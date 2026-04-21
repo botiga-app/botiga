@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 const navItems = [
   { href: '/admin/live-feed', label: 'Live Feed', icon: '📡' },
   { href: '/admin/merchants', label: 'Merchants', icon: '🏪' },
-  { href: '/admin/alerts', label: 'Alerts', icon: '🔔' }
+  { href: '/admin/alerts', label: 'Alerts', icon: '🔔' },
+  { href: '/admin/roadmap', label: 'Roadmap', icon: '🗺️' }
 ];
 
 export default function AdminLayoutClient({ children }) {
