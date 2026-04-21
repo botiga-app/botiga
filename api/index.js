@@ -33,6 +33,7 @@ app.use('/api', require('./routes/rules'));
 app.use('/api', require('./routes/billing'));
 app.use('/api', require('./routes/cron'));
 app.use('/api', require('./routes/admin'));
+app.use('/api', require('./routes/videos'));
 app.use('/api', require('./routes/script-tags').router);
 
 // Serve public assets (confetti.js etc) — CORS open for Shopify Script Tags
@@ -48,6 +49,14 @@ app.get('/n.js', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache, no-store');
   res.sendFile(path.join(__dirname, '../widget/dist/n.js'));
+});
+
+// Serve shoppable video widget — CORS open so any Shopify store can load it
+app.get('/video.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache, no-store');
+  res.sendFile(path.join(__dirname, '../widget/video.js'));
 });
 
 // Health check
