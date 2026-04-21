@@ -231,17 +231,23 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
                        product_handle, price, compare_at_price, image_url)`;
 
   if (widgetId) {
-    // Fetch videos for a specific widget in their defined order
-    const { data: items } = await supabase
-      .from('video_widget_items')
-      .select(`sort_order, videos(${videoSelect})`)
-      .eq('widget_id', widgetId)
-      .order('sort_order', { ascending: true });
+    try {
+      const { data: items, error } = await supabase
+        .from('video_widget_items')
+        .select(`sort_order, videos(${videoSelect})`)
+        .eq('widget_id', widgetId)
+        .order('sort_order', { ascending: true });
 
-    const videos = (items || [])
-      .map(item => item.videos)
-      .filter(v => v && v.status !== 'inactive');
-    return res.json(videos);
+      if (error) throw error;
+
+      const videos = (items || [])
+        .map(item => item.videos)
+        .filter(v => v && v.status !== 'inactive');
+      return res.json(videos);
+    } catch (err) {
+      console.error('[widget/videos] widget query failed:', err.message);
+      // Fall through to return all active videos instead of 500
+    }
   }
 
   // Fallback: all active videos for merchant
