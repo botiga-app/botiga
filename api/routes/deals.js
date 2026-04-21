@@ -3,10 +3,8 @@ const router = express.Router();
 const supabase = require('../lib/supabase');
 const { dashboardCors } = require('../middleware/cors');
 
-router.use(dashboardCors);
-
 // Get negotiations for a merchant (dashboard)
-router.get('/merchants/:merchantId/negotiations', async (req, res) => {
+router.get('/merchants/:merchantId/negotiations', dashboardCors, async (req, res) => {
   const { merchantId } = req.params;
   const { status, limit = 50, offset = 0 } = req.query;
 
@@ -25,7 +23,7 @@ router.get('/merchants/:merchantId/negotiations', async (req, res) => {
 });
 
 // Get single negotiation with full messages
-router.get('/negotiations/:id', async (req, res) => {
+router.get('/negotiations/:id', dashboardCors, async (req, res) => {
   const { data, error } = await supabase
     .from('negotiations')
     .select('*')
@@ -37,7 +35,7 @@ router.get('/negotiations/:id', async (req, res) => {
 });
 
 // Dashboard metrics
-router.get('/merchants/:merchantId/metrics', async (req, res) => {
+router.get('/merchants/:merchantId/metrics', dashboardCors, async (req, res) => {
   const { merchantId } = req.params;
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
