@@ -120,10 +120,18 @@ function Card({ item, onClick, selected }) {
         selected ? 'ring-2 ring-indigo-400 border-indigo-200' : 'border-gray-100'
       }`}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-sm font-medium text-gray-900 leading-snug">{item.feature}</p>
         <span className="text-xs text-gray-400 shrink-0 font-mono">{item.size}</span>
       </div>
+      {item.notes && (
+        <p className="text-xs text-gray-400 mb-2 leading-relaxed line-clamp-2">{item.notes}</p>
+      )}
+      {item.note && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-2 leading-relaxed">
+          📌 {item.note}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5 mt-2">
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRODUCT_COLORS[item.product]}`}>
           {item.product}
@@ -141,9 +149,10 @@ function Card({ item, onClick, selected }) {
   );
 }
 
-function DetailPanel({ item, onClose }) {
+function DetailPanel({ item, onClose, notes, setNotes }) {
   if (!item) return null;
   const s = STATUS_STYLE[item.status];
+  const note = notes[item.feature] ?? item.note ?? '';
   return (
     <div className="fixed inset-y-0 right-0 w-96 bg-white border-l border-gray-100 shadow-xl z-50 flex flex-col">
       <div className="flex items-center justify-between p-5 border-b border-gray-100">
@@ -170,6 +179,19 @@ function DetailPanel({ item, onClose }) {
             </div>
           ))}
         </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">📌 Note</label>
+          <textarea
+            value={note}
+            onChange={e => setNotes(prev => ({ ...prev, [item.feature]: e.target.value }))}
+            placeholder="Add a private note — context, blockers, who owns this..."
+            rows={4}
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none text-gray-800 placeholder-gray-300"
+          />
+          {note && (
+            <p className="text-xs text-gray-400 mt-1">Notes are saved for this session.</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -180,6 +202,7 @@ export default function RoadmapPage() {
   const [originFilter, setOriginFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [notes, setNotes] = useState({});
 
   const filtered = ITEMS.filter(item => {
     if (productFilter !== 'All' && item.product !== productFilter) return false;
@@ -271,7 +294,7 @@ export default function RoadmapPage() {
                     items.map((item, i) => (
                       <Card
                         key={i}
-                        item={item}
+                        item={{...item, note: notes[item.feature] ?? item.note}}
                         onClick={setSelected}
                         selected={selected?.feature === item.feature}
                       />
@@ -288,7 +311,7 @@ export default function RoadmapPage() {
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setSelected(null)} />
-          <DetailPanel item={selected} onClose={() => setSelected(null)} />
+          <DetailPanel item={selected} onClose={() => setSelected(null)} notes={notes} setNotes={setNotes} />
         </>
       )}
     </div>
