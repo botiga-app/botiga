@@ -608,7 +608,8 @@
         fb.onclick = function () {
           fb.textContent = 'Adding to cart...'; fb.disabled = true;
           addToCart(tag.shopify_variant_id, function () {
-            var cartPath = discountCode ? '/cart?discount=' + discountCode : '/cart';
+            // Shopify: /discount/CODE sets the discount cookie, then redirects to /cart
+            var cartPath = discountCode ? '/discount/' + discountCode + '?redirect=/cart' : '/cart';
             window.location.href = cartPath;
           });
         };
@@ -647,6 +648,21 @@
           } else {
             appendMsg('bot', d.bot_reply);
             if (d.status === 'won' && d.deal_price) {
+              // Save to _botiga_session so main widget's injectCartBanner fires on /cart
+              try {
+                var raw = sessionStorage.getItem('_botiga_session');
+                var sess = raw ? JSON.parse(raw) : {};
+                sess.deal = {
+                  price: d.deal_price,
+                  checkoutUrl: d.checkout_url,
+                  expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+                  displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+                  discountCode: d.discount_code || null,
+                  productName: tag.product_name || ''
+                };
+                sess.ts = Date.now();
+                sessionStorage.setItem('_botiga_session', JSON.stringify(sess));
+              } catch (e) {}
               try { document.dispatchEvent(new CustomEvent('botiga:deal', { detail: { price: d.deal_price } })); } catch (e) {}
               showDeal(d.deal_price, d.checkout_url, d.discount_code);
             } else {
@@ -1116,6 +1132,8 @@
 
   // ─── Init ────────────────────────────────────────────────────────────────────
   function init() {
+    // Don't inject on product pages — only on homepage/collection pages
+    if (window.location.pathname.match(/\/products\//)) return;
     injectStyles();
     var storiesCont = getStoriesContainer();
     var gridCont = getGridContainer();
