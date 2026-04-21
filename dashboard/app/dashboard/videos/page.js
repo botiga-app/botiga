@@ -348,6 +348,8 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
   const [taggerOpen, setTaggerOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(video.title || '');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function saveTitle() {
     setEditing(false);
@@ -450,13 +452,36 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
             >
               {isActive ? '👁' : '🚫'}
             </button>
-            <button
-              onClick={() => onDelete(video.id)}
-              className="text-xs font-medium bg-red-50 text-red-500 rounded-lg px-3 py-2 hover:bg-red-100 transition-colors"
-              title="Delete video"
-            >
-              🗑
-            </button>
+            {confirmDelete ? (
+              <>
+                <button
+                  onClick={async () => {
+                    setDeleting(true);
+                    await onDelete(video.id);
+                    setDeleting(false);
+                    setConfirmDelete(false);
+                  }}
+                  className="text-xs font-semibold bg-red-500 text-white rounded-lg px-3 py-2 hover:bg-red-600 transition-colors"
+                  disabled={deleting}
+                >
+                  {deleting ? '...' : 'Yes, delete'}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-xs font-medium bg-gray-100 text-gray-600 rounded-lg px-2 py-2 hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="text-xs font-medium bg-red-50 text-red-500 rounded-lg px-3 py-2 hover:bg-red-100 transition-colors"
+                title="Delete video"
+              >
+                🗑
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -784,9 +809,8 @@ export default function VideosPage() {
   }
 
   async function handleDelete(videoId) {
-    if (!confirm('Delete this video? This cannot be undone.')) return;
-    await fetch(`${API}/api/videos/${videoId}`, { method: 'DELETE' });
-    setVideos(prev => prev.filter(v => v.id !== videoId));
+    const res = await fetch(`${API}/api/videos/${videoId}`, { method: 'DELETE' });
+    if (res.ok) setVideos(prev => prev.filter(v => v.id !== videoId));
   }
 
   async function handleToggleStatus(videoId, status) {
