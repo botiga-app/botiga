@@ -531,6 +531,14 @@ function WidgetEditor({ widget, defaultType, videos, apiKey, merchantId, onSave,
     dragOver.current = null;
   }
 
+  function moveVideo(i, dir) {
+    const next = [...selectedIds];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    setSelectedIds(next);
+  }
+
   async function save() {
     if (!name.trim()) return;
     setSaving(true);
@@ -606,11 +614,11 @@ function WidgetEditor({ widget, defaultType, videos, apiKey, merchantId, onSave,
             </div>
           </div>
 
-          {/* Selected videos — drag to reorder */}
+          {/* Selected videos — drag to reorder (desktop) or up/down arrows (mobile) */}
           {selectedVideos.length > 0 && (
             <div className="px-6 pb-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Selected · drag to reorder ({selectedVideos.length})
+                In this widget ({selectedVideos.length}) · drag or use arrows to reorder
               </p>
               <div className="flex gap-2 flex-wrap">
                 {selectedVideos.map((v, i) => (
@@ -635,6 +643,19 @@ function WidgetEditor({ widget, defaultType, videos, apiKey, merchantId, onSave,
                       >×</button>
                     </div>
                     <p className="text-[10px] text-gray-500 truncate mt-1">{v.title || 'Untitled'}</p>
+                    {/* Up/down arrows for mobile reorder */}
+                    <div className="flex gap-1 mt-1">
+                      <button
+                        onClick={() => moveVideo(i, -1)}
+                        disabled={i === 0}
+                        className="flex-1 text-[10px] bg-gray-100 hover:bg-gray-200 disabled:opacity-30 rounded py-0.5 text-center transition-colors"
+                      >↑</button>
+                      <button
+                        onClick={() => moveVideo(i, 1)}
+                        disabled={i === selectedVideos.length - 1}
+                        className="flex-1 text-[10px] bg-gray-100 hover:bg-gray-200 disabled:opacity-30 rounded py-0.5 text-center transition-colors"
+                      >↓</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -744,7 +765,7 @@ function WidgetRow({ widget, apiKey, videos, onEdit, onDelete, onToggleActive })
         {/* Actions */}
         <div className="flex gap-1.5 flex-shrink-0">
           <button onClick={() => setShowEmbed(p => !p)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors">Embed</button>
-          <button onClick={onEdit} className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg transition-colors font-medium">Edit</button>
+          <button onClick={onEdit} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors font-semibold">✏️ Edit Videos</button>
           <button onClick={onDelete} className="text-xs bg-red-50 hover:bg-red-100 text-red-500 px-2.5 py-1.5 rounded-lg transition-colors">✕</button>
         </div>
       </div>

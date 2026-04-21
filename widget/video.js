@@ -110,7 +110,7 @@
     var s = document.createElement('style');
     s.id = '_btgv_css';
     s.textContent = [
-      // Stories bar — centered, scrolls when overflow
+      // Stories bar — centered, scrolls on overflow
       '#btgv-stories{width:100%;background:#fff;border-bottom:1px solid #efefef;display:flex;justify-content:center}',
       '#_btgv_sr{display:flex;gap:16px;padding:14px 20px 16px;overflow-x:auto;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}',
       '#_btgv_sr::-webkit-scrollbar{display:none}',
@@ -124,29 +124,26 @@
       // Story viewer
       '#_btgv_sv{position:fixed;inset:0;z-index:99999;background:#000;opacity:0;pointer-events:none;transition:opacity .2s;overflow:hidden;touch-action:none}',
       '#_btgv_sv.open{opacity:1;pointer-events:all}',
-      // progress bars
       '._btgv_sv_prog{position:absolute;top:0;left:0;right:0;display:flex;gap:3px;padding:env(safe-area-inset-top,10px) 10px 0;z-index:10;box-sizing:border-box}',
       '@media(min-width:640px){._btgv_sv_prog{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_sv_bar{flex:1;height:2px;background:rgba(255,255,255,.4);border-radius:2px;overflow:hidden}',
       '._btgv_sv_fill{height:100%;background:#fff;width:0%;border-radius:2px}',
-      // header
       '._btgv_sv_hd{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,10px) + 12px);display:flex;align-items:center;gap:10px;padding:0 12px;z-index:10}',
       '@media(min-width:640px){._btgv_sv_hd{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_sv_av{width:36px;height:36px;border-radius:50%;border:1.5px solid rgba(255,255,255,.85);overflow:hidden;flex-shrink:0;background:#333}',
       '._btgv_sv_av img{width:100%;height:100%;object-fit:cover}',
       '._btgv_sv_nm{color:#fff;font-size:13px;font-weight:600;flex:1;text-shadow:0 1px 3px rgba(0,0,0,.5)}',
       '._btgv_sv_x{width:32px;height:32px;background:rgba(0,0,0,.4);border-radius:50%;border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);flex-shrink:0}',
-      // video
       '._btgv_sv_vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}',
       '@media(min-width:640px){._btgv_sv_vid{max-width:420px;left:50%;transform:translateX(-50%);object-fit:contain}}',
-      // tap zones — only upper 60% so product shelf is tappable
       '._btgv_sv_tl{position:absolute;left:0;top:0;width:30%;height:60%;z-index:5}',
       '._btgv_sv_tr{position:absolute;right:0;top:0;width:70%;height:60%;z-index:5}',
 
-      // Watch & Shop grid — centered with max-width
+      // Watch & Shop grid — centered
       '#btgv-grid{width:100%;max-width:1200px;margin:0 auto;padding-top:8px}',
       '._btgv_gh{font-size:20px;font-weight:800;color:#111;text-align:center;padding:20px 16px 12px;letter-spacing:.5px;text-transform:uppercase}',
       '#_btgv_gi_wrap{overflow-y:scroll;height:min(85vh,720px);scrollbar-width:none;-webkit-overflow-scrolling:touch}',
+      '#_btgv_gi_wrap.static{overflow-y:hidden;height:auto}',
       '#_btgv_gi_wrap::-webkit-scrollbar{display:none}',
       '#_btgv_gi{display:grid;grid-template-columns:repeat(2,1fr);gap:3px}',
       '@media(min-width:600px){#_btgv_gi{grid-template-columns:repeat(3,1fr)}}',
@@ -173,31 +170,31 @@
       '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s}',
       '._btgv_rail button:active{transform:scale(.9)}',
 
-      // Product shelf — horizontal scrollable cards
-      '._btgv_pshelf{position:absolute;bottom:0;left:0;right:0;z-index:8;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,rgba(0,0,0,.25) 80%,transparent 100%);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px)}',
+      // Product shelf — horizontal scroll, landscape cards (image left, content right)
+      '._btgv_pshelf{position:absolute;bottom:0;left:0;right:0;z-index:8;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.25) 80%,transparent 100%);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px)}',
       '@media(min-width:640px){._btgv_pshelf{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_prow{display:flex;gap:10px;padding:14px 12px 0;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}',
       '._btgv_prow::-webkit-scrollbar{display:none}',
-      '._btgv_pcard{flex-shrink:0;width:170px;scroll-snap-align:start;background:rgba(18,18,18,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.13);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:9px}',
-      '._btgv_pcard_top{display:flex;gap:9px;align-items:flex-start}',
-      '._btgv_pcard_img{width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0;background:#333}',
-      '._btgv_pcard_info{flex:1;min-width:0}',
+      // Landscape card: image on left, body (name+price+actions) on right
+      '._btgv_pcard{flex-shrink:0;width:240px;scroll-snap-align:start;background:rgba(18,18,18,.85);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.13);border-radius:16px;padding:10px 12px;display:flex;flex-direction:row;gap:10px;align-items:center}',
+      '._btgv_pcard_img{width:60px;height:60px;border-radius:12px;object-fit:cover;flex-shrink:0;background:#333}',
+      '._btgv_pcard_body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}',
       '._btgv_pcard_name{color:#fff;font-size:12px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
-      '._btgv_pcard_price{color:rgba(255,255,255,.72);font-size:11px;margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}',
+      '._btgv_pcard_price{color:rgba(255,255,255,.72);font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}',
       '._btgv_pcard_was{text-decoration:line-through;opacity:.5}',
       '._btgv_pcard_disc{background:#ff4d6d;color:#fff;font-size:8px;font-weight:700;padding:1px 4px;border-radius:4px}',
       '._btgv_pcard_actions{display:flex;gap:5px}',
-      '._btgv_icon_btn{flex:1;border:none;border-radius:10px;padding:8px 3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:opacity .15s;-webkit-tap-highlight-color:transparent}',
+      '._btgv_icon_btn{flex:1;border:none;border-radius:9px;padding:7px 3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:opacity .15s;-webkit-tap-highlight-color:transparent}',
       '._btgv_icon_btn:active{opacity:.65}',
       '._btgv_icon_lbl{font-size:8px;font-weight:700;line-height:1;white-space:nowrap}',
       '._btgv_ib_cart{background:rgba(255,255,255,.15);color:#fff}',
-      '._btgv_ib_buy{background:rgba(99,102,241,.8);color:#fff}',
-      '._btgv_ib_neg{background:rgba(236,72,153,.8);color:#fff}',
+      '._btgv_ib_buy{background:rgba(99,102,241,.85);color:#fff}',
+      '._btgv_ib_neg{background:rgba(236,72,153,.85);color:#fff}',
     ].join('');
     document.head.appendChild(s);
   }
 
-  // ─── Product shelf (horizontal, 3 icon buttons per card) ────────────────────
+  // ─── Product shelf (landscape card: image left, text+actions right) ──────────
   function buildProductShelf(tags, videoId) {
     var shelf = document.createElement('div');
     shelf.className = '_btgv_pshelf';
@@ -208,18 +205,16 @@
       var card = document.createElement('div');
       card.className = '_btgv_pcard';
 
-      // Image + info row
-      var top = document.createElement('div');
-      top.className = '_btgv_pcard_top';
-
+      // Left: product image
       var img = document.createElement('img');
       img.className = '_btgv_pcard_img';
       img.src = tag.image_url || '';
       img.alt = '';
       img.onerror = function () { this.style.display = 'none'; };
 
-      var info = document.createElement('div');
-      info.className = '_btgv_pcard_info';
+      // Right: name, price, actions
+      var body = document.createElement('div');
+      body.className = '_btgv_pcard_body';
 
       var nm = document.createElement('div');
       nm.className = '_btgv_pcard_name';
@@ -238,17 +233,14 @@
           pr.appendChild(ws); pr.appendChild(ds);
         }
       }
-      info.appendChild(nm); info.appendChild(pr);
-      top.appendChild(img); top.appendChild(info);
 
-      // 3 icon action buttons
       var actions = document.createElement('div');
       actions.className = '_btgv_pcard_actions';
 
       function iconBtn(cls, icon, lbl, fn) {
         var btn = document.createElement('button');
         btn.className = '_btgv_icon_btn ' + cls;
-        btn.innerHTML = '<span style="font-size:17px">' + icon + '</span><span class="_btgv_icon_lbl">' + lbl + '</span>';
+        btn.innerHTML = '<span style="font-size:16px">' + icon + '</span><span class="_btgv_icon_lbl">' + lbl + '</span>';
         btn.onclick = function (e) { e.stopPropagation(); fn(btn); };
         return btn;
       }
@@ -258,8 +250,8 @@
         addToCart(tag.shopify_variant_id, function (ok) {
           fireConfetti();
           if (ok) {
-            btn.innerHTML = '<span style="font-size:17px">✓</span><span class="_btgv_icon_lbl">Added</span>';
-            setTimeout(function () { btn.innerHTML = '<span style="font-size:17px">🛒</span><span class="_btgv_icon_lbl">Cart</span>'; }, 2500);
+            btn.innerHTML = '<span style="font-size:16px">✓</span><span class="_btgv_icon_lbl">Added</span>';
+            setTimeout(function () { btn.innerHTML = '<span style="font-size:16px">🛒</span><span class="_btgv_icon_lbl">Cart</span>'; }, 2500);
           }
         });
       });
@@ -278,13 +270,14 @@
           window._btg.openNegotiate(tag.shopify_product_id);
         } else {
           addToCart(tag.shopify_variant_id, function () {});
-          btn.innerHTML = '<span style="font-size:17px">✓</span><span class="_btgv_icon_lbl">Sent</span>';
-          setTimeout(function () { btn.innerHTML = '<span style="font-size:17px">🤝</span><span class="_btgv_icon_lbl">Offer</span>'; }, 2500);
+          btn.innerHTML = '<span style="font-size:16px">✓</span><span class="_btgv_icon_lbl">Sent</span>';
+          setTimeout(function () { btn.innerHTML = '<span style="font-size:16px">🤝</span><span class="_btgv_icon_lbl">Offer</span>'; }, 2500);
         }
       });
 
       actions.appendChild(cartBtn); actions.appendChild(buyBtn); actions.appendChild(negBtn);
-      card.appendChild(top); card.appendChild(actions);
+      body.appendChild(nm); body.appendChild(pr); body.appendChild(actions);
+      card.appendChild(img); card.appendChild(body);
       row.appendChild(card);
     });
 
@@ -292,11 +285,15 @@
     return shelf;
   }
 
-  // ─── Stories bar ────────────────────────────────────────────────────────────
+  // ─── Stories bar (type === 'stories' only) ───────────────────────────────────
   function buildStoriesBar(container, cols) {
+    // Only show story-type collections
+    var storyCols = cols.filter(function (c) { return c.type === 'stories'; });
+    if (!storyCols.length) return;
+
     var row = document.createElement('div');
     row.id = '_btgv_sr';
-    cols.forEach(function (col) {
+    storyCols.forEach(function (col) {
       var item = document.createElement('div');
       item.className = '_btgv_story';
 
@@ -345,7 +342,7 @@
     videoEl.loop = false;
     storyEl.appendChild(videoEl);
 
-    // Progress bars
+    // Progress bars (one per video in collection)
     var progWrap = document.createElement('div');
     progWrap.className = '_btgv_sv_prog';
     vids.forEach(function () {
@@ -367,7 +364,7 @@
     hd.appendChild(av); hd.appendChild(nm); hd.appendChild(xBtn);
     storyEl.appendChild(hd);
 
-    // Tap zones (upper 60% only, so product shelf area stays interactive)
+    // Tap zones — upper 60% only so product shelf remains interactive
     var tl = document.createElement('div'); tl.className = '_btgv_sv_tl';
     var tr = document.createElement('div'); tr.className = '_btgv_sv_tr';
     tl.onclick = function (e) { e.stopPropagation(); stepStory(-1); };
@@ -392,7 +389,7 @@
     if (!vid) { closeStory(); return; }
     track(vid.id, 'view');
 
-    // Reset progress bars
+    // Reset progress bars: filled for past, empty for current+future
     var fills = progWrap.querySelectorAll('._btgv_sv_fill');
     fills.forEach(function (f, i) {
       f.style.transition = 'none';
@@ -400,14 +397,14 @@
     });
     var fill = fills[storyIdx];
 
-    // Load video
+    // Load and play
     videoEl.src = vid.s3_url;
     videoEl.muted = false;
     videoEl.currentTime = 0;
     var p = videoEl.play();
     if (p && p.catch) p.catch(function () { videoEl.muted = true; videoEl.play().catch(function () {}); });
 
-    // Animate progress bar
+    // Animate progress bar via rAF
     if (storyAnimFrame) cancelAnimationFrame(storyAnimFrame);
     function tick() {
       if (!videoEl.duration || !fill) return;
@@ -416,13 +413,14 @@
     }
     storyAnimFrame = requestAnimationFrame(tick);
 
+    // Auto-advance when video ends
     videoEl.onended = function () {
       if (fill) fill.style.width = '100%';
       if (storyAnimFrame) { cancelAnimationFrame(storyAnimFrame); storyAnimFrame = null; }
       stepStory(1);
     };
 
-    // Product shelf — remove old, attach new
+    // Update product shelf
     var oldShelf = storyEl.querySelector('._btgv_pshelf');
     if (oldShelf) oldShelf.remove();
     var tags = vid.video_product_tags || [];
@@ -450,11 +448,10 @@
     }
   }
 
-  // ─── Watch & Shop grid with auto-scroll ─────────────────────────────────────
+  // ─── Watch & Shop grid ──────────────────────────────────────────────────────
   function buildGrid(container, vids) {
     if (!vids.length) return;
 
-    // Title: hide if data-grid-title="" or "none"
     if (GRID_TITLE && GRID_TITLE !== 'none' && GRID_TITLE !== '0') {
       var gh = document.createElement('div');
       gh.className = '_btgv_gh';
@@ -495,11 +492,8 @@
       return cell;
     }
 
-    // Original cells
+    // Render original cells
     vids.forEach(function (vid, i) { grid.appendChild(makeCell(vid, i)); });
-    // Duplicate for seamless scroll loop
-    vids.forEach(function (vid, i) { grid.appendChild(makeCell(vid, i)); });
-
     wrap.appendChild(grid);
     container.appendChild(wrap);
 
@@ -513,24 +507,42 @@
     }, { threshold: 0.3 });
     grid.querySelectorAll('._btgv_gc').forEach(function (c) { io.observe(c); });
 
-    // Auto-scroll: use scrollTop on wrapper, pause on hover/touch
-    var paused = false;
-    wrap.addEventListener('mouseenter', function () { paused = true; });
-    wrap.addEventListener('mouseleave', function () { paused = false; });
-    wrap.addEventListener('touchstart', function () { paused = true; }, { passive: true });
-    wrap.addEventListener('touchend', function () {
-      setTimeout(function () { paused = false; }, 3000);
-    }, { passive: true });
+    // After render: decide if auto-scroll is needed
+    requestAnimationFrame(function () {
+      var gridH = grid.offsetHeight;
+      var wrapH = wrap.clientHeight;
 
-    function scrollLoop() {
-      if (!paused && wrap.parentNode) {
-        wrap.scrollTop += 0.5;
-        var half = wrap.scrollHeight / 2;
-        if (wrap.scrollTop >= half) wrap.scrollTop = 0;
+      if (gridH <= wrapH) {
+        // Content fits — no scroll, no duplication needed
+        wrap.classList.add('static');
+        return;
+      }
+
+      // Content overflows — duplicate for seamless infinite scroll
+      vids.forEach(function (vid, i) {
+        var cell = makeCell(vid, i);
+        io.observe(cell);
+        grid.appendChild(cell);
+      });
+
+      // Pause on hover/touch
+      var paused = false;
+      wrap.addEventListener('mouseenter', function () { paused = true; });
+      wrap.addEventListener('mouseleave', function () { paused = false; });
+      wrap.addEventListener('touchstart', function () { paused = true; }, { passive: true });
+      wrap.addEventListener('touchend', function () {
+        setTimeout(function () { paused = false; }, 3000);
+      }, { passive: true });
+
+      function scrollLoop() {
+        if (!paused && wrap.parentNode) {
+          wrap.scrollTop += 0.5;
+          if (wrap.scrollTop >= wrap.scrollHeight / 2) wrap.scrollTop = 0;
+        }
+        requestAnimationFrame(scrollLoop);
       }
       requestAnimationFrame(scrollLoop);
-    }
-    requestAnimationFrame(scrollLoop);
+    });
   }
 
   // ─── TikTok feed ────────────────────────────────────────────────────────────
@@ -567,7 +579,7 @@
       video.src = vid.s3_url;
       video.muted = muted; video.loop = false;
       video.playsInline = true; video.preload = 'metadata';
-      // Auto-advance when video ends
+      // Auto-advance to next video when this one ends
       video.onended = function () {
         var next = scroll.children[i + 1];
         if (next) next.scrollIntoView({ behavior: 'smooth' });
@@ -647,6 +659,7 @@
     var gridCont = getGridContainer();
 
     fetchCollections(function (cols) {
+      // Only type='stories' collections go in the stories bar
       if (cols.length) buildStoriesBar(storiesCont, cols);
     });
 
