@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [merchantId, setMerchantId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [aboutText, setAboutText] = useState('');
   const [generating, setGenerating] = useState(false);
   const supabase = createClient();
@@ -74,6 +75,7 @@ export default function SettingsPage() {
   async function save() {
     if (!isDirty || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
         method: 'PUT',
@@ -84,7 +86,14 @@ export default function SettingsPage() {
         setSavedSettings(settings);
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 2500);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setSaveError(err.error || 'Save failed');
+        setTimeout(() => setSaveError(null), 4000);
       }
+    } catch {
+      setSaveError('Network error');
+      setTimeout(() => setSaveError(null), 4000);
     } finally {
       setSaving(false);
     }
@@ -126,10 +135,10 @@ export default function SettingsPage() {
       {/* Floating unsaved-changes bar */}
       <div style={{
         position: 'fixed', top: 20, left: '50%',
-        transform: `translateX(-50%) translateY(${isDirty || justSaved ? '0' : '-80px'})`,
-        opacity: isDirty || justSaved ? 1 : 0,
+        transform: `translateX(-50%) translateY(${isDirty || justSaved || saveError ? '0' : '-80px'})`,
+        opacity: isDirty || justSaved || saveError ? 1 : 0,
         transition: 'transform .4s cubic-bezier(.34,1.56,.64,1), opacity .3s',
-        background: justSaved ? '#16a34a' : '#1a1a1a',
+        background: justSaved ? '#16a34a' : saveError ? '#dc2626' : '#1a1a1a',
         color: 'white',
         padding: '10px 14px 10px 20px',
         borderRadius: 40,
@@ -137,11 +146,15 @@ export default function SettingsPage() {
         display: 'flex', alignItems: 'center', gap: 10,
         boxShadow: '0 8px 32px rgba(0,0,0,.28)',
         zIndex: 9999, whiteSpace: 'nowrap',
-        pointerEvents: isDirty || justSaved ? 'auto' : 'none'
+        pointerEvents: isDirty || justSaved || saveError ? 'auto' : 'none'
       }}>
         {justSaved ? (
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>✓</span> Settings saved
+          </span>
+        ) : saveError ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            ⚠ {saveError} — <button onClick={save} style={{ background: 'none', border: 'none', color: 'white', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Retry</button>
           </span>
         ) : (
           <>
