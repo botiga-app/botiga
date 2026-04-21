@@ -71,17 +71,21 @@ export default function SettingsPage() {
     if (!settings || !merchantId) return;
     if (isFirstLoad.current) { isFirstLoad.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    setSaveState('saving');
     debounceRef.current = setTimeout(async () => {
-      const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      });
-      setSaveState(res.ok ? 'saved' : 'idle');
-      if (res.ok) setTimeout(() => setSaveState('idle'), 2000);
+      setSaveState('saving');
+      try {
+        const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        setSaveState(res.ok ? 'saved' : 'idle');
+        if (res.ok) setTimeout(() => setSaveState('idle'), 2000);
+      } catch {
+        setSaveState('idle');
+      }
     }, 900);
-  }, [settings]);
+  }, [settings, merchantId]);
 
   async function generateStatements() {
     if (!aboutText.trim()) return;
