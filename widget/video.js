@@ -10,6 +10,7 @@
   var API_KEY = script.getAttribute('data-key') || '';
   var MODE = script.getAttribute('data-mode') || 'stories'; // 'stories' | 'carousel' | 'feed'
   var API_BASE = script.getAttribute('data-api') || 'https://botiga-api-two.vercel.app';
+  var WIDGET_ID = script.getAttribute('data-widget') || ''; // optional named collection ID
   var SESSION_ID = 'btgv_' + Math.random().toString(36).slice(2);
 
   if (!API_KEY) return console.warn('[Botiga Video] Missing data-key attribute');
@@ -23,7 +24,9 @@
 
   // ─── Fetch videos ──────────────────────────────────────────────────────────
   function fetchVideos(cb) {
-    fetch(API_BASE + '/api/widget/videos?k=' + API_KEY)
+    var url = API_BASE + '/api/widget/videos?k=' + API_KEY;
+    if (WIDGET_ID) url += '&w=' + WIDGET_ID;
+    fetch(url)
       .then(function (r) { return r.ok ? r.json() : []; })
       .then(function (data) { videos = data || []; cb(); })
       .catch(function () { cb(); });

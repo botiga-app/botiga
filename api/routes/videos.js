@@ -150,20 +150,104 @@ router.delete('/videos/:id/tags/:tagId', dashboardCors, async (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── Widget: public video feed (called by botiga-video.js) ──────────────────
+// ─── Dashboard: list video widgets ───────────────────────────────────────────
+router.get('/merchants/:merchantId/video-widgets', dashboardCors, async (req, res) => {
+  const { data, error } = await supabase
+    .from('video_widgets')
+    .select(`id, name, type, created_at,
+             video_widget_items(id, sort_order, video_id,
+               videos(id, title, s3_url, thumbnail_url, status))`)
+    .eq('merchant_id', req.params.merchantId)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+// ─── Dashboard: create video widget ──────────────────────────────────────────
+router.post('/merchants/:merchantId/video-widgets', dashboardCors, async (req, res) => {
+  const { name, type = 'stories' } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const { data, error } = await supabase
+    .from('video_widgets')
+    .insert({ merchant_id: req.params.merchantId, name, type })
+    .select()
+    .single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// ─── Dashboard: update widget (name/type) ────────────────────────────────────
+router.put('/video-widgets/:id', dashboardCors, async (req, res) => {
+  const { name, type } = req.body;
+  const updates = {};
+  if (name !== undefined) updates.name = name;
+  if (type !== undefined) updates.type = type;
+  updates.updated_at = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('video_widgets').update(updates).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// ─── Dashboard: delete widget ─────────────────────────────────────────────────
+router.delete('/video-widgets/:id', dashboardCors, async (req, res) => {
+  await supabase.from('video_widgets').delete().eq('id', req.params.id);
+  res.json({ ok: true });
+});
+
+// ─── Dashboard: set widget items (replace all, preserving order) ──────────────
+router.put('/video-widgets/:id/items', dashboardCors, async (req, res) => {
+  const { video_ids } = req.body; // ordered array of video UUIDs
+  if (!Array.isArray(video_ids)) return res.status(400).json({ error: 'video_ids array required' });
+
+  // Delete existing items, then insert new ordered set
+  await supabase.from('video_widget_items').delete().eq('widget_id', req.params.id);
+
+  if (video_ids.length > 0) {
+    const items = video_ids.map((video_id, i) => ({
+      widget_id: req.params.id,
+      video_id,
+      sort_order: i,
+    }));
+    const { error } = await supabase.from('video_widget_items').insert(items);
+    if (error) return res.status(400).json({ error: error.message });
+  }
+
+  res.json({ ok: true, count: video_ids.length });
+});
+
+// ─── Widget: public video feed (called by botiga-video.js) ───────────────────
+// Supports ?w=WIDGET_ID to fetch a specific named collection, or all active videos
 router.get('/widget/videos', widgetCors, async (req, res) => {
-  const { k: apiKey } = req.query;
+  const { k: apiKey, w: widgetId } = req.query;
   if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
 
   const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
   if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
 
+  const videoSelect = `id, title, s3_url, thumbnail_url, duration_seconds, width, height,
+    views_count, likes_count, shares_count,
+    video_product_tags(id, shopify_product_id, shopify_variant_id, product_name,
+                       product_handle, price, compare_at_price, image_url)`;
+
+  if (widgetId) {
+    // Fetch videos for a specific widget in their defined order
+    const { data: items } = await supabase
+      .from('video_widget_items')
+      .select(`sort_order, videos(${videoSelect})`)
+      .eq('widget_id', widgetId)
+      .order('sort_order', { ascending: true });
+
+    const videos = (items || [])
+      .map(item => item.videos)
+      .filter(v => v && v.status !== 'inactive');
+    return res.json(videos);
+  }
+
+  // Fallback: all active videos for merchant
   const { data: videos } = await supabase
     .from('videos')
-    .select(`id, title, s3_url, thumbnail_url, duration_seconds, width, height,
-             views_count, likes_count, shares_count,
-             video_product_tags(id, shopify_product_id, shopify_variant_id, product_name,
-                                product_handle, price, compare_at_price, image_url)`)
+    .select(videoSelect)
     .eq('merchant_id', merchant.id)
     .eq('status', 'active')
     .order('sort_order', { ascending: true })

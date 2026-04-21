@@ -474,13 +474,267 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
   );
 }
 
+// ─── Widget editor (create / edit a named story or carousel) ─────────────────
+function WidgetEditor({ widget, videos, apiKey, merchantId, onSave, onClose, createWidget }) {
+  const isNew = !widget;
+  const [name, setName] = useState(widget?.name || '');
+  const [type, setType] = useState(widget?.type || 'stories');
+  const [selectedIds, setSelectedIds] = useState(
+    (widget?.video_widget_items || [])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(i => i.video_id)
+  );
+  const [saving, setSaving] = useState(false);
+  const dragItem = useRef(null);
+  const dragOver = useRef(null);
+
+  function toggleVideo(id) {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function onDragStart(i) { dragItem.current = i; }
+  function onDragEnter(i) { dragOver.current = i; }
+  function onDragEnd() {
+    if (dragItem.current === null || dragOver.current === null) return;
+    const next = [...selectedIds];
+    const [moved] = next.splice(dragItem.current, 1);
+    next.splice(dragOver.current, 0, moved);
+    setSelectedIds(next);
+    dragItem.current = null;
+    dragOver.current = null;
+  }
+
+  async function save() {
+    if (!name.trim()) return;
+    setSaving(true);
+    let widgetId = widget?.id;
+    if (isNew) {
+      const data = await createWidget(name.trim(), type);
+      widgetId = data.id;
+      await fetch(`${API}/api/video-widgets/${widgetId}/items`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_ids: selectedIds }),
+      });
+      onSave({ ...data, video_widget_items: selectedIds.map((vid, i) => ({ video_id: vid, sort_order: i })) });
+    } else {
+      await Promise.all([
+        fetch(`${API}/api/video-widgets/${widgetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), type }),
+        }),
+        fetch(`${API}/api/video-widgets/${widgetId}/items`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_ids: selectedIds }),
+        }),
+      ]);
+      onSave({ ...widget, name: name.trim(), type, video_widget_items: selectedIds.map((vid, i) => ({ video_id: vid, sort_order: i })) });
+    }
+    setSaving(false);
+    onClose();
+  }
+
+  const selectedVideos = selectedIds.map(id => videos.find(v => v.id === id)).filter(Boolean);
+  const unselected = videos.filter(v => !selectedIds.includes(v.id));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90dvh' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h3 className="font-bold text-gray-900">{isNew ? 'Create Widget' : 'Edit Widget'}</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Pick videos and set their display order</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Name + type */}
+          <div className="px-6 pt-5 pb-4 space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Widget Name</label>
+              <input
+                autoFocus
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Summer Collection, Best Sellers..."
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Display Type</label>
+              <div className="flex gap-2">
+                {[['stories', '⭕ Stories', 'Circular bubbles'], ['carousel', '▦ Carousel', 'Horizontal scroll cards'], ['feed', '▤ Feed', 'Full-screen button']].map(([val, label, sub]) => (
+                  <button key={val} onClick={() => setType(val)}
+                    className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all ${type === val ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <p className={`text-xs font-semibold ${type === val ? 'text-indigo-700' : 'text-gray-700'}`}>{label}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Selected videos — drag to reorder */}
+          {selectedVideos.length > 0 && (
+            <div className="px-6 pb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Selected · drag to reorder ({selectedVideos.length})
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {selectedVideos.map((v, i) => (
+                  <div
+                    key={v.id}
+                    draggable
+                    onDragStart={() => onDragStart(i)}
+                    onDragEnter={() => onDragEnter(i)}
+                    onDragEnd={onDragEnd}
+                    onDragOver={e => e.preventDefault()}
+                    className="relative w-20 flex-shrink-0 cursor-grab active:cursor-grabbing group"
+                  >
+                    <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black">
+                      <video src={v.s3_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
+                      <div className="absolute top-1 left-1 w-5 h-5 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                        {i + 1}
+                      </div>
+                      <button
+                        onClick={() => toggleVideo(v.id)}
+                        className="absolute top-1 right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-500 transition-colors"
+                      >×</button>
+                    </div>
+                    <p className="text-[10px] text-gray-500 truncate mt-1">{v.title || 'Untitled'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="h-px bg-gray-100 mx-6" />
+
+          {/* All videos picker */}
+          <div className="px-6 pt-4 pb-6">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              {unselected.length > 0 ? `Add Videos (${unselected.length} available)` : 'All videos selected'}
+            </p>
+            {videos.length === 0 ? (
+              <p className="text-sm text-gray-400">No videos uploaded yet. Upload videos in the Library tab first.</p>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {unselected.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => toggleVideo(v.id)}
+                    className="relative w-20 flex-shrink-0 group text-left"
+                  >
+                    <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black border-2 border-transparent group-hover:border-indigo-400 transition-all">
+                      <video src={v.s3_url} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" muted playsInline preload="metadata" />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm">+</div>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-500 truncate mt-1">{v.title || 'Untitled'}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl py-2.5 hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={!name.trim() || saving}
+            className="flex-1 bg-indigo-600 text-white text-sm font-semibold rounded-xl py-2.5 hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            {saving ? 'Saving...' : isNew ? `Create Widget` : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Widget card ──────────────────────────────────────────────────────────────
+function WidgetCard({ widget, apiKey, videos, onEdit, onDelete }) {
+  const [copied, setCopied] = useState(false);
+  const items = (widget.video_widget_items || []).sort((a, b) => a.sort_order - b.sort_order);
+  const previewVideos = items.slice(0, 4).map(i => videos.find(v => v.id === i.video_id)).filter(Boolean);
+
+  const embedSnippet = `<script src="https://botiga-api-two.vercel.app/video.js" data-key="${apiKey}" data-mode="${widget.type}" data-widget="${widget.id}"></script>`;
+
+  function copy() {
+    navigator.clipboard.writeText(embedSnippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const typeIcon = { stories: '⭕', carousel: '▦', feed: '▤' }[widget.type] || '⭕';
+  const typeLabel = { stories: 'Stories', carousel: 'Carousel', feed: 'Feed' }[widget.type] || widget.type;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      {/* Preview strip */}
+      <div className="flex gap-1 p-3 bg-gray-50">
+        {previewVideos.length > 0 ? previewVideos.map((v, i) => (
+          <div key={v.id} className="relative flex-1 aspect-[9/16] max-h-24 rounded-lg overflow-hidden bg-black">
+            <video src={v.s3_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+            {i === 3 && items.length > 4 && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs font-bold">+{items.length - 4}</div>
+            )}
+          </div>
+        )) : (
+          <div className="w-full h-16 flex items-center justify-center text-gray-300 text-sm">No videos</div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">{widget.name}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{typeIcon} {typeLabel} · {items.length} video{items.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="flex gap-1 flex-shrink-0">
+            <button onClick={onEdit} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg transition-colors">Edit</button>
+            <button onClick={onDelete} className="text-xs bg-red-50 hover:bg-red-100 text-red-500 px-2.5 py-1.5 rounded-lg transition-colors">Delete</button>
+          </div>
+        </div>
+
+        {/* Embed snippet */}
+        <div className="bg-gray-900 rounded-xl p-3">
+          <p className="text-[10px] text-gray-400 mb-1.5 font-medium">EMBED CODE</p>
+          <code className="text-[10px] text-emerald-400 break-all leading-relaxed">{embedSnippet}</code>
+        </div>
+        <button onClick={copy} className={`w-full text-xs font-medium rounded-lg py-2 transition-colors ${copied ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}>
+          {copied ? '✓ Copied!' : 'Copy Embed Code'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function VideosPage() {
+  const [tab, setTab] = useState('library'); // 'library' | 'widgets'
   const [videos, setVideos] = useState([]);
+  const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [merchantId, setMerchantId] = useState(null);
   const [shopifyDomain, setShopifyDomain] = useState(null);
   const [apiKey, setApiKey] = useState(null);
+  const [editingWidget, setEditingWidget] = useState(null); // null | widget object | 'new'
   const supabase = createClient();
 
   useEffect(() => {
@@ -489,12 +743,14 @@ export default function VideosPage() {
       if (!user) return;
       setMerchantId(user.id);
 
-      const [videosRes, merchantRes] = await Promise.all([
+      const [videosRes, merchantRes, widgetsRes] = await Promise.all([
         fetch(`${API}/api/merchants/${user.id}/videos`),
         fetch(`${API}/api/merchants/${user.id}`),
+        fetch(`${API}/api/merchants/${user.id}/video-widgets`),
       ]);
 
       if (videosRes.ok) setVideos(await videosRes.json());
+      if (widgetsRes.ok) setWidgets(await widgetsRes.json());
       if (merchantRes.ok) {
         const m = await merchantRes.json();
         setShopifyDomain(m.shopify_domain || null);
@@ -528,61 +784,137 @@ export default function VideosPage() {
     setVideos(prev => prev.map(v => v.id === videoId ? { ...v, video_product_tags: tags } : v));
   }
 
-  const embedSnippet = apiKey
-    ? `<script src="https://botiga-api-two.vercel.app/video.js" data-key="${apiKey}" data-mode="stories"></script>`
-    : null;
+  async function handleDeleteWidget(widgetId) {
+    if (!confirm('Delete this widget?')) return;
+    await fetch(`${API}/api/video-widgets/${widgetId}`, { method: 'DELETE' });
+    setWidgets(prev => prev.filter(w => w.id !== widgetId));
+  }
+
+  function handleWidgetSaved(saved) {
+    setWidgets(prev => {
+      const exists = prev.find(w => w.id === saved.id);
+      return exists ? prev.map(w => w.id === saved.id ? saved : w) : [saved, ...prev];
+    });
+  }
+
+  // WidgetEditor needs merchantId injected — wrap create call
+  async function createWidget(name, type, selectedIds) {
+    const res = await fetch(`${API}/api/merchants/${merchantId}/video-widgets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, type }),
+    });
+    return res.json();
+  }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h2 className="text-xl font-bold text-gray-900">Shoppable Videos</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Upload videos, tag products, embed on your store. Customers watch, negotiate, and checkout without leaving.</p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Shoppable Videos</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Upload, tag products, build widgets, embed on your store.</p>
+        </div>
+        {tab === 'widgets' && (
+          <button
+            onClick={() => setEditingWidget('new')}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
+          >
+            + New Widget
+          </button>
+        )}
       </div>
 
-      {/* Upload zone */}
-      {merchantId && (
-        <div className="mb-8">
-          <UploadZone merchantId={merchantId} onUploaded={handleUploaded} />
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-6">
+        {[['library', '📁 Library'], ['widgets', '🧩 Widgets']].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              tab === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {/* Embed snippet */}
-      {embedSnippet && (
-        <div className="mb-8 bg-gray-900 rounded-2xl p-5">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Embed on your store</p>
-          <code className="text-xs text-emerald-400 break-all">{embedSnippet}</code>
-          <p className="text-xs text-gray-500 mt-2">Change <code className="text-gray-300">data-mode</code> to <code className="text-gray-300">stories</code>, <code className="text-gray-300">carousel</code>, or <code className="text-gray-300">feed</code></p>
-        </div>
-      )}
-
-      {/* Video grid */}
       {loading ? (
-        <div className="text-center py-16 text-gray-400 text-sm">Loading videos...</div>
-      ) : videos.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">
-          No videos yet. Upload your first one above.
-        </div>
-      ) : (
+        <div className="text-center py-16 text-gray-400 text-sm">Loading...</div>
+      ) : tab === 'library' ? (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-gray-500">{videos.length} video{videos.length !== 1 ? 's' : ''}</p>
-            <p className="text-xs text-gray-400">Hover to preview · Click title to rename</p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {videos.map(video => (
-              <VideoCard
-                key={video.id}
-                video={video}
-                merchantId={merchantId}
-                shopifyDomain={shopifyDomain}
-                onDelete={handleDelete}
-                onToggleStatus={handleToggleStatus}
-                onTagsUpdated={handleTagsUpdated}
-              />
-            ))}
-          </div>
+          {/* Upload zone */}
+          {merchantId && (
+            <div className="mb-6">
+              <UploadZone merchantId={merchantId} onUploaded={handleUploaded} />
+            </div>
+          )}
+
+          {videos.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 text-sm">No videos yet. Upload your first one above.</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-gray-500">{videos.length} video{videos.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-gray-400">Hover to preview · Click title to rename</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {videos.map(video => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    merchantId={merchantId}
+                    shopifyDomain={shopifyDomain}
+                    onDelete={handleDelete}
+                    onToggleStatus={handleToggleStatus}
+                    onTagsUpdated={handleTagsUpdated}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
+      ) : (
+        /* Widgets tab */
+        <>
+          {widgets.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="text-4xl mb-3">🧩</div>
+              <p className="font-semibold text-gray-700 mb-1">No widgets yet</p>
+              <p className="text-sm text-gray-400 mb-4">Create a named story or carousel, pick your videos, and get an embed snippet.</p>
+              <button onClick={() => setEditingWidget('new')} className="bg-indigo-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-colors">
+                Create your first widget
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {widgets.map(widget => (
+                <WidgetCard
+                  key={widget.id}
+                  widget={widget}
+                  apiKey={apiKey}
+                  videos={videos}
+                  onEdit={() => setEditingWidget(widget)}
+                  onDelete={() => handleDeleteWidget(widget.id)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Widget editor modal */}
+      {editingWidget && (
+        <WidgetEditor
+          widget={editingWidget === 'new' ? null : editingWidget}
+          videos={videos}
+          apiKey={apiKey}
+          merchantId={merchantId}
+          onSave={handleWidgetSaved}
+          onClose={() => setEditingWidget(null)}
+          createWidget={createWidget}
+        />
       )}
     </div>
   );
