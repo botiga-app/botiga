@@ -3,13 +3,15 @@ const cors = require('cors');
 // Wide-open CORS for widget embedding — the widget needs to call the API from any merchant domain
 const widgetCors = cors({
   origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
   allowedHeaders: '*'
 });
 
 // Strict CORS for dashboard API calls
 const dashboardOrigins = [
   process.env.DASHBOARD_URL || 'https://app.botiga.ai',
+  'https://botiga-dashboard-gamma.vercel.app',
+  'https://botiga-dashboard',   // matches any botiga-dashboard-*.vercel.app
   'http://localhost:3000',
   'http://localhost:3001',
   process.env.APP_URL
