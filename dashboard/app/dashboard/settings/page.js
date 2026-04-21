@@ -18,16 +18,19 @@ function Section({ title, children }) {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState(null);
+  const [savedSettings, setSavedSettings] = useState(null); // last persisted snapshot
   const [merchantId, setMerchantId] = useState(null);
-  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [aboutText, setAboutText] = useState('');
   const [generating, setGenerating] = useState(false);
   const supabase = createClient();
-  const debounceRef = useRef(null);
-  const isFirstLoad = useRef(true);
 
   const [exampleList, setExampleList] = useState(89);
   const [exampleFloor, setExampleFloor] = useState(72);
+
+  const isDirty = settings && savedSettings &&
+    JSON.stringify(settings) !== JSON.stringify(savedSettings);
 
   useEffect(() => {
     async function load() {
@@ -37,7 +40,7 @@ export default function SettingsPage() {
       const res = await fetch(`${API}/api/merchants/${user.id}`);
       if (res.ok) {
         const data = await res.json();
-        setSettings(data.merchant_settings || {
+        const s = data.merchant_settings || {
           tone: 'friendly',
           button_label: 'Make an offer',
           button_color: null,
@@ -60,32 +63,36 @@ export default function SettingsPage() {
           chat_popup_delay: 0,
           cart_trigger: 'always',
           brand_value_statements: ['', '', '', '', '']
-        });
+        };
+        setSettings(s);
+        setSavedSettings(s);
       }
     }
     load();
   }, []);
 
-  // Auto-save: debounce 900ms after any settings change
-  useEffect(() => {
-    if (!settings || !merchantId) return;
-    if (isFirstLoad.current) { isFirstLoad.current = false; return; }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSaveState('saving');
-      try {
-        const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings)
-        });
-        setSaveState(res.ok ? 'saved' : 'idle');
-        if (res.ok) setTimeout(() => setSaveState('idle'), 2000);
-      } catch {
-        setSaveState('idle');
+  async function save() {
+    if (!isDirty || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      if (res.ok) {
+        setSavedSettings(settings);
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2500);
       }
-    }, 900);
-  }, [settings, merchantId]);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function discard() {
+    setSettings(savedSettings);
+  }
 
   async function generateStatements() {
     if (!aboutText.trim()) return;
@@ -115,30 +122,51 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 max-w-3xl space-y-6">
-      {/* Floating save pill */}
+
+      {/* Floating unsaved-changes bar */}
       <div style={{
-        position: 'fixed', top: 24, left: '50%',
-        transform: `translateX(-50%) translateY(${saveState === 'idle' ? '-80px' : '0'})`,
-        opacity: saveState === 'idle' ? 0 : 1,
-        transition: 'transform .35s cubic-bezier(.34,1.56,.64,1), opacity .3s',
-        background: saveState === 'saved' ? '#16a34a' : '#111',
-        color: 'white', padding: '8px 18px', borderRadius: 30,
-        fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8,
-        boxShadow: '0 4px 20px rgba(0,0,0,.25)', zIndex: 9999, whiteSpace: 'nowrap',
-        pointerEvents: 'none'
+        position: 'fixed', top: 20, left: '50%',
+        transform: `translateX(-50%) translateY(${isDirty || justSaved ? '0' : '-80px'})`,
+        opacity: isDirty || justSaved ? 1 : 0,
+        transition: 'transform .4s cubic-bezier(.34,1.56,.64,1), opacity .3s',
+        background: justSaved ? '#16a34a' : '#1a1a1a',
+        color: 'white',
+        padding: '10px 14px 10px 20px',
+        borderRadius: 40,
+        fontSize: 13, fontWeight: 500,
+        display: 'flex', alignItems: 'center', gap: 10,
+        boxShadow: '0 8px 32px rgba(0,0,0,.28)',
+        zIndex: 9999, whiteSpace: 'nowrap',
+        pointerEvents: isDirty || justSaved ? 'auto' : 'none'
       }}>
-        {saveState === 'saving' ? (
-          <><span style={{
-            width: 12, height: 12, border: '2px solid rgba(255,255,255,.4)',
-            borderTopColor: 'white', borderRadius: '50%',
-            display: 'inline-block',
-            animation: 'spin .7s linear infinite'
-          }} />Saving…</>
+        {justSaved ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>✓</span> Settings saved
+          </span>
         ) : (
-          <>✓ Saved</>
+          <>
+            <span style={{ color: '#aaa' }}>Unsaved changes</span>
+            <button onClick={discard} style={{
+              background: 'rgba(255,255,255,.12)', border: 'none', color: 'white',
+              padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer'
+            }}>Discard</button>
+            <button onClick={save} disabled={saving} style={{
+              background: 'white', border: 'none', color: '#1a1a1a',
+              padding: '5px 18px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+              cursor: saving ? 'default' : 'pointer', opacity: saving ? .7 : 1,
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              {saving ? <><span style={{
+                width: 10, height: 10, border: '2px solid #999',
+                borderTopColor: '#333', borderRadius: '50%', display: 'inline-block',
+                animation: 'bspin .7s linear infinite'
+              }}/>Saving…</> : 'Save'}
+            </button>
+          </>
         )}
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`@keyframes bspin { to { transform: rotate(360deg); } }`}</style>
 
       <div className="flex items-center justify-between">
         <div>
