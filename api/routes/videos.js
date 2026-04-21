@@ -219,47 +219,59 @@ router.put('/video-widgets/:id/items', dashboardCors, async (req, res) => {
 // ─── Widget: public video feed (called by botiga-video.js) ───────────────────
 // Supports ?w=WIDGET_ID to fetch a specific named collection, or all active videos
 router.get('/widget/videos', widgetCors, async (req, res) => {
-  const { k: apiKey, w: widgetId } = req.query;
-  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+  try {
+    const { k: apiKey, w: widgetId } = req.query;
+    if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
 
-  const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
-  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+    const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+    if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
 
-  const videoSelect = `id, title, s3_url, thumbnail_url, duration_seconds, width, height,
-    views_count, likes_count, shares_count,
-    video_product_tags(id, shopify_product_id, shopify_variant_id, product_name,
-                       product_handle, price, compare_at_price, image_url)`;
+    const videoSelect = `id, title, s3_url, thumbnail_url, duration_seconds, width, height,
+      status, views_count, likes_count, shares_count,
+      video_product_tags(id, shopify_product_id, shopify_variant_id, product_name,
+                         product_handle, price, compare_at_price, image_url)`;
 
-  if (widgetId) {
-    try {
-      const { data: items, error } = await supabase
+    if (widgetId) {
+      // Step 1: get ordered video IDs for this widget
+      const { data: items, error: itemsErr } = await supabase
         .from('video_widget_items')
-        .select(`sort_order, videos(${videoSelect})`)
+        .select('sort_order, video_id')
         .eq('widget_id', widgetId)
         .order('sort_order', { ascending: true });
 
-      if (error) throw error;
+      if (!itemsErr && items && items.length > 0) {
+        const videoIds = items.map(i => i.video_id);
 
-      const videos = (items || [])
-        .map(item => item.videos)
-        .filter(v => v && v.status !== 'inactive');
-      return res.json(videos);
-    } catch (err) {
-      console.error('[widget/videos] widget query failed:', err.message);
-      // Fall through to return all active videos instead of 500
+        // Step 2: fetch those videos in one query
+        const { data: vids } = await supabase
+          .from('videos')
+          .select(videoSelect)
+          .in('id', videoIds)
+          .eq('status', 'active');
+
+        // Re-sort to match widget order
+        const byId = {};
+        (vids || []).forEach(v => { byId[v.id] = v; });
+        const ordered = videoIds.map(id => byId[id]).filter(Boolean);
+        return res.json(ordered);
+      }
+      // If widget has no items or error, fall through to all-videos fallback
     }
+
+    // Fallback: all active videos for merchant
+    const { data: videos } = await supabase
+      .from('videos')
+      .select(videoSelect)
+      .eq('merchant_id', merchant.id)
+      .eq('status', 'active')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    res.json(videos || []);
+  } catch (err) {
+    console.error('[widget/videos] error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch videos' });
   }
-
-  // Fallback: all active videos for merchant
-  const { data: videos } = await supabase
-    .from('videos')
-    .select(videoSelect)
-    .eq('merchant_id', merchant.id)
-    .eq('status', 'active')
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: false });
-
-  res.json(videos || []);
 });
 
 // ─── Widget: track event ─────────────────────────────────────────────────────
