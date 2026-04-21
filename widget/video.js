@@ -807,21 +807,35 @@
 
   // ─── Init ───────────────────────────────────────────────────────────────────
   function init() {
+    console.log('[Botiga Video] init() — readyState:', document.readyState, '| API_KEY:', API_KEY, '| MODE:', MODE);
     injectStyles();
 
-    // Find mount point or create one after the script tag
     var mountId = script.getAttribute('data-mount') || null;
     var container = mountId ? document.getElementById(mountId) : null;
+    console.log('[Botiga Video] mount id:', mountId, '| container found:', !!container);
 
     if (!container) {
       container = document.createElement('div');
       container.id = '_btgv_mount';
-      script.parentNode.insertBefore(container, script.nextSibling);
+      // Insert after script tag, or append to body as last resort
+      if (script.parentNode) {
+        script.parentNode.insertBefore(container, script.nextSibling);
+      } else {
+        document.body.appendChild(container);
+      }
     }
 
-    fetchVideos(function () {
-      if (!videos.length) return;
+    // Temporary debug outline so we can confirm mount point is visible
+    container.style.outline = '2px dashed rgba(99,102,241,0.4)';
+    container.style.minHeight = '20px';
 
+    fetchVideos(function () {
+      console.log('[Botiga Video] videos fetched:', videos.length);
+      container.style.outline = '';
+      if (!videos.length) {
+        console.warn('[Botiga Video] No active videos found for this API key.');
+        return;
+      }
       if (MODE === 'stories') buildStories(container);
       else if (MODE === 'carousel') buildCarousel(container);
       else if (MODE === 'feed') buildFeedButton(container);
