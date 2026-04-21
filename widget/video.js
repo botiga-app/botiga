@@ -191,41 +191,6 @@
       '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s}',
       '._btgv_rail button:active{transform:scale(.9)}',
 
-      // Negotiate modal
-      '#_btgv_neg{position:fixed;inset:0;z-index:999999;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .2s}',
-      '#_btgv_neg.open{opacity:1;pointer-events:all}',
-      '#_btgv_neg_panel{width:100%;max-width:480px;max-height:80vh;background:#fff;border-radius:24px 24px 0 0;display:flex;flex-direction:column;overflow:hidden;transform:translateY(100%);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}',
-      '@media(min-width:640px){#_btgv_neg_panel{border-radius:24px;margin-bottom:40px;max-height:70vh}}',
-      '#_btgv_neg.open #_btgv_neg_panel{transform:translateY(0)}',
-      '._btgv_neg_hdr{padding:14px 14px 12px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;flex-shrink:0}',
-      '._btgv_neg_thumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0;background:#eee}',
-      '._btgv_neg_info{flex:1;min-width:0}',
-      '._btgv_neg_pname{font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}',
-      '._btgv_neg_pprice{font-size:12px;color:#888;margin-top:1px}',
-      '._btgv_neg_x{width:32px;height:32px;background:#f5f5f5;border:none;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#555}',
-      '._btgv_neg_msgs{flex:1;overflow-y:auto;padding:14px 14px;display:flex;flex-direction:column;gap:8px}',
-      '._btgv_neg_msg{max-width:80%;padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.45;word-break:break-word}',
-      '._btgv_neg_msg.bot{background:#f0f0f0;color:#111;align-self:flex-start;border-bottom-left-radius:5px}',
-      '._btgv_neg_msg.user{background:#6366f1;color:#fff;align-self:flex-end;border-bottom-right-radius:5px}',
-      '._btgv_neg_typing{align-self:flex-start;background:#f0f0f0;border-radius:18px 18px 18px 5px;padding:12px 16px;display:flex;gap:5px}',
-      '._btgv_neg_typing span{width:7px;height:7px;background:#aaa;border-radius:50%;animation:_btgvBounce .8s infinite}',
-      '._btgv_neg_typing span:nth-child(2){animation-delay:.15s}._btgv_neg_typing span:nth-child(3){animation-delay:.3s}',
-      '@keyframes _btgvBounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}',
-      '._btgv_neg_inp_row{padding:10px 12px;border-top:1px solid #f0f0f0;display:flex;gap:8px;align-items:center;flex-shrink:0}',
-      '._btgv_neg_inp{flex:1;border:1.5px solid #e0e0e0;border-radius:24px;padding:10px 16px;font-size:14px;outline:none;background:#fafafa;font-family:inherit}',
-      '._btgv_neg_inp:focus{border-color:#6366f1;background:#fff}',
-      '._btgv_neg_send{width:40px;height:40px;background:#6366f1;border:none;border-radius:50%;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s}',
-      '._btgv_neg_send:disabled{opacity:.35;cursor:default}',
-      '._btgv_neg_deal{padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}',
-      '._btgv_neg_deal_title{font-size:17px;font-weight:800;color:#111}',
-      '._btgv_neg_deal_price{font-size:36px;font-weight:900;color:#22c55e;line-height:1}',
-      '._btgv_neg_deal_was{font-size:13px;color:#999;text-decoration:line-through}',
-      '._btgv_neg_deal_save{background:#dcfce7;color:#15803d;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px}',
-      '._btgv_neg_deal_btns{width:100%;display:flex;flex-direction:column;gap:8px;margin-top:6px}',
-      '._btgv_neg_deal_btn{width:100%;padding:14px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .15s}',
-      '._btgv_neg_deal_btn:active{opacity:.75}',
-      '._btgv_neg_deal_cart{background:#6366f1;color:#fff}',
-      '._btgv_neg_deal_buy{background:#111;color:#fff}',
 
       // Product shelf in feed/story — landscape cards
       '._btgv_pshelf{position:absolute;bottom:0;left:0;right:0;z-index:8;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.25) 80%,transparent 100%);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px)}',
@@ -329,121 +294,334 @@
     return shelf;
   }
 
-  // ─── Negotiate modal ────────────────────────────────────────────────────────
+  // ─── Negotiate modal (exact match of main widget openChat flow) ─────────────
   function openNegotiateModal(tag) {
-    var existing = document.getElementById('_btgv_neg');
-    if (existing) existing.remove();
+    var existingHost = document.getElementById('_btgv_neg_host');
+    if (existingHost) { existingHost.remove(); return; }
+
+    var listPrice = parseFloat(tag.price || 0);
+    var negId = null, loading = false, dealShown = false;
+
+    // Shadow DOM for full CSS isolation (same approach as main widget)
+    var host = document.createElement('div');
+    host.id = '_btgv_neg_host';
+    var shadow = host.attachShadow({ mode: 'open' });
+
+    var bg = '#6366f1', fg = '#fff';
+    // Try to inherit store button color
+    try {
+      var storeBtn = document.querySelector('[data-add-to-cart],[name="add"],.btn-cart,#AddToCart');
+      if (storeBtn) {
+        var cs = window.getComputedStyle(storeBtn);
+        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') bg = cs.backgroundColor;
+        if (cs.color) fg = cs.color;
+      }
+    } catch (e) {}
+
+    var style = document.createElement('style');
+    style.textContent = [
+      '* { box-sizing: border-box; margin: 0; padding: 0; }',
+      '#overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.48); z-index: 2147483646;',
+      '  display: flex; align-items: flex-end; justify-content: center; }',
+      '#panel { background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px; height: 580px;',
+      '  display: flex; flex-direction: column; font-family: system-ui,sans-serif; overflow: hidden;',
+      '  box-shadow: 0 -8px 40px rgba(0,0,0,0.18); position: relative; }',
+      '.hdr { padding: 16px 20px; background: ' + bg + '; color: ' + fg + '; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }',
+      '.hdr-left { display: flex; align-items: center; gap: 10px; min-width: 0; }',
+      '.hdr-thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }',
+      '.hdr h3 { font-size: 15px; font-weight: 600; }',
+      '.hdr p { font-size: 11px; opacity: 0.8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }',
+      '.close-btn { background: none; border: none; color: inherit; cursor: pointer; font-size: 20px; padding: 0 4px; flex-shrink: 0; }',
+      '.msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: #f7f7f8; }',
+      '.msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }',
+      '.msg.bot { background: #fff; color: #1a1a1a; border-radius: 14px 14px 14px 2px; align-self: flex-start; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }',
+      '.msg.user { background: ' + bg + '; color: ' + fg + '; border-radius: 14px 14px 2px 14px; align-self: flex-end; }',
+      '.typing { display: flex; align-items: center; gap: 4px; align-self: flex-start; padding: 10px 14px;',
+      '  background: #fff; border-radius: 14px 14px 14px 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }',
+      '.typing span { width: 6px; height: 6px; background: #bbb; border-radius: 50%; animation: bounce 1.2s infinite; }',
+      '.typing span:nth-child(2) { animation-delay: 0.2s; }',
+      '.typing span:nth-child(3) { animation-delay: 0.4s; }',
+      '@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }',
+      '.reaction { font-size: 12px; color: #6b7280; align-self: flex-end; padding: 2px 4px; animation: fadein 0.2s ease; }',
+      '@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }',
+      '.chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px 0; }',
+      '.chip-accept { background: #16a34a; color: #fff; border: none; border-radius: 20px; padding: 7px 16px;',
+      '  font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: 0.01em; }',
+      '.chip-counter { background: #f3f4f6; color: #555; border: none; border-radius: 20px; padding: 7px 14px;',
+      '  font-size: 12px; font-weight: 600; cursor: pointer; }',
+      '.input-row { display: flex; padding: 12px 16px; gap: 8px; border-top: 1px solid #eee; background: #fff; flex-shrink: 0; }',
+      '.inp { flex: 1; border: 1.5px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 13px;',
+      '  font-family: inherit; outline: none; transition: border 0.15s; }',
+      '.inp:focus { border-color: ' + bg + '; }',
+      '.send { background: ' + bg + '; color: ' + fg + '; border: none; border-radius: 50%; width: 40px; height: 40px;',
+      '  cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }',
+      '.send:disabled { opacity: 0.5; cursor: default; }',
+      // Deal screen
+      '.deal-screen { position: absolute; inset: 0; background: #111; display: flex; flex-direction: column;',
+      '  align-items: center; justify-content: center; gap: 0; z-index: 20; transform: translateY(100%);',
+      '  transition: transform 0.5s ease-out; overflow: hidden; border-radius: 16px 16px 0 0; }',
+      '.deal-screen.visible { transform: translateY(0); }',
+      '.deal-check { margin-bottom: 18px; }',
+      '.deal-check circle { opacity: 0; animation: circlein 0.3s ease-out 0.2s forwards; }',
+      '@keyframes circlein { to { opacity: 1; } }',
+      '.checkmark { animation: draw 0.4s ease-out 0.2s forwards; }',
+      '@keyframes draw { to { stroke-dashoffset: 0; } }',
+      '.deal-product { font-size: 12px; color: #888; margin-bottom: 10px; text-align: center; padding: 0 24px; }',
+      '.deal-price-wrap { position: relative; text-align: center; margin-bottom: 6px; }',
+      '.deal-price-num { font-size: 52px; font-weight: 800; color: #fff; line-height: 1; font-family: system-ui,sans-serif; }',
+      '.deal-orig-num { font-size: 16px; color: #555; text-decoration: line-through; margin-bottom: 4px; text-align: center; }',
+      '.deal-savings { display: inline-block; background: #1a472a; color: #7dcc99; font-size: 12px; font-weight: 600;',
+      '  padding: 4px 12px; border-radius: 20px; margin-bottom: 18px; opacity: 0; transition: opacity 0.4s ease; }',
+      '.deal-savings.show { opacity: 1; }',
+      '.deal-code-line { font-size: 11px; color: #555; margin-bottom: 20px; letter-spacing: 0.02em; }',
+      '.deal-timer-wrap { text-align: center; margin-bottom: 8px; }',
+      '.deal-timer-digits { font-size: 28px; font-weight: 700; color: #fff; font-family: monospace; letter-spacing: 4px; transition: color 0.3s; }',
+      '.deal-timer-digits.urgent { color: #e8534a; }',
+      '.deal-timer-label { font-size: 11px; color: #555; margin-top: 2px; }',
+      '.deal-fallback { display: none; margin-top: 14px; padding: 10px 28px; background: #1a472a; color: #fff;',
+      '  border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }',
+      '.deal-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #1a472a; width: 0%; transition: width 0.5s linear; }',
+    ].join('');
+    shadow.appendChild(style);
 
     var overlay = document.createElement('div');
-    overlay.id = '_btgv_neg';
-    document.body.appendChild(overlay);
+    overlay.id = 'overlay';
 
     var panel = document.createElement('div');
-    panel.id = '_btgv_neg_panel';
-    overlay.appendChild(panel);
+    panel.id = 'panel';
 
     // Header
-    var hdr = document.createElement('div');
-    hdr.className = '_btgv_neg_hdr';
+    var hdr = document.createElement('div'); hdr.className = 'hdr';
+    var hdrLeft = document.createElement('div'); hdrLeft.className = 'hdr-left';
     if (tag.image_url) {
-      var thumb = document.createElement('img');
-      thumb.className = '_btgv_neg_thumb'; thumb.src = tag.image_url; thumb.alt = '';
-      hdr.appendChild(thumb);
+      var hdrThumb = document.createElement('img');
+      hdrThumb.className = 'hdr-thumb'; hdrThumb.src = tag.image_url; hdrThumb.alt = '';
+      hdrLeft.appendChild(hdrThumb);
     }
-    var info = document.createElement('div'); info.className = '_btgv_neg_info';
-    var pname = document.createElement('div'); pname.className = '_btgv_neg_pname';
-    pname.textContent = tag.product_name || '';
-    var pprice = document.createElement('div'); pprice.className = '_btgv_neg_pprice';
-    var listPrice = parseFloat(tag.price || 0);
-    pprice.textContent = listPrice > 0 ? 'List price: $' + listPrice.toFixed(2) : '';
-    info.appendChild(pname); info.appendChild(pprice);
-    var xBtn = document.createElement('button'); xBtn.className = '_btgv_neg_x'; xBtn.innerHTML = '&#x2715;';
-    xBtn.onclick = function () { closeNeg(); };
-    hdr.appendChild(info); hdr.appendChild(xBtn);
+    var hdrText = document.createElement('div');
+    var hdrTitle = document.createElement('h3'); hdrTitle.textContent = '💬 Make an offer';
+    var hdrSub = document.createElement('p'); hdrSub.textContent = tag.product_name || '';
+    hdrText.appendChild(hdrTitle); hdrText.appendChild(hdrSub);
+    hdrLeft.appendChild(hdrText);
+    var closeBtn = document.createElement('button'); closeBtn.className = 'close-btn'; closeBtn.innerHTML = '&#x2715;';
+    closeBtn.onclick = function () { closeNeg(); };
+    hdr.appendChild(hdrLeft); hdr.appendChild(closeBtn);
     panel.appendChild(hdr);
 
-    // Messages area
-    var msgs = document.createElement('div'); msgs.className = '_btgv_neg_msgs';
-    panel.appendChild(msgs);
+    var msgsEl = document.createElement('div'); msgsEl.className = 'msgs';
+    panel.appendChild(msgsEl);
 
-    // Input row
-    var inpRow = document.createElement('div'); inpRow.className = '_btgv_neg_inp_row';
-    var inp = document.createElement('input'); inp.className = '_btgv_neg_inp';
-    inp.type = 'text'; inp.placeholder = 'Type your offer…'; inp.autocomplete = 'off';
-    var sendBtn = document.createElement('button'); sendBtn.className = '_btgv_neg_send';
-    sendBtn.innerHTML = '&#10148;'; sendBtn.disabled = true;
+    var inpRow = document.createElement('div'); inpRow.className = 'input-row'; inpRow.id = 'input-row';
+    var inp = document.createElement('input'); inp.className = 'inp'; inp.type = 'text';
+    inp.placeholder = 'Type your offer or reply...'; inp.autocomplete = 'off';
+    var sendBtn = document.createElement('button'); sendBtn.className = 'send'; sendBtn.innerHTML = '&#10148;'; sendBtn.disabled = true;
     inpRow.appendChild(inp); inpRow.appendChild(sendBtn);
     panel.appendChild(inpRow);
 
-    overlay.onclick = function (e) { if (e.target === overlay) closeNeg(); };
+    overlay.appendChild(panel);
+    shadow.appendChild(overlay);
+    document.body.appendChild(host);
 
-    var negId = null, loading = false, dealShown = false;
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeNeg(); });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !sendBtn.disabled) send(); });
+    sendBtn.addEventListener('click', send);
 
     function closeNeg() {
-      overlay.classList.remove('open');
-      setTimeout(function () { overlay.remove(); }, 220);
+      host.remove();
     }
 
-    function appendMsg(role, text) {
-      removeTyping();
-      var m = document.createElement('div');
-      m.className = '_btgv_neg_msg ' + role;
-      m.textContent = text;
-      msgs.appendChild(m);
-      msgs.scrollTop = msgs.scrollHeight;
+    function removeTyping() {
+      var t = shadow.querySelector('#_typing'); if (t) t.remove();
+      shadow.querySelectorAll('.reaction').forEach(function (r) { r.remove(); });
     }
 
     function showTyping() {
       removeTyping();
-      var t = document.createElement('div'); t.className = '_btgv_neg_typing'; t.id = '_btgv_neg_t';
+      var t = document.createElement('div'); t.className = 'typing'; t.id = '_typing';
       t.innerHTML = '<span></span><span></span><span></span>';
-      msgs.appendChild(t); msgs.scrollTop = msgs.scrollHeight;
+      msgsEl.appendChild(t); msgsEl.scrollTop = msgsEl.scrollHeight;
     }
 
-    function removeTyping() {
-      var t = document.getElementById('_btgv_neg_t'); if (t) t.remove();
+    function setLoading(state) {
+      loading = state; sendBtn.disabled = state; inp.disabled = state;
     }
 
-    function setLoading(v) {
-      loading = v; sendBtn.disabled = v; inp.disabled = v;
+    function showOfferReaction(text) {
+      if (!listPrice) return;
+      var m = text.match(/\$?\s*([\d,]+(?:\.[\d]{1,2})?)/);
+      if (!m) return;
+      var offer = parseFloat(m[1].replace(/[,\s]/g, ''));
+      if (offer <= 0) return;
+      var pct = offer / listPrice;
+      var emoji, label;
+      if (pct >= 0.90)      { emoji = '🤩'; label = 'Getting warmer...'; }
+      else if (pct >= 0.80) { emoji = '😊'; label = 'Not bad...'; }
+      else                  { emoji = '😬'; label = "That's a tough one..."; }
+      var r = document.createElement('div'); r.className = 'reaction';
+      r.textContent = emoji + ' ' + label;
+      msgsEl.appendChild(r); msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+
+    function appendMsg(role, text) {
+      removeTyping();
+      shadow.querySelectorAll('.chips').forEach(function (c) { c.remove(); });
+      var m = document.createElement('div');
+      m.className = 'msg ' + role;
+      m.textContent = text;
+      msgsEl.appendChild(m);
+
+      // Accept / counter chips for bot messages with a price that aren't deal closes
+      if (role === 'bot') {
+        var pm = text.match(/\$[\d,]+(?:\.\d{1,2})?/);
+        var isDeal = /checkout|you've got a deal|deal is locked|expired/i.test(text);
+        if (pm && !isDeal) {
+          var chips = document.createElement('div'); chips.className = 'chips';
+          var acceptBtn = document.createElement('button'); acceptBtn.className = 'chip-accept';
+          acceptBtn.textContent = '✓ Accept ' + pm[0];
+          var counterBtn = document.createElement('button'); counterBtn.className = 'chip-counter';
+          counterBtn.textContent = 'Make a counter';
+          acceptBtn.addEventListener('click', function () { chips.remove(); inp.value = 'I accept'; send(); });
+          counterBtn.addEventListener('click', function () { chips.remove(); inp.focus(); });
+          chips.appendChild(counterBtn); chips.appendChild(acceptBtn);
+          msgsEl.appendChild(chips);
+        }
+      }
+
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      return m;
+    }
+
+    function showGate(d) {
+      removeTyping();
+      var g = document.createElement('div'); g.className = 'msg bot';
+      var blurred = d.bot_reply.replace(/\$[\d,]+(?:\.\d{1,2})?/g, function (m) {
+        return '<span class="_btg_p" style="filter:blur(2px);transition:filter 0.8s ease;display:inline-block;user-select:none">' + m + '</span>';
+      });
+      g.innerHTML =
+        '<div style="font-size:11px;font-weight:600;color:#6366f1;letter-spacing:0.03em;margin-bottom:8px">🔒 I found a private price on this</div>' +
+        '<div style="line-height:1.6;margin-bottom:14px">' + blurred + '</div>' +
+        '<form id="_btg_f" style="display:flex;gap:6px;margin-bottom:6px">' +
+          '<input id="_btg_e" type="email" placeholder="Email me my private price" required autocomplete="email"' +
+          ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;font-family:inherit" />' +
+          '<button type="submit" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Unlock →</button>' +
+        '</form>' +
+        '<div style="font-size:10px;color:#ccc">No spam. Just your deal.</div>';
+      msgsEl.appendChild(g); msgsEl.scrollTop = msgsEl.scrollHeight;
+
+      setLoading(false); sendBtn.disabled = true; inp.disabled = true;
+      requestAnimationFrame(function () {
+        var emailInp = shadow.querySelector('#_btg_e');
+        if (emailInp) emailInp.focus();
+      });
+
+      shadow.querySelector('#_btg_f').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var em = shadow.querySelector('#_btg_e').value.trim();
+        if (!em || em.indexOf('@') < 0) return;
+        var submitBtn = shadow.querySelector('#_btg_f button[type=submit]');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '...'; }
+        fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: em })
+        }).then(function () {
+          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
+          setTimeout(function () {
+            g.remove();
+            appendMsg('bot', d.bot_reply);
+            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+            setTimeout(function () { inp.focus(); }, 80);
+          }, 900);
+        }).catch(function () {
+          // Unblur anyway if contact save fails
+          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
+          setTimeout(function () {
+            g.remove();
+            appendMsg('bot', d.bot_reply);
+            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+          }, 900);
+        });
+      });
     }
 
     function showDeal(dealPrice, checkoutUrl, discountCode) {
       if (dealShown) return; dealShown = true;
-      inpRow.remove();
-      var d = document.createElement('div'); d.className = '_btgv_neg_deal';
-      d.innerHTML = '<div style="font-size:48px">🎉</div>' +
-        '<div class="_btgv_neg_deal_title">Deal locked in!</div>' +
-        (listPrice > dealPrice ? '<div class="_btgv_neg_deal_was">$' + listPrice.toFixed(2) + '</div>' : '') +
-        '<div class="_btgv_neg_deal_price">$' + parseFloat(dealPrice).toFixed(2) + '</div>' +
-        (listPrice > dealPrice ? '<div class="_btgv_neg_deal_save">You saved $' + (listPrice - dealPrice).toFixed(2) + '</div>' : '') +
-        (discountCode ? '<div style="font-size:12px;color:#555;margin-top:4px">Code <strong>' + discountCode + '</strong> applied</div>' : '');
-      var btns = document.createElement('div'); btns.className = '_btgv_neg_deal_btns';
-      var cartBtn = document.createElement('button'); cartBtn.className = '_btgv_neg_deal_btn _btgv_neg_deal_cart';
-      cartBtn.textContent = '🛒 Add to Cart';
-      cartBtn.onclick = function () {
-        addToCart(tag.shopify_variant_id, function (ok) {
-          if (ok) { fireConfetti(); closeNeg(); }
-        });
-      };
-      var buyBtn = document.createElement('button'); buyBtn.className = '_btgv_neg_deal_btn _btgv_neg_deal_buy';
-      buyBtn.textContent = '⚡ Go to Checkout';
-      buyBtn.onclick = function () {
-        addToCart(tag.shopify_variant_id, function (ok) {
-          if (ok) { fireConfetti(); var path = discountCode ? '/cart?discount=' + discountCode : '/checkout'; window.location.href = path; }
-        });
-      };
-      btns.appendChild(cartBtn); btns.appendChild(buyBtn);
-      d.appendChild(btns);
-      panel.appendChild(d);
+      var inputRowEl = shadow.querySelector('#input-row'); if (inputRowEl) inputRowEl.remove();
+      var saved = Math.round(listPrice - dealPrice);
+      var savedPct = Math.round((saved / listPrice) * 100);
+      var exp = new Date(Date.now() + 15 * 60 * 1000);
+
+      var ds = document.createElement('div'); ds.className = 'deal-screen';
+      ds.innerHTML =
+        '<svg class="deal-check" viewBox="0 0 52 52" width="52" height="52">' +
+          '<circle cx="26" cy="26" r="24" fill="none" stroke="#1a472a" stroke-width="2"/>' +
+          '<path class="checkmark" fill="none" stroke="white" stroke-width="3"' +
+          ' stroke-linecap="round" stroke-linejoin="round" d="M14 27l8 8 16-16"' +
+          ' stroke-dasharray="36" stroke-dashoffset="36"/></svg>' +
+        '<div class="deal-product">' + (tag.product_name || '') + '</div>' +
+        '<div class="deal-orig-num">' + (listPrice !== dealPrice ? '$' + Math.round(listPrice) : '') + '</div>' +
+        '<div class="deal-price-wrap"><div class="deal-price-num" id="_dp">$' + Math.round(listPrice) + '</div></div>' +
+        '<div class="deal-savings" id="_ds">' + (saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in') + '</div>' +
+        (discountCode ? '<div class="deal-code-line">' + discountCode + ' applied automatically</div>' : '') +
+        '<div class="deal-timer-wrap"><div class="deal-timer-digits" id="_dtd">15:00</div><div class="deal-timer-label">Deal expires in</div></div>' +
+        '<button class="deal-fallback" id="_dfb">Go to cart &rarr;</button>' +
+        '<div class="deal-progress" id="_dpr"></div>';
+      panel.appendChild(ds);
+      requestAnimationFrame(function () { ds.classList.add('visible'); });
+
+      setTimeout(function () {
+        var from = Math.round(listPrice), to = Math.round(dealPrice), dur = 700, start = null;
+        function step(now) {
+          if (!start) start = now;
+          var t = Math.min((now - start) / dur, 1);
+          var eased = 1 - Math.pow(1 - t, 3);
+          var os = (t > 0.85 && t < 1) ? Math.sin(((t - 0.85) / 0.15) * Math.PI) * 2 : 0;
+          var el = shadow.querySelector('#_dp');
+          if (el) el.textContent = '$' + Math.round(from - (from - to) * eased + os);
+          if (t < 1) { requestAnimationFrame(step); }
+          else {
+            if (el) el.textContent = '$' + to;
+            var badge = shadow.querySelector('#_ds'); if (badge) badge.classList.add('show');
+          }
+        }
+        requestAnimationFrame(step);
+      }, 500);
+
+      var timerInterval = setInterval(function () {
+        var remaining = Math.max(0, exp - Date.now());
+        var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
+        var timerEl = shadow.querySelector('#_dtd');
+        if (timerEl) {
+          timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+          if (remaining < 120000) timerEl.classList.add('urgent');
+        }
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          if (timerEl) timerEl.textContent = 'Expired';
+        }
+      }, 1000);
+
+      setTimeout(function () {
+        var fb = shadow.querySelector('#_dfb');
+        if (!fb) return;
+        fb.style.display = 'block'; fb.textContent = 'Complete my order →';
+        fb.onclick = function () {
+          fb.textContent = 'Adding to cart...'; fb.disabled = true;
+          addToCart(tag.shopify_variant_id, function () {
+            var cartPath = discountCode ? '/cart?discount=' + discountCode : '/cart';
+            window.location.href = cartPath;
+          });
+        };
+      }, 1800);
     }
 
     function doNegotiate(customerMsg) {
       var body = {
-        api_key: API_KEY,
-        session_id: SESSION_ID,
+        api_key: API_KEY, session_id: SESSION_ID,
         product_name: tag.product_name || '',
+        product_url: window.location.href,
         product_image: tag.image_url || null,
+        variant_id: tag.shopify_variant_id || null,
         list_price: listPrice,
         opening: !customerMsg
       };
@@ -451,55 +629,52 @@
       if (customerMsg) body.customer_message = customerMsg;
 
       fetch(API_BASE + '/api/negotiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           removeTyping();
           if (d.error) {
-            appendMsg('bot', "Let's see what we can do. What's your offer?");
+            appendMsg('bot', "Hey! Let's see if we can make a deal. What's your offer?");
             setLoading(false); sendBtn.disabled = false; inp.disabled = false;
             setTimeout(function () { inp.focus(); }, 80);
             return;
           }
           negId = d.negotiation_id;
-          appendMsg('bot', d.bot_reply);
-          if (d.status === 'won' && d.deal_price) {
-            track(tag.shopify_product_id, 'negotiate');
-            showDeal(d.deal_price, d.checkout_url, d.discount_code);
+          if (d.needs_lead_capture && d.offered_price) {
+            showGate(d);
           } else {
-            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
-            setTimeout(function () { inp.focus(); }, 80);
+            appendMsg('bot', d.bot_reply);
+            if (d.status === 'won' && d.deal_price) {
+              try { document.dispatchEvent(new CustomEvent('botiga:deal', { detail: { price: d.deal_price } })); } catch (e) {}
+              showDeal(d.deal_price, d.checkout_url, d.discount_code);
+            } else {
+              setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+              setTimeout(function () { inp.focus(); }, 80);
+            }
           }
         })
         .catch(function () {
           removeTyping();
-          appendMsg('bot', "Let's see what we can do. What's your offer?");
+          appendMsg('bot', "Hey! What offer did you have in mind? 😊");
           setLoading(false); sendBtn.disabled = false; inp.disabled = false;
         });
     }
 
     function send() {
-      var text = inp.value.trim();
-      if (!text || loading) return;
+      var text = inp.value.trim(); if (!text || loading) return;
       inp.value = '';
       appendMsg('user', text);
+      showOfferReaction(text);
+      var delay = listPrice > 0 ? ((parseFloat(text.replace(/[^0-9.]/g, '')) / listPrice) < 0.70 ? 2500 : 1500) : 1500;
       setLoading(true);
-      var delay = listPrice > 0 ? (parseFloat(text.replace(/[^0-9.]/g, '')) / listPrice < 0.7 ? 2500 : 1500) : 1500;
-      setTimeout(function () { showTyping(); }, 200);
+      setTimeout(function () { showTyping(); }, Math.max(0, delay - 600));
       setTimeout(function () { doNegotiate(text); }, delay);
     }
 
-    inp.addEventListener('input', function () { sendBtn.disabled = !inp.value.trim() || loading; });
-    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !sendBtn.disabled) send(); });
-    sendBtn.onclick = send;
-
-    requestAnimationFrame(function () { overlay.classList.add('open'); });
-    setLoading(true);
-    showTyping();
-    setTimeout(function () { doNegotiate(null); }, 800);
+    setLoading(true); showTyping();
+    setTimeout(function () { doNegotiate(null); }, 1200);
   }
 
   // ─── Stories bar (type='stories' only) ──────────────────────────────────────
