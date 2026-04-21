@@ -148,9 +148,10 @@
       // Scroll container — horizontal only, no scrollbar
       '#_btgv_gi_wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scroll-behavior:smooth}',
       '#_btgv_gi_wrap::-webkit-scrollbar{display:none}',
-      '#_btgv_gi{display:flex;gap:8px}',
-      // Cell: 4 per view desktop, 3 tablet, 2 mobile — with slight right-edge peek
-      '._btgv_gc{flex-shrink:0;width:calc(25% - 6px);scroll-snap-align:start;position:relative;aspect-ratio:9/16;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:12px}',
+      // min-width:100% ensures % widths on children resolve against the scroll wrapper, not the flex container
+      '#_btgv_gi{display:flex;gap:8px;min-width:100%}',
+      // Cell: 4 per view desktop, 3 tablet, 2 mobile
+      '._btgv_gc{flex-shrink:0;width:calc(25% - 6px);scroll-snap-align:start;position:relative;overflow:hidden;background:#111;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:12px}',
       '@media(max-width:900px){._btgv_gc{width:calc(33.333% - 6px)}}',
       '@media(max-width:540px){._btgv_gc{width:calc(50% - 4px)}}',
       '._btgv_gc video{width:100%;height:100%;object-fit:cover;display:block}',
@@ -608,9 +609,7 @@
         fb.onclick = function () {
           fb.textContent = 'Adding to cart...'; fb.disabled = true;
           addToCart(tag.shopify_variant_id, function () {
-            // Shopify: /discount/CODE sets the discount cookie, then redirects to /cart
-            var cartPath = discountCode ? '/discount/' + discountCode + '?redirect=/cart' : '/cart';
-            window.location.href = cartPath;
+            window.location.href = '/cart';
           });
         };
       }, 1800);
@@ -1010,15 +1009,16 @@
 
     grid.querySelectorAll('._btgv_gc').forEach(function (c) { io.observe(c); });
 
-    // Check if next arrow should be hidden (≤4 videos that all fit)
-    // Also enforce 9:16 cell height — aspect-ratio on flex children is unreliable in some browsers
+    // Enforce 9:16 cell height in JS — CSS aspect-ratio is unreliable on flex children
+    // inside overflow:auto containers in some browsers/themes.
     function fixCellHeights() {
       var cells = grid.querySelectorAll('._btgv_gc');
       if (!cells.length) return;
-      var w = cells[0].offsetWidth;
+      var w = cells[0].getBoundingClientRect().width;
       if (w > 0) cells.forEach(function (c) { c.style.height = Math.round(w * 16 / 9) + 'px'; });
     }
-    requestAnimationFrame(function () { updateArrows(); fixCellHeights(); });
+    // setTimeout lets the browser finish painting before we measure
+    setTimeout(function () { updateArrows(); fixCellHeights(); }, 60);
     window.addEventListener('resize', fixCellHeights, { passive: true });
   }
 
