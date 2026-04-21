@@ -59,6 +59,9 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
       handle: p.handle,
       image: p.image?.src || null,
       price: p.variants?.[0]?.price || null,
+      compare_at_price: p.variants?.[0]?.compare_at_price || null,
+      variant_id: p.variants?.[0]?.id ? String(p.variants[0].id) : null,
+      sku: p.variants?.[0]?.sku || null,
       product_type: p.product_type || null,
       tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       rule: productRulesByHandle[p.handle] || null

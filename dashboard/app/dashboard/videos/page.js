@@ -132,9 +132,9 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
   // Load all products once on open
   useEffect(() => {
     if (!shopifyDomain) { setLoading(false); return; }
-    fetch(`${API}/api/merchants/${merchantId}/shopify-products?q=`)
-      .then(r => r.ok ? r.json() : [])
-      .then(data => { setAllProducts(data || []); setLoading(false); })
+    fetch(`${API}/api/merchants/${merchantId}/shopify-products`)
+      .then(r => r.ok ? r.json() : { products: [] })
+      .then(data => { setAllProducts(data.products || []); setLoading(false); })
       .catch(() => setLoading(false));
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
@@ -168,11 +168,12 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
         body: JSON.stringify({
           merchant_id: merchantId,
           shopify_product_id: pid,
+          shopify_variant_id: product.variant_id || null,
           product_name: product.title,
           product_handle: product.handle,
-          price: parseFloat(product.variants?.[0]?.price || 0),
-          compare_at_price: parseFloat(product.variants?.[0]?.compare_at_price || 0) || null,
-          image_url: product.image?.src || null,
+          price: parseFloat(product.price || 0),
+          compare_at_price: parseFloat(product.compare_at_price || 0) || null,
+          image_url: product.image || null,
         }),
       });
       if (res.ok) {
@@ -241,8 +242,8 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
                         : 'hover:bg-gray-50'
                     } ${isSaving ? 'opacity-60' : ''}`}
                   >
-                    {p.image?.src
-                      ? <img src={p.image.src} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" alt="" />
+                    {p.image
+                      ? <img src={p.image} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" alt="" />
                       : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-lg">📦</div>
                     }
                     <div className="flex-1 min-w-0">
