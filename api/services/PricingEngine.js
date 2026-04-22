@@ -26,14 +26,14 @@ class PricingEngine {
     const obfuscatedFloor = Math.round(floor * (1 + obfuscationPct));
     const usableSpread = list - obfuscatedFloor;
 
-    // Minimum meaningful drop per step — never insult with $1-2 moves
-    // At least 3% of list price or $4, whichever is larger
-    const minDrop = Math.max(4, Math.round(list * 0.03));
+    // Minimum meaningful drop per step — at least 2% of list price or $2, whichever is larger
+    const minDrop = Math.max(2, Math.round(list * 0.02));
 
     // If spread can't support 6 meaningful steps, use fewer
     const maxSteps = Math.min(6, Math.floor(usableSpread / minDrop));
     if (maxSteps < 2) {
-      // Spread too small — go straight to obfuscated floor
+      // Spread too small for multiple steps — single opening offer at obfuscated floor
+      // (bot opens at best price immediately, still a real negotiation for acceptance)
       return [obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor, obfuscatedFloor];
     }
 
