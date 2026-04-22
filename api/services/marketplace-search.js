@@ -53,7 +53,7 @@ async function searchProducts({ query, limit = 20, offset = 0 }) {
   let dbQuery = supabase
     .from('marketplace_products')
     .select('id, merchant_id, shopify_product_id, title, description, price, compare_at_price, images, tags, handle, product_type, vendor, variants, store_domain, store_name, max_discount_pct, is_sponsored')
-    .textSearch('search_vector', keywords, { type: 'plain', config: 'english' })
+    .filter('search_vector', 'plfts(english)', keywords)
     .order('is_sponsored', { ascending: false })
     .range(offset, offset + limit - 1);
 
