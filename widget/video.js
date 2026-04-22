@@ -581,8 +581,8 @@
       var inputRowEl = shadow.querySelector('#input-row'); if (inputRowEl) inputRowEl.remove();
       var saved = Math.round(listPrice - dealPrice);
       var savedPct = Math.round((saved / listPrice) * 100);
-      var exp = new Date(Date.now() + 15 * 60 * 1000);
 
+      // Brief celebration screen — auto-redirects to cart, no button needed
       var ds = document.createElement('div'); ds.className = 'deal-screen';
       ds.innerHTML =
         '<svg class="deal-check" viewBox="0 0 52 52" width="52" height="52">' +
@@ -592,58 +592,22 @@
           ' stroke-dasharray="36" stroke-dashoffset="36"/></svg>' +
         '<div class="deal-product">' + (tag.product_name || '') + '</div>' +
         '<div class="deal-orig-num">' + (listPrice !== dealPrice ? '$' + Math.round(listPrice) : '') + '</div>' +
-        '<div class="deal-price-wrap"><div class="deal-price-num" id="_dp">$' + Math.round(listPrice) + '</div></div>' +
-        '<div class="deal-savings" id="_ds">' + (saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in') + '</div>' +
-        (discountCode ? '<div class="deal-code-line">' + discountCode + ' applied automatically</div>' : '') +
-        '<div class="deal-timer-wrap"><div class="deal-timer-digits" id="_dtd">15:00</div><div class="deal-timer-label">Deal expires in</div></div>' +
-        '<button class="deal-fallback" id="_dfb">Go to cart &rarr;</button>' +
-        '<div class="deal-progress" id="_dpr"></div>';
+        '<div class="deal-price-wrap"><div class="deal-price-num" id="_dp">$' + Math.round(dealPrice) + '</div></div>' +
+        '<div class="deal-savings" id="_ds show">' + (saved > 0 ? 'You saved $' + saved + ' · ' + savedPct + '% off' : 'Deal locked in') + '</div>' +
+        '<div class="deal-redirect-msg" id="_drm" style="font-size:13px;color:#888;margin-top:18px">Taking you to cart...</div>';
       panel.appendChild(ds);
       requestAnimationFrame(function () { ds.classList.add('visible'); });
 
+      // Animate savings badge in immediately
       setTimeout(function () {
-        var from = Math.round(listPrice), to = Math.round(dealPrice), dur = 700, start = null;
-        function step(now) {
-          if (!start) start = now;
-          var t = Math.min((now - start) / dur, 1);
-          var eased = 1 - Math.pow(1 - t, 3);
-          var os = (t > 0.85 && t < 1) ? Math.sin(((t - 0.85) / 0.15) * Math.PI) * 2 : 0;
-          var el = shadow.querySelector('#_dp');
-          if (el) el.textContent = '$' + Math.round(from - (from - to) * eased + os);
-          if (t < 1) { requestAnimationFrame(step); }
-          else {
-            if (el) el.textContent = '$' + to;
-            var badge = shadow.querySelector('#_ds'); if (badge) badge.classList.add('show');
-          }
-        }
-        requestAnimationFrame(step);
-      }, 500);
+        var badge = shadow.querySelector('#_ds'); if (badge) badge.classList.add('show');
+      }, 300);
 
-      var timerInterval = setInterval(function () {
-        var remaining = Math.max(0, exp - Date.now());
-        var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
-        var timerEl = shadow.querySelector('#_dtd');
-        if (timerEl) {
-          timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-          if (remaining < 120000) timerEl.classList.add('urgent');
-        }
-        if (remaining <= 0) {
-          clearInterval(timerInterval);
-          if (timerEl) timerEl.textContent = 'Expired';
-        }
-      }, 1000);
-
-      setTimeout(function () {
-        var fb = shadow.querySelector('#_dfb');
-        if (!fb) return;
-        fb.style.display = 'block'; fb.textContent = 'Complete my order →';
-        fb.onclick = function () {
-          fb.textContent = 'Adding to cart...'; fb.disabled = true;
-          addToCart(tag.shopify_variant_id, function () {
-            window.location.href = discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart';
-          });
-        };
-      }, 1800);
+      // Add to cart then redirect — 2.2s gives the animation time to land
+      addToCart(tag.shopify_variant_id, function () {
+        var dest = discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart';
+        setTimeout(function () { window.location.href = dest; }, 2200);
+      });
     }
 
     function doNegotiate(customerMsg) {
