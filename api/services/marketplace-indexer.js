@@ -20,7 +20,7 @@ async function fetchShopifyPage(domain, page) {
 
 function extractProducts(merchant, shopifyProducts) {
   return shopifyProducts
-    .filter(p => p.status === 'active' && p.variants && p.variants.length > 0)
+    .filter(p => p.variants && p.variants.length > 0)
     .map(p => {
       const firstVariant = p.variants[0];
       const price = parseFloat(firstVariant.price) || 0;
