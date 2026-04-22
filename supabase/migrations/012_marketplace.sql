@@ -73,7 +73,7 @@ CREATE TRIGGER marketplace_products_search_trigger
 -- Marketplace negotiations (wraps existing negotiation engine)
 CREATE TABLE IF NOT EXISTS marketplace_negotiations (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  negotiation_id       TEXT REFERENCES negotiations(id) ON DELETE SET NULL,
+  negotiation_id       UUID REFERENCES negotiations(id) ON DELETE SET NULL,
   customer_id          UUID REFERENCES marketplace_customers(id) ON DELETE SET NULL,
   merchant_id          UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
   product_id           UUID NOT NULL REFERENCES marketplace_products(id) ON DELETE CASCADE,
