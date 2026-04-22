@@ -15,9 +15,26 @@
 
   if (!API_KEY) return;
 
-  var allVideos = [], likedSet = {};
+  var allVideos = [], allCols = [], likedSet = {};
   var storyEl = null, storyVideos = [], storyIdx = 0, storyAnimFrame = null;
   var feedEl = null;
+
+  // ── Deep link helpers ───────────────────────────────────────────────────────
+  var _deepLinkOrig = null;
+  function pushDeepLink(id) {
+    if (_deepLinkOrig === null) _deepLinkOrig = window.location.href;
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set('btgv', String(id));
+      history.replaceState(null, '', url.toString());
+    } catch (e) {}
+  }
+  function popDeepLink() {
+    if (_deepLinkOrig !== null) {
+      try { history.replaceState(null, '', _deepLinkOrig); } catch (e) {}
+      _deepLinkOrig = null;
+    }
+  }
 
   // ─── Fetch ──────────────────────────────────────────────────────────────────
   function get(url, cb) {
@@ -502,10 +519,16 @@
         '<div style="font-size:11px;font-weight:600;color:#6366f1;letter-spacing:0.03em;margin-bottom:8px">🔒 I found a private price on this</div>' +
         '<div style="line-height:1.6;margin-bottom:14px">' + blurred + '</div>' +
         '<form id="_btg_f" style="display:flex;gap:6px;margin-bottom:6px">' +
-          '<input id="_btg_e" type="email" placeholder="Email me my private price" required autocomplete="email"' +
+          '<input id="_btg_e" type="email" placeholder="Email me my private price" autocomplete="email"' +
           ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;font-family:inherit" />' +
           '<button type="submit" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Unlock →</button>' +
         '</form>' +
+        '<div style="text-align:center;font-size:10px;color:#bbb;margin:6px 0">— or —</div>' +
+        '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+          '<input id="_btg_w" type="tel" placeholder="WhatsApp number" autocomplete="tel"' +
+          ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;font-family:inherit" />' +
+          '<button type="button" id="_btg_ws" style="background:#25D366;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Send →</button>' +
+        '</div>' +
         '<div style="font-size:10px;color:#ccc">No spam. Just your deal.</div>';
       msgsEl.appendChild(g); msgsEl.scrollTop = msgsEl.scrollHeight;
 
@@ -515,16 +538,12 @@
         if (emailInp) emailInp.focus();
       });
 
-      shadow.querySelector('#_btg_f').addEventListener('submit', function (ev) {
-        ev.preventDefault();
-        var em = shadow.querySelector('#_btg_e').value.trim();
-        if (!em || em.indexOf('@') < 0) return;
-        var submitBtn = shadow.querySelector('#_btg_f button[type=submit]');
-        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '...'; }
+      function doUnlock(contactPayload, triggerEl) {
+        if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = '...'; }
         fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: em })
+          body: JSON.stringify(contactPayload)
         }).then(function () {
           shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
           setTimeout(function () {
@@ -534,7 +553,6 @@
             setTimeout(function () { inp.focus(); }, 80);
           }, 900);
         }).catch(function () {
-          // Unblur anyway if contact save fails
           shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
           setTimeout(function () {
             g.remove();
@@ -542,6 +560,19 @@
             setLoading(false); sendBtn.disabled = false; inp.disabled = false;
           }, 900);
         });
+      }
+
+      shadow.querySelector('#_btg_f').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var em = shadow.querySelector('#_btg_e').value.trim();
+        if (!em || em.indexOf('@') < 0) return;
+        doUnlock({ email: em }, shadow.querySelector('#_btg_f button[type=submit]'));
+      });
+
+      shadow.querySelector('#_btg_ws').addEventListener('click', function () {
+        var ph = shadow.querySelector('#_btg_w').value.trim();
+        if (!ph) { shadow.querySelector('#_btg_w').focus(); return; }
+        doUnlock({ phone: ph }, this);
       });
     }
 
@@ -609,7 +640,7 @@
         fb.onclick = function () {
           fb.textContent = 'Adding to cart...'; fb.disabled = true;
           addToCart(tag.shopify_variant_id, function () {
-            window.location.href = '/cart';
+            window.location.href = discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart';
           });
         };
       }, 1800);
@@ -627,6 +658,7 @@
       };
       if (negId) body.negotiation_id = negId;
       if (customerMsg) body.customer_message = customerMsg;
+      if (tag._productContext) body.product_context = tag._productContext;
 
       fetch(API_BASE + '/api/negotiate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -647,11 +679,11 @@
           } else {
             appendMsg('bot', d.bot_reply);
             if (d.status === 'won' && d.deal_price) {
-              // Save to _botiga_session so main widget's injectCartBanner fires on /cart
+              // Save to _botiga_session deals array (multiple deals supported)
               try {
                 var raw = sessionStorage.getItem('_botiga_session');
                 var sess = raw ? JSON.parse(raw) : {};
-                sess.deal = {
+                var newDeal = {
                   price: d.deal_price,
                   checkoutUrl: d.checkout_url,
                   expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
@@ -659,6 +691,11 @@
                   discountCode: d.discount_code || null,
                   productName: tag.product_name || ''
                 };
+                var deals = sess.deals || (sess.deal ? [sess.deal] : []);
+                var idx = -1;
+                deals.forEach(function (x, i) { if (x.productName === newDeal.productName) idx = i; });
+                if (idx >= 0) deals[idx] = newDeal; else deals.push(newDeal);
+                sess.deals = deals;
                 sess.ts = Date.now();
                 sessionStorage.setItem('_botiga_session', JSON.stringify(sess));
               } catch (e) {}
@@ -689,7 +726,24 @@
     }
 
     setLoading(true); showTyping();
-    setTimeout(function () { doNegotiate(null); }, 1200);
+
+    // Fetch product context from Shopify's free public endpoint before opening call
+    if (tag.product_handle && !tag._productContext) {
+      fetch('/products/' + tag.product_handle + '.js')
+        .then(function (r) { return r.json(); })
+        .then(function (p) {
+          tag._productContext = {
+            vendor: p.vendor || null,
+            product_type: p.product_type || null,
+            tags: p.tags || [],
+            description: (p.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 400)
+          };
+        })
+        .catch(function () {})
+        .then(function () { setTimeout(function () { doNegotiate(null); }, 600); });
+    } else {
+      setTimeout(function () { doNegotiate(null); }, 1200);
+    }
   }
 
   // ─── Stories bar (type='stories' only) ──────────────────────────────────────
@@ -796,6 +850,7 @@
     storyEl._onkey = onKey;
 
     requestAnimationFrame(function () { storyEl.classList.add('open'); });
+    pushDeepLink('s:' + col.id);
     playStoryFrame(videoEl, progWrap);
   }
 
@@ -849,6 +904,7 @@
 
   function closeStory() {
     if (storyAnimFrame) { cancelAnimationFrame(storyAnimFrame); storyAnimFrame = null; }
+    popDeepLink();
     if (storyEl) {
       var v = storyEl.querySelector('video');
       if (v) { v.pause(); v.src = ''; }
@@ -1083,7 +1139,17 @@
       shareBtn.onclick = function (e) {
         e.stopPropagation();
         track(vid.id, 'share');
-        if (navigator.share) navigator.share({ url: window.location.href }).catch(function () {});
+        var shareUrlStr = window.location.href;
+        try {
+          var shareUrl = new URL(window.location.href);
+          shareUrl.searchParams.set('btgv', vid.id);
+          shareUrlStr = shareUrl.toString();
+        } catch (_) {}
+        if (navigator.share) {
+          navigator.share({ url: shareUrlStr }).catch(function () {});
+        } else {
+          try { navigator.clipboard.writeText(shareUrlStr); } catch (_) {}
+        }
       };
       rail.appendChild(likeBtn); rail.appendChild(shareBtn);
 
@@ -1094,7 +1160,7 @@
       scroll.appendChild(slide);
     });
 
-    // Lazy load per slide as it scrolls into view
+    // Lazy load per slide as it scrolls into view; update deep-link URL
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var v = entry.target.querySelector('video');
@@ -1103,7 +1169,10 @@
           if (v.dataset.src && !v.src) { v.src = v.dataset.src; }
           v.play().catch(function () {});
           var idx = Array.from(scroll.children).indexOf(entry.target);
-          if (idx >= 0 && vids[idx]) track(vids[idx].id, 'view');
+          if (idx >= 0 && vids[idx]) {
+            track(vids[idx].id, 'view');
+            pushDeepLink(vids[idx].id);
+          }
         } else {
           v.pause();
         }
@@ -1120,11 +1189,13 @@
       feedEl.classList.add('open');
       var target = scroll.children[startIdx];
       if (target) target.scrollIntoView();
+      if (vids[startIdx]) pushDeepLink(vids[startIdx].id);
     });
   }
 
   function closeFeed() {
     if (!feedEl) return;
+    popDeepLink();
     feedEl.classList.remove('open');
     feedEl.querySelectorAll('video').forEach(function (v) { v.pause(); v.src = ''; });
     setTimeout(function () { if (feedEl) { feedEl.remove(); feedEl = null; } }, 280);
@@ -1132,74 +1203,86 @@
 
   // ─── Cart deal banner + confetti ────────────────────────────────────────────
   function handleCartPage() {
+    var deals;
     try {
       var raw = sessionStorage.getItem('_botiga_session');
       if (!raw) return;
       var sess = JSON.parse(raw);
-      var deal = sess.deal;
-      if (!deal || !deal.price) return;
-      if (deal.expiresAt && Date.now() >= new Date(deal.expiresAt).getTime()) return;
+      // Support both new (deals array) and legacy (deal object) formats
+      deals = sess.deals || (sess.deal ? [sess.deal] : []);
+      deals = deals.filter(function (d) {
+        return d && d.price && d.checkoutUrl &&
+          (!d.expiresAt || Date.now() < new Date(d.expiresAt).getTime());
+      });
+      if (!deals.length) return;
     } catch (e) { return; }
 
-    // Confetti — multiple bursts like the main widget
     setTimeout(fireConfetti, 400);
 
-    // Deal banner
-    var banner = document.createElement('div');
-    banner.id = '_btgv_deal_banner';
-    banner.style.cssText = [
-      'position:fixed;top:0;left:0;right:0;z-index:2147483645;',
-      'background:#111;color:#fff;font-family:system-ui,sans-serif;',
-      'padding:12px 20px;display:flex;align-items:center;justify-content:center;',
-      'gap:14px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.3);flex-wrap:wrap;'
-    ].join('');
+    // Render one banner per active deal, stacked from top
+    var totalOffset = parseInt(document.body.style.paddingTop || '0');
+    deals.forEach(function (deal) {
+      var banner = document.createElement('div');
+      banner.className = '_btgv_deal_banner';
+      banner.style.cssText = [
+        'position:fixed;left:0;right:0;z-index:2147483645;',
+        'background:#111;color:#fff;font-family:system-ui,sans-serif;',
+        'padding:11px 20px;display:flex;align-items:center;justify-content:center;',
+        'gap:12px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.3);flex-wrap:wrap;',
+        'top:' + totalOffset + 'px;'
+      ].join('');
 
-    var textEl = document.createElement('span');
-    textEl.innerHTML = '🎁 Your negotiated deal on <strong>' +
-      (deal.productName || 'this item') + '</strong> — <strong>$' + deal.price + '</strong>' +
-      (deal.discountCode
-        ? ' &middot; code <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:12px">' + deal.discountCode + '</code>'
-        : '');
+      var textEl = document.createElement('span');
+      textEl.innerHTML = '🎁 Deal on <strong>' + (deal.productName || 'this item') +
+        '</strong> — <strong>$' + deal.price + '</strong>' +
+        (deal.discountCode
+          ? ' &middot; <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:11px">' + deal.discountCode + '</code>'
+          : '');
 
-    var timerEl = document.createElement('span');
-    timerEl.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:46px;text-align:right;';
+      var timerEl = document.createElement('span');
+      timerEl.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:44px;';
 
-    var closeBtn = document.createElement('button');
-    closeBtn.style.cssText = 'background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.onclick = function () {
-      document.body.style.paddingTop = origPad;
-      banner.remove();
-    };
+      var closeBtn = document.createElement('button');
+      closeBtn.style.cssText = 'background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;';
+      closeBtn.innerHTML = '&times;';
 
-    banner.appendChild(textEl);
-    banner.appendChild(timerEl);
-    if (deal.checkoutUrl) {
-      var chkBtn = document.createElement('a');
-      chkBtn.href = deal.checkoutUrl;
-      chkBtn.style.cssText = 'background:#16a34a;color:#fff;padding:7px 16px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;flex-shrink:0;';
-      chkBtn.textContent = 'Checkout →';
-      banner.appendChild(chkBtn);
-    }
-    banner.appendChild(closeBtn);
-
-    document.body.prepend(banner);
-    var origPad = document.body.style.paddingTop || '';
-    document.body.style.paddingTop = (parseInt(origPad || '0') + banner.offsetHeight) + 'px';
-
-    var displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
-    var tick = setInterval(function () {
-      var remaining = Math.max(0, displayExp - Date.now());
-      var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
-      timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-      if (remaining <= 120000) timerEl.style.color = '#ef4444';
-      if (remaining <= 0) {
-        clearInterval(tick);
-        timerEl.textContent = 'Expired';
-        banner.style.background = '#333';
-        var chk = banner.querySelector('a'); if (chk) chk.style.display = 'none';
+      banner.appendChild(textEl);
+      banner.appendChild(timerEl);
+      if (deal.checkoutUrl) {
+        var chkBtn = document.createElement('a');
+        chkBtn.href = deal.checkoutUrl;
+        chkBtn.style.cssText = 'background:#16a34a;color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;flex-shrink:0;';
+        chkBtn.textContent = 'Checkout →';
+        banner.appendChild(chkBtn);
       }
-    }, 1000);
+      banner.appendChild(closeBtn);
+      document.body.prepend(banner);
+
+      var bannerH = banner.offsetHeight || 46;
+      totalOffset += bannerH;
+      document.body.style.paddingTop = totalOffset + 'px';
+
+      closeBtn.onclick = (function (b, h) {
+        return function () {
+          document.body.style.paddingTop = Math.max(0, parseInt(document.body.style.paddingTop || '0') - h) + 'px';
+          b.remove();
+        };
+      })(banner, bannerH);
+
+      var displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
+      var tick = setInterval(function () {
+        var remaining = Math.max(0, displayExp - Date.now());
+        var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
+        timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        if (remaining <= 120000) timerEl.style.color = '#ef4444';
+        if (remaining <= 0) {
+          clearInterval(tick);
+          timerEl.textContent = 'Expired';
+          banner.style.background = '#333';
+          var chk = banner.querySelector('a'); if (chk) chk.style.display = 'none';
+        }
+      }, 1000);
+    });
   }
 
   // ─── Init ────────────────────────────────────────────────────────────────────
@@ -1213,13 +1296,37 @@
     var storiesCont = getStoriesContainer();
     var gridCont = getGridContainer();
 
+    // Read deep-link param — open the right viewer after data loads
+    var deepId = null;
+    try {
+      deepId = new URL(window.location.href).searchParams.get('btgv');
+    } catch (e) {}
+
     fetchCollections(function (cols) {
+      allCols = cols;
       if (cols.length) buildStoriesBar(storiesCont, cols);
+      // Auto-open story if deep link is s:COL_ID
+      if (deepId && deepId.indexOf('s:') === 0) {
+        var colId = deepId.slice(2);
+        var col = null;
+        cols.forEach(function (c) { if (String(c.id) === colId) col = c; });
+        if (col) {
+          fetchCollectionVideos(col.id, function (vids) {
+            if (vids.length) openStoryViewer(vids, col);
+          });
+        }
+      }
     });
 
     fetchAllVideos(function (vids) {
       allVideos = vids;
       if (vids.length) buildGrid(gridCont, vids);
+      // Auto-open feed if deep link is a video ID
+      if (deepId && deepId.indexOf('s:') !== 0) {
+        var idx = -1;
+        vids.forEach(function (v, i) { if (String(v.id) === deepId) idx = i; });
+        if (idx >= 0) openFeed(idx, vids);
+      }
     });
   }
 

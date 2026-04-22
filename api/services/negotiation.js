@@ -159,7 +159,7 @@ function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
 async function processNegotiation({
   merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
   sessionId, negotiationId, productName, productUrl, productImage, variantId,
-  listPrice, customerMessage, isOpening, isCartBundle, customerEmail
+  listPrice, customerMessage, isOpening, isCartBundle, customerEmail, productContext
 }) {
   let negotiation;
 
@@ -287,7 +287,8 @@ async function processNegotiation({
       tone: merchantSettings.tone, productName, nextPrice,
       brandStatement, customerInsight: null,
       stepIndex: 0, isOpening: true, isLowball: false, isEscalating: false,
-      lastBotMessages: [], needsLeadCapture: !hasContactAlready
+      lastBotMessages: [], needsLeadCapture: !hasContactAlready,
+      productContext: productContext || null
     });
 
     const { reply } = await callLLM({
@@ -373,7 +374,8 @@ async function processNegotiation({
     nextPrice, brandStatement,
     customerInsight: latestInsight,
     stepIndex: nextStep, isOpening: false, isLowball, isEscalating, lastBotMessages,
-    needsLeadCapture: needsLeadCapture && !isEscalating
+    needsLeadCapture: needsLeadCapture && !isEscalating,
+    productContext: productContext || null
   });
 
   const [insightResult, llmResult] = await Promise.all([

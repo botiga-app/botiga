@@ -107,6 +107,7 @@
 
   // ── STYLES ───────────────────────────────────────────────────────────────────
   function getButtonStyles(bg, fg, fontFamily, borderRadius, fontSize, padding, isFloating) {
+    const isGradient = bg && bg.includes('gradient');
     if (isFloating) return `
       * { box-sizing: border-box; margin: 0; padding: 0; }
       :host { display: block; }
@@ -115,6 +116,18 @@
         padding: 14px 20px; border: none; border-radius: 50px; cursor: pointer; white-space: nowrap;
         box-shadow: 0 4px 20px rgba(0,0,0,0.25); transition: transform 0.15s, box-shadow 0.15s; }
       #btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.3); }
+      .attr { font-size: 9px; color: #aaa; text-align: center; margin-top: 4px; font-family: system-ui,sans-serif; }
+    `;
+    // Gradient backgrounds can't be used in border/color — use filled style instead
+    if (isGradient) return `
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      :host { display: block; width: 100%; margin-top: 8px; }
+      #btn { width: 100%; cursor: pointer; border: none; background: ${bg}; color: ${fg};
+        font-family: ${fontFamily || 'system-ui, sans-serif'}; font-size: ${fontSize || '14px'};
+        border-radius: ${borderRadius || '6px'}; padding: ${padding || '12px 20px'};
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        font-weight: 500; transition: opacity 0.15s; line-height: 1.4; }
+      #btn:hover { opacity: 0.88; }
       .attr { font-size: 9px; color: #aaa; text-align: center; margin-top: 4px; font-family: system-ui,sans-serif; }
     `;
     return `
@@ -223,6 +236,7 @@
     let negotiationId = null;
     let loading = false;
     let dealShown = false;
+    let cachedProductContext = null;
 
     const msgsEl = shadow.querySelector('#msgs');
     const inp = shadow.querySelector('#inp');
@@ -412,9 +426,28 @@
     // Lead capture is now handled inline by the bot's message — no form widget needed
 
     // ── OPENING CALL ───────────────────────────────────────────────────────────
+    async function fetchProductContext() {
+      if (productInfo.isCartBundle) return null;
+      const handleMatch = (productInfo.url || window.location.pathname).match(/\/products\/([^/?#]+)/);
+      const handle = handleMatch ? handleMatch[1] : null;
+      if (!handle) return null;
+      try {
+        const r = await fetch(`/products/${handle}.js`);
+        const p = await r.json();
+        return {
+          vendor: p.vendor || null,
+          product_type: p.product_type || null,
+          tags: p.tags || [],
+          description: (p.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 400)
+        };
+      } catch { return null; }
+    }
+
     async function doOpening() {
       showTyping();
       await new Promise(r => setTimeout(r, 1200));
+      const productContext = await fetchProductContext();
+      cachedProductContext = productContext;
       try {
         const res = await fetch(`${API_BASE}/api/negotiate`, {
           method: 'POST',
@@ -428,7 +461,8 @@
             variant_id: productInfo.isCartBundle ? null : detectVariantId(),
             list_price: productInfo.price || 0,
             is_cart_bundle: productInfo.isCartBundle || false,
-            opening: true
+            opening: true,
+            ...(productContext ? { product_context: productContext } : {})
           })
         });
         const d = await res.json();
@@ -477,7 +511,8 @@
             variant_id: productInfo.isCartBundle ? null : detectVariantId(),
             list_price: productInfo.price || 0,
             is_cart_bundle: productInfo.isCartBundle || false,
-            customer_message: text
+            customer_message: text,
+            ...(cachedProductContext ? { product_context: cachedProductContext } : {})
           })
         });
         const d = await res.json();
@@ -495,7 +530,13 @@
         console.log('[Botiga] status:', d.status, '| deal_price:', d.deal_price, '| email_sent_to:', d.debug_email_sent_to);
 
         if (d.status === 'won' && d.deal_price) {
-          saveSession({ deal: { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), discountCode: d.discount_code, productName: productInfo.name } });
+          // Append to deals array (multiple deals supported)
+          const newDeal = { price: d.deal_price, checkoutUrl: d.checkout_url, expiresAt: d.expires_at, displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), discountCode: d.discount_code, productName: productInfo.name };
+          const existing = getSession();
+          const deals = existing.deals || (existing.deal ? [existing.deal] : []);
+          const idx = deals.findIndex(x => x.productName === newDeal.productName);
+          if (idx >= 0) deals[idx] = newDeal; else deals.push(newDeal);
+          saveSession({ deals });
           // Dispatch event for confetti.js Script Tag (runs in main document)
           try { document.dispatchEvent(new CustomEvent('botiga:deal', { detail: { price: d.deal_price } })); } catch {}
           showDeal(d.deal_price, d.checkout_url, d.expires_at, d.discount_code);
@@ -621,49 +662,52 @@
   // ── CART DEAL TIMER BANNER ───────────────────────────────────────────────────
   function injectCartBanner() {
     const session = getSession();
-    const deal = session.deal;
-    if (!deal || !deal.expiresAt || !deal.checkoutUrl) return;
+    // Support both new (deals array) and legacy (deal object) formats
+    const rawDeals = session.deals || (session.deal ? [session.deal] : []);
+    const deals = rawDeals.filter(d => d && d.price && d.checkoutUrl && d.expiresAt && Date.now() < new Date(d.expiresAt).getTime());
+    if (!deals.length) return;
 
-    const exp = new Date(deal.expiresAt); // real 48h expiry — checkout link valid
-    if (Date.now() >= exp) return; // already expired
-    const savedDisplay = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : null;
-    // If display timer already ran out (old session), restart from now for urgency
-    const displayExp = (savedDisplay && savedDisplay > new Date()) ? savedDisplay : new Date(Date.now() + 15 * 60 * 1000);
-
-    const banner = document.createElement('div');
-    banner.id = '_botiga_cart_banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483645;background:#111;color:#fff;font-family:system-ui,sans-serif;padding:12px 20px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,0.3);';
-    banner.innerHTML = `
-      <span>🎁 Your negotiated deal on <strong>${deal.productName || 'this item'}</strong> — <strong>$${deal.price}</strong>${deal.discountCode ? ' · code <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:12px;">' + deal.discountCode + '</code>' : ''}</span>
-      <span id="_bcb_timer" style="font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:46px;text-align:right;"></span>
-      <a href="${deal.checkoutUrl}" style="background:#16a34a;color:#fff;padding:7px 16px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;">Checkout →</a>
-      <button id="_bcb_close" style="background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;">×</button>
-    `;
-    document.body.prepend(banner);
-    document.body.style.paddingTop = (parseInt(document.body.style.paddingTop || '0') + banner.offsetHeight) + 'px';
-
-    // Fire confetti every time for now (debug — will gate once confirmed working)
     setTimeout(fireConfetti, 400);
 
-    banner.querySelector('#_bcb_close').addEventListener('click', () => {
-      document.body.style.paddingTop = '';
-      banner.remove();
-    });
+    let totalOffset = parseInt(document.body.style.paddingTop || '0');
+    deals.forEach(deal => {
+      const savedDisplay = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : null;
+      const displayExp = (savedDisplay && savedDisplay > new Date()) ? savedDisplay : new Date(Date.now() + 15 * 60 * 1000);
 
-    const timerEl = banner.querySelector('#_bcb_timer');
-    const tick = setInterval(() => {
-      const remaining = Math.max(0, displayExp - Date.now());
-      const mins = Math.floor(remaining / 60000);
-      const secs = Math.floor((remaining % 60000) / 1000);
-      timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-      if (remaining <= 120000) timerEl.style.color = '#ef4444';
-      if (remaining <= 0) {
-        clearInterval(tick);
-        timerEl.textContent = 'Expired';
-        banner.style.background = '#333';
-        banner.querySelector('a').style.display = 'none';
-      }
-    }, 1000);
+      const banner = document.createElement('div');
+      banner.className = '_botiga_cart_banner';
+      banner.style.cssText = `position:fixed;left:0;right:0;z-index:2147483645;background:#111;color:#fff;font-family:system-ui,sans-serif;padding:12px 20px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,0.3);top:${totalOffset}px;`;
+      banner.innerHTML = `
+        <span>🎁 Deal on <strong>${deal.productName || 'this item'}</strong> — <strong>$${deal.price}</strong>${deal.discountCode ? ' · <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:11px;">' + deal.discountCode + '</code>' : ''}</span>
+        <span class="_bcb_timer" style="font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:46px;text-align:right;"></span>
+        <a href="${deal.checkoutUrl}" style="background:#16a34a;color:#fff;padding:7px 16px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;">Checkout →</a>
+        <button class="_bcb_close" style="background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;">×</button>
+      `;
+      document.body.prepend(banner);
+      const bannerH = banner.offsetHeight || 46;
+      totalOffset += bannerH;
+      document.body.style.paddingTop = totalOffset + 'px';
+
+      banner.querySelector('._bcb_close').addEventListener('click', () => {
+        document.body.style.paddingTop = Math.max(0, parseInt(document.body.style.paddingTop || '0') - bannerH) + 'px';
+        banner.remove();
+      });
+
+      const timerEl = banner.querySelector('._bcb_timer');
+      const tick = setInterval(() => {
+        const remaining = Math.max(0, displayExp - Date.now());
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.floor((remaining % 60000) / 1000);
+        timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        if (remaining <= 120000) timerEl.style.color = '#ef4444';
+        if (remaining <= 0) {
+          clearInterval(tick);
+          timerEl.textContent = 'Expired';
+          banner.style.background = '#333';
+          banner.querySelector('a').style.display = 'none';
+        }
+      }, 1000);
+    });
   }
 
   // ── INIT ─────────────────────────────────────────────────────────────────────

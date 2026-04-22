@@ -61,7 +61,7 @@ function pickOpener(stepIndex, lastBotMessages) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isEscalating, lastBotMessages, needsLeadCapture }) {
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isEscalating, lastBotMessages, needsLeadCapture, productContext }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const priceStr = `$${nextPrice}`;
   const direction = isLowball ? LOWBALL_DIRECTION : isEscalating ? ESCALATION_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
@@ -69,9 +69,21 @@ function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, custo
 
   const prevMessages = (lastBotMessages || []).slice(-2);
 
+  let productDetails = '';
+  if (productContext) {
+    const parts = [];
+    if (productContext.vendor) parts.push(`Vendor: ${productContext.vendor}`);
+    if (productContext.product_type) parts.push(`Type: ${productContext.product_type}`);
+    if (productContext.tags && productContext.tags.length) parts.push(`Tags: ${productContext.tags.slice(0, 8).join(', ')}`);
+    if (productContext.description) parts.push(`About: ${productContext.description}`);
+    if (parts.length) {
+      productDetails = `\nProduct details — weave in naturally to justify the price, don't list or quote verbatim:\n${parts.map(p => `- ${p}`).join('\n')}`;
+    }
+  }
+
   return `You are a sales assistant for a boutique selling "${productName}".
 Voice: ${voice}
-
+${productDetails}
 YOUR PRICE THIS MESSAGE: ${priceStr}
 You MUST include "${priceStr}" in your reply. Do not write any other price.
 
