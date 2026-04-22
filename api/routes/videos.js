@@ -217,6 +217,128 @@ router.put('/video-widgets/:id/items', dashboardCors, async (req, res) => {
   res.json({ ok: true, count: video_ids.length });
 });
 
+// ─── Instagram: preview posts by handle ──────────────────────────────────────
+router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, async (req, res) => {
+  const { handle } = req.query;
+  if (!handle) return res.status(400).json({ error: 'handle required' });
+
+  const cleanHandle = handle.replace(/^@/, '').trim();
+  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+  if (!RAPIDAPI_KEY) return res.status(500).json({ error: 'RAPIDAPI_KEY not configured' });
+
+  try {
+    const response = await fetch(
+      `https://instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com/instagram/${encodeURIComponent(cleanHandle)}`,
+      {
+        headers: {
+          'x-rapidapi-key': RAPIDAPI_KEY,
+          'x-rapidapi-host': 'instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com',
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+
+    if (!response.ok) return res.status(response.status).json({ error: `Instagram API returned ${response.status}` });
+
+    const raw = await response.json();
+
+    // Normalize the response — handle multiple common response shapes
+    const posts = normalizeInstagramPosts(raw);
+    res.json({ posts, handle: cleanHandle });
+  } catch (err) {
+    console.error('[instagram-preview]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function normalizeInstagramPosts(raw) {
+  let items = [];
+
+  // Shape 1: { data: { items: [...] } }
+  if (raw?.data?.items) items = raw.data.items;
+  // Shape 2: { items: [...] }
+  else if (Array.isArray(raw?.items)) items = raw.items;
+  // Shape 3: { data: { user: { edge_owner_to_timeline_media: { edges: [...] } } } }
+  else if (raw?.data?.user?.edge_owner_to_timeline_media?.edges) {
+    items = raw.data.user.edge_owner_to_timeline_media.edges.map(e => e.node);
+  }
+  // Shape 4: direct array
+  else if (Array.isArray(raw)) items = raw;
+  // Shape 5: { posts: [...] }
+  else if (Array.isArray(raw?.posts)) items = raw.posts;
+
+  return items
+    .filter(item => {
+      // Keep videos and reels only
+      return item.is_video || item.media_type === 2 || item.video_url || item.video_versions;
+    })
+    .map(item => {
+      const videoUrl = item.video_url
+        || item.video_versions?.[0]?.url
+        || item.videos?.standard_resolution?.url
+        || null;
+
+      const thumbUrl = item.thumbnail_url
+        || item.display_url
+        || item.thumbnail_src
+        || item.image_versions2?.candidates?.[0]?.url
+        || item.cover_frame_url
+        || null;
+
+      const caption = item.caption?.text
+        || item.edge_media_to_caption?.edges?.[0]?.node?.text
+        || item.accessibility_caption
+        || '';
+
+      const postUrl = item.shortcode
+        ? `https://www.instagram.com/p/${item.shortcode}/`
+        : item.permalink || item.link || null;
+
+      return {
+        id: String(item.id || item.pk || Math.random()),
+        video_url: videoUrl,
+        thumbnail_url: thumbUrl,
+        caption: caption.slice(0, 200),
+        post_url: postUrl,
+        duration: item.video_duration || item.duration || null,
+        like_count: item.like_count || item.edge_liked_by?.count || 0,
+        play_count: item.play_count || item.view_count || 0,
+      };
+    })
+    .filter(p => p.video_url || p.thumbnail_url); // must have at least a thumbnail
+}
+
+// ─── Instagram: import selected posts ────────────────────────────────────────
+router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const { posts, source = 'instagram' } = req.body;
+
+  if (!Array.isArray(posts) || posts.length === 0) {
+    return res.status(400).json({ error: 'posts array required' });
+  }
+
+  const toInsert = posts.map(post => ({
+    merchant_id: merchantId,
+    title: post.caption ? post.caption.slice(0, 80) : null,
+    s3_key: null,
+    s3_url: post.video_url || post.thumbnail_url,
+    thumbnail_url: post.thumbnail_url || null,
+    source,
+    source_url: post.post_url || null,
+    status: 'active',
+    sort_order: 0,
+  }));
+
+  const { data, error } = await supabase
+    .from('videos')
+    .insert(toInsert)
+    .select('*, video_product_tags(*)');
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ imported: data.length, videos: data });
+});
+
 // ─── Widget: public collections list (one entry per named widget) ────────────
 router.get('/widget/collections', widgetCors, async (req, res) => {
   try {

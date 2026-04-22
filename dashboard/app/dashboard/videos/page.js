@@ -4,6 +4,196 @@ import { createClient } from '../../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
 
+// ─── Instagram importer ───────────────────────────────────────────────────────
+function InstagramImporter({ merchantId, onImported }) {
+  const [handle, setHandle] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [posts, setPosts] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  async function fetchPosts() {
+    const h = handle.replace('@', '').trim();
+    if (!h) return;
+    setLoading(true);
+    setError(null);
+    setPosts(null);
+    setSelected(new Set());
+    try {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/videos/instagram-preview?handle=${encodeURIComponent(h)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch');
+      setPosts(data.posts || []);
+      if (!data.posts?.length) setError('No videos found for this handle.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleSelect(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function doImport() {
+    const toImport = posts.filter(p => selected.has(p.id));
+    if (!toImport.length) return;
+    setImporting(true);
+    try {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/videos/import-social`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posts: toImport, source: 'instagram' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      onImported(data.videos || []);
+      setOpen(false);
+      setPosts(null);
+      setSelected(new Set());
+      setHandle('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+      >
+        <span>📸</span> Import from Instagram
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ maxHeight: '90dvh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-900">Import from Instagram</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Enter a public Instagram handle to import Reels & videos</p>
+              </div>
+              <button onClick={() => setOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500">×</button>
+            </div>
+
+            {/* Handle input */}
+            <div className="px-6 py-4 border-b border-gray-100">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">@</span>
+                  <input
+                    value={handle}
+                    onChange={e => setHandle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && fetchPosts()}
+                    placeholder="username"
+                    className="w-full border border-gray-200 rounded-xl pl-7 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+                <button
+                  onClick={fetchPosts}
+                  disabled={loading || !handle.trim()}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {loading ? '...' : 'Fetch'}
+                </button>
+              </div>
+              {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+            </div>
+
+            {/* Posts grid */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loading && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-8 h-8 border-2 border-pink-300 border-t-pink-600 rounded-full animate-spin" />
+                  <p className="text-sm text-gray-400">Fetching videos from @{handle.replace('@', '')}...</p>
+                </div>
+              )}
+
+              {posts && posts.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-gray-500">{posts.length} videos found · {selected.size} selected</p>
+                    <button
+                      onClick={() => setSelected(selected.size === posts.length ? new Set() : new Set(posts.map(p => p.id)))}
+                      className="text-xs text-pink-600 font-medium hover:underline"
+                    >
+                      {selected.size === posts.length ? 'Deselect all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {posts.map(post => {
+                      const isSelected = selected.has(post.id);
+                      return (
+                        <button
+                          key={post.id}
+                          onClick={() => toggleSelect(post.id)}
+                          className={`relative aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 border-2 transition-all ${
+                            isSelected ? 'border-pink-500 shadow-md shadow-pink-200' : 'border-transparent hover:border-gray-300'
+                          }`}
+                        >
+                          {post.thumbnail_url && (
+                            <img src={post.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                          )}
+                          <div className={`absolute inset-0 transition-colors ${isSelected ? 'bg-pink-500/20' : 'bg-black/10'}`} />
+                          {isSelected && (
+                            <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                            </div>
+                          )}
+                          {post.play_count > 0 && (
+                            <div className="absolute bottom-1 left-1 text-[9px] text-white bg-black/50 px-1.5 py-0.5 rounded-full">
+                              ▶ {post.play_count > 1000 ? `${Math.round(post.play_count/1000)}k` : post.play_count}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {posts && posts.length === 0 && !loading && (
+                <div className="text-center py-12 text-gray-400 text-sm">No videos found for this handle.</div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {posts && posts.length > 0 && (
+              <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+                <button onClick={() => setOpen(false)} className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl py-2.5 hover:bg-gray-50 transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={doImport}
+                  disabled={selected.size === 0 || importing}
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold rounded-xl py-2.5 hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  {importing ? 'Importing...' : `Import ${selected.size} video${selected.size !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Upload zone ─────────────────────────────────────────────────────────────
 function UploadZone({ merchantId, onUploaded }) {
   const [dragging, setDragging] = useState(false);
@@ -369,6 +559,20 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden group">
         {/* Video preview */}
         <div className="relative bg-black aspect-[9/16] max-h-64 overflow-hidden">
+          {video.source === 'instagram' || video.source === 'tiktok' ? (
+            <div className="relative w-full h-full">
+              {video.thumbnail_url
+                ? <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center text-3xl">📸</div>
+              }
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-2xl bg-black/40 rounded-full p-2">▶</span>
+              </div>
+              <div className="absolute top-2 right-2 text-[10px] bg-black/60 text-white px-2 py-0.5 rounded-full">
+                {video.source === 'instagram' ? '📸 IG' : '🎵 TT'}
+              </div>
+            </div>
+          ) : (
           <video
             src={video.s3_url}
             className="w-full h-full object-cover"
@@ -376,7 +580,8 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
             onMouseEnter={e => e.target.play()}
             onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
 
           {/* Status badge */}
           <div className="absolute top-2 left-2">
@@ -935,8 +1140,16 @@ export default function VideosPage() {
 
       {/* ── Video Library ───────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-lg font-bold text-gray-900 mb-1">Video Library</h2>
-        <p className="text-sm text-gray-500 mb-4">Upload videos and tag products to make them shoppable.</p>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
+          {merchantId && (
+            <InstagramImporter
+              merchantId={merchantId}
+              onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
+            />
+          )}
+        </div>
+        <p className="text-sm text-gray-500 mb-4">Upload videos or import from Instagram. Tag products to make them shoppable.</p>
 
         {merchantId && (
           <div className="mb-6">
