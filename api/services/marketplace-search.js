@@ -50,17 +50,13 @@ async function searchProducts({ query, limit = 20, offset = 0 }) {
 
   if (!keywords) return { products: [], intent };
 
-  let dbQuery = supabase
-    .from('marketplace_products')
-    .select('id, merchant_id, shopify_product_id, title, description, price, compare_at_price, images, tags, handle, product_type, vendor, variants, store_domain, store_name, max_discount_pct, is_sponsored')
-    .filter('search_vector', 'plfts(english)', keywords)
-    .order('is_sponsored', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (intent.minPrice != null) dbQuery = dbQuery.gte('price', intent.minPrice);
-  if (intent.maxPrice != null) dbQuery = dbQuery.lte('price', intent.maxPrice);
-
-  const { data, error } = await dbQuery;
+  const { data, error } = await supabase.rpc('marketplace_search', {
+    search_query: keywords,
+    price_min: intent.minPrice || null,
+    price_max: intent.maxPrice || null,
+    result_limit: limit,
+    result_offset: offset,
+  });
   if (error) throw error;
 
   return { products: data || [], intent };
