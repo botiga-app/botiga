@@ -257,23 +257,27 @@ router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, asy
 function normalizeInstagramPosts(raw) {
   let items = [];
 
-  // Shape 1: { data: { items: [...] } }
-  if (raw?.data?.items) items = raw.data.items;
-  // Shape 2: { items: [...] }
+  // Shape 1: { result: { edges: [...] } }  — instagram120 API
+  if (raw?.result?.edges) items = raw.result.edges.map(e => e.node || e);
+  // Shape 2: { data: { items: [...] } }
+  else if (raw?.data?.items) items = raw.data.items;
+  // Shape 3: { items: [...] }
   else if (Array.isArray(raw?.items)) items = raw.items;
-  // Shape 3: { data: { user: { edge_owner_to_timeline_media: { edges: [...] } } } }
+  // Shape 4: { data: { user: { edge_owner_to_timeline_media: { edges: [...] } } } }
   else if (raw?.data?.user?.edge_owner_to_timeline_media?.edges) {
     items = raw.data.user.edge_owner_to_timeline_media.edges.map(e => e.node);
   }
-  // Shape 4: direct array
+  // Shape 5: direct array
   else if (Array.isArray(raw)) items = raw;
-  // Shape 5: { posts: [...] }
+  // Shape 6: { posts: [...] }
   else if (Array.isArray(raw?.posts)) items = raw.posts;
 
   return items
     .filter(item => {
-      // Keep videos and reels only
-      return item.is_video || item.media_type === 2 || item.video_url || item.video_versions;
+      return item.is_video ||
+        item.media_type === 2 ||
+        item.video_url ||
+        (Array.isArray(item.video_versions) && item.video_versions.length > 0);
     })
     .map(item => {
       const videoUrl = item.video_url
