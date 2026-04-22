@@ -8,10 +8,6 @@ const supabase = require('../lib/supabase');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-/**
- * Use LLM to extract structured intent from a free-text query.
- * Returns { keywords, category, minPrice, maxPrice, style, occasion }
- */
 async function parseIntent(query) {
   const systemPrompt = `You are a shopping search parser. Extract search intent from the user's query and return ONLY valid JSON — no markdown, no extra text.
 
@@ -38,42 +34,27 @@ Return this exact shape:
     const raw = response.choices[0].message.content.trim();
     return JSON.parse(raw);
   } catch {
-    // Fallback: use raw query as keywords
     return { keywords: query, category: null, minPrice: null, maxPrice: null, style: null, occasion: null };
   }
 }
 
-/**
- * Search marketplace_products using parsed intent.
- * Sponsored products are injected at top if keyword-relevant.
- * Returns array of product rows with merchant context.
- */
 async function searchProducts({ query, limit = 20, offset = 0 }) {
   const intent = await parseIntent(query);
 
-  // Build tsquery from keywords
-  const tsQuery = (intent.keywords || query)
+  const keywords = (intent.keywords || query)
     .split(/\s+/)
     .filter(Boolean)
     .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
     .filter(w => w.length > 1)
-    .join(' & ');
+    .join(' ');
 
-  if (!tsQuery) return { products: [], intent };
+  if (!keywords) return { products: [], intent };
 
-  // Full-text search with optional price filters
   let dbQuery = supabase
     .from('marketplace_products')
-    .select(`
-      id, merchant_id, shopify_product_id, title, description,
-      price, compare_at_price, images, tags, handle,
-      product_type, vendor, variants, store_domain, store_name,
-      max_discount_pct, is_sponsored,
-      ts_rank(search_vector, to_tsquery('english', '${tsQuery.replace(/'/g, "''")}')) as rank
-    `)
-    .textSearch('search_vector', tsQuery, { type: 'plain', config: 'english' })
+    .select('id, merchant_id, shopify_product_id, title, description, price, compare_at_price, images, tags, handle, product_type, vendor, variants, store_domain, store_name, max_discount_pct, is_sponsored')
+    .textSearch('search_vector', keywords, { type: 'plain', config: 'english' })
     .order('is_sponsored', { ascending: false })
-    .order('rank', { ascending: false })
     .range(offset, offset + limit - 1);
 
   if (intent.minPrice != null) dbQuery = dbQuery.gte('price', intent.minPrice);
