@@ -228,13 +228,15 @@ router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, asy
 
   try {
     const response = await fetch(
-      `https://instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com/instagram/${encodeURIComponent(cleanHandle)}`,
+      'https://instagram120.p.rapidapi.com/api/instagram/posts',
       {
+        method: 'POST',
         headers: {
           'x-rapidapi-key': RAPIDAPI_KEY,
-          'x-rapidapi-host': 'instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com',
+          'x-rapidapi-host': 'instagram120.p.rapidapi.com',
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ username: cleanHandle, maxId: '' }),
         signal: AbortSignal.timeout(20000),
       }
     );
