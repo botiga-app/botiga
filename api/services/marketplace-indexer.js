@@ -45,7 +45,7 @@ function extractProducts(merchant, shopifyProducts) {
         price,
         compare_at_price: compareAt,
         images: JSON.stringify(images),
-        tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        tags: Array.isArray(p.tags) ? p.tags : (p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : []),
         handle: p.handle || '',
         product_type: p.product_type || null,
         vendor: p.vendor || null,
