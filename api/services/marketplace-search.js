@@ -59,7 +59,6 @@ async function searchProducts({ query, limit = 20, offset = 0 }) {
 
   if (intent.minPrice != null) dbQuery = dbQuery.gte('price', intent.minPrice);
   if (intent.maxPrice != null) dbQuery = dbQuery.lte('price', intent.maxPrice);
-  if (intent.category) dbQuery = dbQuery.ilike('product_type', `%${intent.category}%`);
 
   const { data, error } = await dbQuery;
   if (error) throw error;
