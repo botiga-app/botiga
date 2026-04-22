@@ -247,7 +247,7 @@ router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, asy
 
     // Normalize the response — handle multiple common response shapes
     const posts = normalizeInstagramPosts(raw);
-    res.json({ posts, handle: cleanHandle, _raw: raw });
+    res.json({ posts, handle: cleanHandle });
   } catch (err) {
     console.error('[instagram-preview]', err.message);
     res.status(500).json({ error: err.message });
