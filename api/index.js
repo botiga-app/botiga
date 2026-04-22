@@ -34,6 +34,7 @@ app.use('/api', require('./routes/billing'));
 app.use('/api', require('./routes/cron'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/videos'));
+app.use('/api', require('./routes/marketplace'));
 app.use('/api', require('./routes/script-tags').router);
 
 // Serve public assets (confetti.js etc) — CORS open for Shopify Script Tags
