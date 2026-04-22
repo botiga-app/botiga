@@ -26,7 +26,7 @@ ALTER TABLE merchants
 -- Indexed product catalog (populated by indexer job)
 CREATE TABLE IF NOT EXISTS marketplace_products (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  merchant_id        TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  merchant_id        UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
   shopify_product_id TEXT NOT NULL,
   title              TEXT NOT NULL,
   description        TEXT,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS marketplace_negotiations (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   negotiation_id       TEXT REFERENCES negotiations(id) ON DELETE SET NULL,
   customer_id          UUID REFERENCES marketplace_customers(id) ON DELETE SET NULL,
-  merchant_id          TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  merchant_id          UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
   product_id           UUID NOT NULL REFERENCES marketplace_products(id) ON DELETE CASCADE,
   list_price           NUMERIC(10,2) NOT NULL,
   deal_price           NUMERIC(10,2),
@@ -109,7 +109,7 @@ CREATE INDEX IF NOT EXISTS marketplace_messages_neg_idx ON marketplace_messages(
 -- Sponsored placement budget / bidding
 CREATE TABLE IF NOT EXISTS marketplace_sponsored (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  merchant_id   TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  merchant_id   UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
   product_id    UUID NOT NULL REFERENCES marketplace_products(id) ON DELETE CASCADE,
   keywords      TEXT[] NOT NULL DEFAULT '{}',
   budget_daily  NUMERIC(8,2) NOT NULL DEFAULT 10.00,
