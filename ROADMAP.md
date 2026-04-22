@@ -7,24 +7,30 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 ## Shoppable Video
 
-> Video shopping overlay — customer watches, negotiates, and checks out without leaving the video. Merchant pulls videos from Instagram/TikTok/phone. AI auto-tags products. Uses Botiga's existing negotiation engine and merchant's Shopify cart.
+> Video shopping overlay — customer watches, negotiates, and checks out without leaving the video.
 
 | Feature | Status | Size | Impact | Origin |
 |---|---|---|---|---|
-| **Video embed widget** — inline carousel on homepage, PDP, collection pages | Backlog | L | Core | Discussed |
-| **Video overlay UI** — views, likes, shares, Add to Cart, Buy Now, Negotiate buttons on video | Backlog | L | Conversion | Discussed |
-| **In-video checkout** — customer checks out without leaving video; uses merchant's Shopify cart | Backlog | L | Conversion | Discussed |
-| **Negotiate from video** — taps Negotiate opens Botiga chat overlay; same engine as today | Backlog | M | Conversion | Discussed |
-| **Instagram import** — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
-| **TikTok import** — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
-| **Phone / direct upload** — upload MP4 from device | Backlog | S | Merchant UX | Discussed |
-| **Auto-sync** — scheduled re-pull from Instagram/TikTok; new posts appear automatically | Backlog | M | Merchant UX | Discussed |
-| **AI product tagging** — video analysed by vision model; Shopify products auto-suggested for tagging | Backlog | L | DX | Discussed |
-| **Manual product tagging** — merchant searches products by title/SKU, tags to video | Backlog | M | Merchant UX | Discussed |
-| **Video carousel widget types** — floating widget, video carousel, story-like carousel | Backlog | M | UX | Discussed |
-| **Video analytics** — views, clicks, add-to-cart rate, negotiate rate, checkout rate per video | Backlog | M | Analytics | Suggested |
-| **A/B testing for video placements** | Later | M | Optimization | Suggested |
-| **Meta retargeting integration** — fire pixel events from video interactions | Later | M | Marketing | Suggested |
+| Stories widget — circular story bubbles, full-screen viewer | Shipped | L | Core | Discussed |
+| Carousel / Watch & Shop — horizontal scrollable video feed | Shipped | L | Core | Discussed |
+| In-video negotiation — full AI chat overlay inside video viewer | Shipped | L | Conversion | Discussed |
+| Product tagging — each video tagged to Shopify product | Shipped | M | Core | Discussed |
+| Email + WhatsApp capture inside video negotiation flow | Shipped | S | Lead capture | Discussed |
+| Deal auto-redirect — won deal auto-navigates to cart after 2s | Shipped | S | Conversion | Discussed |
+| Multi-deal cart banners — stacked banners per negotiated item | Shipped | S | Conversion | Discussed |
+| Deep linking — `?btgv=VIDEO_ID` opens feed at specific video | Shipped | M | UX | Discussed |
+| Deep linking — `?btgv=s:COL_ID` opens story viewer directly | Shipped | M | UX | Discussed |
+| URL updates as feed scrolls (history.replaceState) | Shipped | S | UX | Discussed |
+| Share button — copies video-specific URL | Shipped | S | UX | Discussed |
+| Product context fetch — bot references vendor/type/tags/description | Shipped | M | Conversion | Discussed |
+| Instagram import — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
+| TikTok import — merchant enters @handle, pulls recent videos | Backlog | M | Merchant UX | Discussed |
+| Phone / direct upload — upload MP4 from device | Backlog | S | Merchant UX | Discussed |
+| Auto-sync — scheduled re-pull from Instagram/TikTok | Backlog | M | Merchant UX | Discussed |
+| AI product tagging — vision model auto-suggests products | Backlog | L | DX | Discussed |
+| Video analytics — views, clicks, negotiate rate, checkout rate | Backlog | M | Analytics | Suggested |
+| A/B testing for video placements | Later | M | Optimization | Suggested |
+| Meta retargeting — fire pixel events from video interactions | Later | M | Marketing | Suggested |
 
 ---
 
@@ -39,15 +45,49 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Cart bundle negotiation | Shipped | M | Conversion | Discussed |
 | Accept / counter chips after each bot offer | Shipped | S | Conversion | Discussed |
 | Email gate — blur-reveal private price | Shipped | S | Lead capture | Discussed |
-| Shopify auto-email from signed-in account | Shipped | S | Lead capture | Discussed |
-| WhatsApp / phone capture option in gate | Next | S | Lead capture | Discussed |
-| Gradient color for chat icon / button | Next | S | Merchant UX | Discussed |
-| Product-aware bot messages — Phase 1 | Next | M | Conversion | Discussed |
-| Product-aware bot messages — Phase 2 | Backlog | M | Conversion | Suggested |
-| Product-aware bot messages — Phase 3 | Backlog | L | Conversion | Suggested |
+| WhatsApp / phone capture in email gate | Shipped | S | Lead capture | Discussed |
+| Gradient color support for widget button | Shipped | S | Merchant UX | Discussed |
+| Product-aware bot messages Phase 1 — vendor/type/tags/description | Shipped | M | Conversion | Discussed |
+| Price-adaptive spread tiers — real ladders for low-price items | Shipped | M | Conversion | Discussed |
+| Deal auto-redirect — won deal navigates to cart after 2s | Shipped | S | Conversion | Discussed |
+| Cart discount applied automatically on redirect | Shipped | S | Conversion | Discussed |
+| Product-aware bot messages — Phase 2 (inventory, reviews) | Backlog | M | Conversion | Suggested |
+| Product-aware bot messages — Phase 3 (personalisation) | Backlog | L | Conversion | Suggested |
 | Multi-language widget | Later | M | Growth | Suggested |
 | Voice negotiation (TTS bot replies) | Icebox | L | Delight | Suggested |
 | Browser extension for non-Shopify stores | Icebox | L | Growth | Suggested |
+
+---
+
+## Botiga.ai Marketplace
+
+> Standalone reverse marketplace — customers NLP-search across all onboarded Shopify stores, AI negotiates, merchant gets emailed on deal win.
+
+| Feature | Status | Size | Impact | Origin |
+|---|---|---|---|---|
+| DB schema — customers, products, negotiations, messages, sponsored | Shipped | M | Core | Discussed |
+| Product indexer — crawls `/products.json` per merchant, upserts catalog | Shipped | M | Core | Discussed |
+| Full-text search via tsvector + auto-update trigger | Shipped | M | Core | Discussed |
+| NLP intent parsing — LLM extracts keywords, price range, style, occasion | Shipped | M | Core | Discussed |
+| Marketplace search RPC — raw SQL for reliable full-text search | Shipped | S | Core | Discussed |
+| Marketplace negotiate API — start + message endpoints | Shipped | L | Core | Discussed |
+| Same pricing engine + bot — real price ladder, same LLM | Shipped | M | Conversion | Discussed |
+| Merchant email on deal win — product, customer contact, commission breakdown | Shipped | M | Trust | Discussed |
+| Customer deal confirmation email — discount code + checkout link | Shipped | S | Conversion | Discussed |
+| Customer auth — signup/login/JWT, captures email + phone | Shipped | M | Core | Discussed |
+| Account orders page — deal history with checkout links | Shipped | M | UX | Discussed |
+| Landing page — hero search bar + example chips + how it works | Shipped | M | Growth | Discussed |
+| Search results grid — product cards with negotiate CTA | Shipped | M | Core | Discussed |
+| Product detail page — image gallery, variants, negotiate modal | Shipped | M | Core | Discussed |
+| Negotiate chat modal — typing indicator, deal screen, cart redirect | Shipped | M | Conversion | Discussed |
+| Sponsored placements schema + bidding table | Shipped | S | Monetization | Discussed |
+| Sponsored placements UI — merchant bids on keywords | Backlog | M | Monetization | Discussed |
+| Commission tracking dashboard for Botiga admin | Backlog | M | Operations | Suggested |
+| Merchant self-onboarding to marketplace | Backlog | M | Growth | Suggested |
+| Multi-merchant indexer cron (auto re-index daily) | Backlog | S | Operations | Suggested |
+| Customer wishlist / save for later | Backlog | S | Engagement | Suggested |
+| Social proof — "X people negotiating this" | Later | S | Conversion | Suggested |
+| Recommendation engine — "you might also like" | Later | L | Conversion | Suggested |
 
 ---
 
@@ -63,6 +103,8 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Cart-specific max discount setting | Shipped | S | Conversion | Discussed |
 | Plan enforcement (free 50 / starter 500 monthly limit) | Shipped | S | Monetization | Discussed |
 | Negotiation history view | Shipped | M | Analytics | Discussed |
+| Video widget management — upload, tag, reorder | Shipped | L | Merchant UX | Discussed |
+| Marketplace opt-in settings (discount %, commission, store name) | Shipped | S | Merchant UX | Discussed |
 | Settings page — tabbed redesign | Backlog | M | Merchant UX | Suggested |
 | Live preview panel in settings | Backlog | M | Merchant UX | Suggested |
 | Per-product rules UI | Backlog | M | Control | Suggested |
@@ -81,19 +123,18 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Feature | Status | Size | Impact | Origin |
 |---|---|---|---|---|
 | Core negotiate endpoint (`POST /negotiate`) | Shipped | L | Core | Discussed |
-| Nibble-inspired price ladder engine | Shipped | L | Conversion | Discussed |
+| Price ladder engine — adaptive spread tiers by price point | Shipped | L | Conversion | Discussed |
 | 4-moment deal screen (accepted state) | Shipped | M | Conversion | Discussed |
 | Tone-matched human escalation | Shipped | M | Trust | Discussed |
 | Lead capture endpoint (`PUT /negotiate/:id/contact`) | Shipped | S | Lead capture | Discussed |
 | Product eligibility check (`GET /widget/product-rules`) | Shipped | M | Control | Discussed |
 | Widget settings endpoint (`GET /widget/settings`) | Shipped | S | Core | Discussed |
+| Product context passed to LLM (vendor/type/tags/description) | Shipped | M | Conversion | Discussed |
 | Rate limiting | Shipped | S | Stability | Discussed |
 | API key auth middleware | Shipped | S | Security | Discussed |
 | CORS — wide-open for widget / strict for dashboard | Shipped | S | Security | Discussed |
-| Debug endpoints (`/debug/*`) | Shipped | S | DX | Suggested |
 | Counter-offer floor warnings | Backlog | S | Conversion | Suggested |
 | Escalation path tuning by product tag | Backlog | M | Control | Suggested |
-| Bundle negotiation — smarter cart discounts | Backlog | M | Conversion | Suggested |
 | Post-deal follow-up email (24h reminder) | Backlog | S | Recovery | Suggested |
 | Abandoned negotiation recovery email | Backlog | M | Recovery | Suggested |
 | AI buyer persona detection | Later | L | Conversion | Suggested |
@@ -105,12 +146,12 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Feature | Status | Size | Impact | Origin |
 |---|---|---|---|---|
 | Deal email — discount code + checkout link | Shipped | M | Conversion | Discussed |
-| Debug email test endpoint (`/debug/email`) | Shipped | S | DX | Suggested |
+| Marketplace merchant alert — customer contact + commission breakdown | Shipped | M | Trust | Discussed |
 | Post-deal 24h follow-up email | Backlog | S | Recovery | Suggested |
 | Abandoned negotiation recovery email | Backlog | M | Recovery | Suggested |
 | Klaviyo connector | Backlog | M | CRM | Suggested |
 | Postscript / SMSBump integration | Backlog | M | CRM | Suggested |
-| Real-time merchant deal alerts | Later | M | Engagement | Suggested |
+| Real-time merchant deal alerts (push/SMS) | Later | M | Engagement | Suggested |
 
 ---
 
@@ -139,6 +180,7 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Alerts — floor breach, high LLM cost, churn risk, idle merchants | Shipped | M | Operations | Discussed |
 | Alert resolve action | Shipped | S | Operations | Discussed |
 | Roadmap kanban board | Shipped | M | Internal | Discussed |
+| Marketplace commission dashboard | Backlog | M | Operations | Suggested |
 
 ---
 
@@ -146,12 +188,12 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 | Feature | Status | Size | Impact | Origin |
 |---|---|---|---|---|
-| Vercel deployment (API + dashboard) | Shipped | S | Core | Discussed |
+| Vercel deployment (API + dashboard + marketplace) | Shipped | S | Core | Discussed |
 | Supabase (Postgres + auth) | Shipped | M | Core | Discussed |
-| DB migrations (001–008) | Shipped | S | Core | Discussed |
+| DB migrations (001–013) | Shipped | S | Core | Discussed |
 | Merchant white-label | Later | M | Revenue | Suggested |
 | Competitor price matching | Icebox | L | Conversion | Suggested |
 
 ---
 
-*Last updated: 2026-04-21*
+*Last updated: 2026-04-22*
