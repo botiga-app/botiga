@@ -309,17 +309,13 @@
       if (dealShown) return;
       dealShown = true;
 
-      // Hide input row
       shadow.querySelector('#input-row')?.remove();
 
       const panel = shadow.querySelector('#panel');
       const listPrice = productInfo.price || dealPrice;
       const saved = Math.round(listPrice - dealPrice);
       const savedPct = Math.round((saved / listPrice) * 100);
-      // Always show 15-min display countdown (actual checkout link stays valid 48h)
-      const exp = new Date(Date.now() + 15 * 60 * 1000);
 
-      // Build deal screen
       const ds = document.createElement('div');
       ds.className = 'deal-screen';
       ds.innerHTML = `
@@ -333,94 +329,23 @@
         <div class="deal-product">${escHtml(productInfo.name || '')}</div>
         <div class="deal-orig-num">${listPrice !== dealPrice ? '$' + Math.round(listPrice) : ''}</div>
         <div class="deal-price-wrap">
-          <div class="deal-price-num" id="_dp">$${Math.round(listPrice)}</div>
+          <div class="deal-price-num" id="_dp">$${Math.round(dealPrice)}</div>
         </div>
-        <div class="deal-savings" id="_ds">${saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in'}</div>
+        <div class="deal-savings show" id="_ds">${saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in'}</div>
         ${discountCode ? `<div class="deal-code-line">${escHtml(discountCode)} applied automatically</div>` : ''}
-        <div class="deal-timer-wrap">
-          <div class="deal-timer-digits" id="_dtd">15:00</div>
-          <div class="deal-timer-label">Deal expires in</div>
-        </div>
-        <div class="deal-redirect-label" id="_drl" style="opacity:0">Heading to your cart...</div>
-        <button class="deal-fallback" id="_dfb">Go to cart &rarr;</button>
-        <div class="deal-progress" id="_dpr"></div>
+        <div style="font-size:13px;color:#888;margin-top:18px">Taking you to cart...</div>
       `;
       panel.appendChild(ds);
-
-      // MOMENT 1 — slide up
       requestAnimationFrame(() => { ds.classList.add('visible'); });
 
-      // MOMENT 2 — price countdown with stamp overshoot
-      setTimeout(() => {
-        animatePrice(Math.round(listPrice), Math.round(dealPrice), 700, () => {
-          const badge = shadow.querySelector('#_ds');
-          if (badge) badge.classList.add('show');
-        });
-      }, 500);
+      // AJAX add to cart, then redirect to /cart?discount=CODE — no button needed
+      const cartPath = discountCode ? `/cart?discount=${encodeURIComponent(discountCode)}` : '/cart';
+      const vid = detectVariantId();
+      const addPromise = vid
+        ? fetch('/cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(vid), quantity: 1 }) }).catch(() => {})
+        : Promise.resolve();
 
-      function animatePrice(from, to, duration, onComplete) {
-        const start = performance.now();
-        const range = from - to;
-        function step(now) {
-          const elapsed = now - start;
-          const progress = Math.min(elapsed / duration, 1);
-          const eased = 1 - Math.pow(1 - progress, 3);
-          const overshoot = (progress > 0.85 && progress < 1)
-            ? Math.sin(((progress - 0.85) / 0.15) * Math.PI) * 2 : 0;
-          const current = Math.round(from - (range * eased) + overshoot);
-          const el = shadow.querySelector('#_dp');
-          if (el) el.textContent = '$' + current;
-          if (progress < 1) { requestAnimationFrame(step); }
-          else { if (el) el.textContent = '$' + to; onComplete && onComplete(); }
-        }
-        requestAnimationFrame(step);
-      }
-
-      // MOMENT 3 — confetti fires on /cart page after button click (see injectCartBanner)
-
-      // Countdown timer (deal expiry)
-      const timerEl = shadow.querySelector('#_dtd');
-      const timerInterval = setInterval(() => {
-        const remaining = Math.max(0, exp - Date.now());
-        const mins = Math.floor(remaining / 60000);
-        const secs = Math.floor((remaining % 60000) / 1000);
-        if (timerEl) {
-          timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-          if (remaining < 120000) timerEl.classList.add('urgent');
-        }
-        if (remaining <= 0) {
-          clearInterval(timerInterval);
-          if (timerEl) timerEl.textContent = 'Expired';
-          const fb = shadow.querySelector('#_dfb');
-          if (fb) { fb.style.display = 'block'; fb.onclick = () => { if (checkoutUrl) window.location.href = checkoutUrl; }; }
-        }
-      }, 1000);
-
-      // MOMENT 4 — show checkout button, AJAX add to cart then go to /cart (confetti fires there)
-      setTimeout(() => {
-        const fb = shadow.querySelector('#_dfb');
-        if (fb) {
-          fb.style.display = 'block';
-          fb.textContent = 'Complete my order →';
-          fb.onclick = async () => {
-            fb.textContent = 'Adding to cart...';
-            fb.disabled = true;
-            try {
-              const vid = detectVariantId();
-              if (vid) {
-                await fetch('/cart/add.js', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: parseInt(vid), quantity: 1 })
-                });
-              }
-            } catch {}
-            // Go to /cart — widget fires confetti there, no Shopify auto-redirect
-            const cartPath = discountCode ? `/cart?discount=${discountCode}` : '/cart';
-            window.location.href = cartPath;
-          };
-        }
-      }, 1800);
+      addPromise.then(() => { setTimeout(() => { window.location.href = cartPath; }, 2200); });
     }
 
     // Lead capture is now handled inline by the bot's message — no form widget needed
