@@ -5,9 +5,26 @@
  * The ladder is generated ONCE at negotiation start, stored in DB, never regenerated.
  */
 
+// Minimum dollar spread by price tier — guarantees a real negotiation at any price point.
+// A $38 item with 20% max gives only $7.60 spread; that's not worth negotiating.
+// These floors ensure the ladder has meaningful steps regardless of the percentage setting.
+function minNegotiableSpread(listPrice) {
+  if (listPrice < 30)  return 8;
+  if (listPrice < 60)  return 14;
+  if (listPrice < 100) return 22;
+  if (listPrice < 200) return 35;
+  if (listPrice < 400) return 55;
+  return listPrice * 0.20;
+}
+
 class PricingEngine {
   constructor({ listPrice, floorPrice, maxDiscountPct }) {
-    const discountFloor = listPrice * (1 - (maxDiscountPct || 20) / 100);
+    // Percentage-based floor from merchant setting
+    const pctFloor = listPrice * (1 - (maxDiscountPct || 20) / 100);
+    // Dollar-spread floor — ensures enough room for a real ladder
+    const spreadFloor = listPrice - minNegotiableSpread(listPrice);
+    // Use whichever gives MORE room (lower floor), but never below a merchant's fixed floor
+    const discountFloor = Math.min(pctFloor, spreadFloor);
     this.listPrice = listPrice;
     this.floorPrice = Math.max(floorPrice || 0, discountFloor);
     this.priceLadder = this.generateLadder();
