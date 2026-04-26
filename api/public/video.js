@@ -2162,9 +2162,12 @@
         }
       }
 
+      console.log('[Botiga] card product:', JSON.stringify({ name: p.product_name || p.title, handle: handle, shopify_product_id: p.shopify_product_id || p.id, has_shopify_products: !!(_cncgEl && _cncgEl._shopifyProducts && _cncgEl._shopifyProducts.length) }));
+
       // Card tap → open product page in new tab with negotiate modal pre-opened
       (function (h, prod) {
         card.onclick = function (e) {
+          console.log('[Botiga] card click — handle:', h, 'target:', e.target.tagName, 'closest button:', !!e.target.closest('button'));
           if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
           if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
           else { closeConcierge(); openNegotiateModal(prod); }
@@ -2589,13 +2592,15 @@
 
     // Ensure full Shopify catalog is loaded, then build product list
     function ensureShopifyProducts(cb) {
-      if (_cncgEl && _cncgEl._shopifyProducts) { cb(_cncgEl._shopifyProducts); return; }
+      if (_cncgEl && _cncgEl._shopifyProducts) { console.log('[Botiga] shopify products already cached:', _cncgEl._shopifyProducts.length); cb(_cncgEl._shopifyProducts); return; }
+      console.log('[Botiga] fetching /products.json...');
       fetch('/products.json?limit=150')
         .then(function (r) { return r.ok ? r.json() : { products: [] }; })
         .then(function (d) {
           if (_cncgEl) _cncgEl._shopifyProducts = d.products || [];
+          console.log('[Botiga] /products.json loaded:', (d.products || []).length, 'products');
           cb(_cncgEl ? _cncgEl._shopifyProducts : []);
-        }).catch(function () { cb([]); });
+        }).catch(function (err) { console.error('[Botiga] /products.json failed:', err); cb([]); });
     }
 
     function gatherProducts(shopifyProducts) {
@@ -2648,9 +2653,11 @@
     ensureShopifyProducts(function (shopifyProducts) {
       var remaining = Math.max(0, target - elapsed);
       clearInterval(waitTimer);
+      console.log('[Botiga] gatherProducts — shopify count:', shopifyProducts.length, 'remaining wait:', remaining + 'ms');
       setTimeout(function () {
         typing.remove();
         var products = gatherProducts(shopifyProducts);
+        console.log('[Botiga] products gathered:', products.length, 'first:', products[0] && JSON.stringify({ name: products[0].product_name, handle: products[0].handle, id: products[0].shopify_product_id }));
 
         if (!products.length) {
           _cncgAddBot(msgs, "I couldn't pull the product list right now — try browsing by collection instead!");
