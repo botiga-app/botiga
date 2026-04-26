@@ -465,6 +465,25 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
   }
 });
 
+// ─── Widget: live stats for a single video (polling) ────────────────────────
+router.get('/widget/videos/:id/stats', widgetCors, async (req, res) => {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('views_count, likes_count, shares_count')
+    .eq('id', req.params.id)
+    .single();
+  if (error) return res.status(404).json({ error: 'Not found' });
+
+  // Count comments separately — comments_count column added by migration 017
+  const { count } = await supabase
+    .from('video_comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('video_id', req.params.id)
+    .is('parent_id', null);
+
+  res.json({ ...data, comments_count: count || 0 });
+});
+
 // ─── Widget: track event ─────────────────────────────────────────────────────
 router.post('/widget/videos/:id/event', widgetCors, async (req, res) => {
   const { k: apiKey, event_type, session_id, product_id } = req.body;
@@ -482,7 +501,7 @@ router.post('/widget/videos/:id/event', widgetCors, async (req, res) => {
     product_id: product_id || null,
   });
 
-  // Increment counter on video row for fast reads
+  // Increment counter on video row — read current value then write new value
   const counterMap = {
     view: 'views_count',
     like: 'likes_count',
@@ -492,11 +511,401 @@ router.post('/widget/videos/:id/event', widgetCors, async (req, res) => {
   };
   const col = counterMap[event_type];
   if (col) {
-    await supabase.rpc('increment_video_counter', { video_id: req.params.id, col_name: col })
-      .catch(() => {}); // non-critical
+    const { data: current } = await supabase
+      .from('videos')
+      .select(col)
+      .eq('id', req.params.id)
+      .single();
+    if (current) {
+      await supabase
+        .from('videos')
+        .update({ [col]: (current[col] || 0) + 1, updated_at: new Date().toISOString() })
+        .eq('id', req.params.id);
+    }
   }
 
   res.json({ ok: true });
+});
+
+// ─── Comments: get comments for a video (public) ────────────────────────────
+router.get('/widget/videos/:videoId/comments', widgetCors, async (req, res) => {
+  const { videoId } = req.params;
+  const { data, error } = await supabase
+    .from('video_comments')
+    .select('id, author_name, body, is_merchant_reply, parent_id, created_at')
+    .eq('video_id', videoId)
+    .is('parent_id', null)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Fetch replies for these top-level comments
+  const ids = (data || []).map(c => c.id);
+  let replies = [];
+  if (ids.length) {
+    const { data: rData } = await supabase
+      .from('video_comments')
+      .select('id, author_name, body, is_merchant_reply, parent_id, created_at')
+      .in('parent_id', ids)
+      .order('created_at', { ascending: true });
+    replies = rData || [];
+  }
+
+  const comments = (data || []).map(c => ({
+    ...c,
+    replies: replies.filter(r => r.parent_id === c.id),
+  }));
+
+  res.json({ comments });
+});
+
+// ─── Comments: post a comment (public — customers) ───────────────────────────
+router.post('/widget/videos/:videoId/comments', widgetCors, async (req, res) => {
+  const { videoId } = req.params;
+  const { author_name, author_email, body } = req.body;
+  if (!author_name || !body) return res.status(400).json({ error: 'author_name and body required' });
+  if (body.length > 1000) return res.status(400).json({ error: 'Comment too long' });
+
+  const { data, error } = await supabase.from('video_comments').insert({
+    video_id: videoId,
+    author_name: author_name.trim().slice(0, 80),
+    author_email: author_email ? author_email.trim() : null,
+    body: body.trim(),
+    is_merchant_reply: false,
+  }).select('id, author_name, body, is_merchant_reply, parent_id, created_at').single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ comment: { ...data, replies: [] } });
+});
+
+// ─── Comments: merchant replies (dashboard auth) ─────────────────────────────
+router.post('/merchants/:merchantId/videos/:videoId/comments/:commentId/reply', dashboardCors, async (req, res) => {
+  const { videoId, commentId } = req.params;
+  const { body } = req.body;
+  if (!body) return res.status(400).json({ error: 'body required' });
+
+  // Verify the parent comment belongs to this video
+  const { data: parent, error: parentErr } = await supabase
+    .from('video_comments')
+    .select('id')
+    .eq('id', commentId)
+    .eq('video_id', videoId)
+    .single();
+  if (parentErr || !parent) return res.status(404).json({ error: 'Comment not found' });
+
+  const { data, error } = await supabase.from('video_comments').insert({
+    video_id: videoId,
+    author_name: 'Shop',
+    body: body.trim(),
+    parent_id: commentId,
+    is_merchant_reply: true,
+  }).select('id, author_name, body, is_merchant_reply, parent_id, created_at').single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ comment: data });
+});
+
+// ─── Comments: list all comments for a merchant's videos (dashboard) ─────────
+router.get('/merchants/:merchantId/comments', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+
+  // Get all video IDs for this merchant
+  const { data: videos, error: vErr } = await supabase
+    .from('videos')
+    .select('id, title, thumbnail_url')
+    .eq('merchant_id', merchantId);
+  if (vErr) return res.status(500).json({ error: vErr.message });
+
+  const videoIds = (videos || []).map(v => v.id);
+  if (!videoIds.length) return res.json({ comments: [] });
+
+  const { data: comments, error } = await supabase
+    .from('video_comments')
+    .select('id, video_id, author_name, author_email, body, is_merchant_reply, parent_id, created_at')
+    .in('video_id', videoIds)
+    .is('parent_id', null)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) return res.status(500).json({ error: error.message });
+
+  const videoMap = Object.fromEntries((videos || []).map(v => [v.id, v]));
+  res.json({
+    comments: (comments || []).map(c => ({ ...c, video: videoMap[c.video_id] || null })),
+  });
+});
+
+// ─── AI: analyse video frames with Groq Vision ───────────────────────────────
+router.post('/videos/:id/analyze', async (req, res) => {
+  const { frames, thumbnail_url } = req.body;
+
+  const images = [];
+  if (Array.isArray(frames) && frames.length) {
+    frames.slice(0, 4).forEach(f => {
+      const url = f.startsWith('data:') ? f : `data:image/jpeg;base64,${f}`;
+      images.push({ type: 'image_url', image_url: { url } });
+    });
+  } else if (thumbnail_url) {
+    images.push({ type: 'image_url', image_url: { url: thumbnail_url } });
+  }
+
+  if (!images.length) return res.status(400).json({ error: 'No images provided' });
+  if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+
+  const prompt = `Analyze these frames from a product video for a Shopify store. Respond ONLY with valid JSON, no markdown:
+{
+  "title": "compelling product title under 60 chars",
+  "description": "2-3 sentence benefit-focused product description",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "category": "e.g. Women's Fashion"
+}`;
+
+  try {
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: 'llama-3.2-11b-vision-preview',
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...images] }],
+        max_tokens: 500,
+        temperature: 0.3,
+      }),
+    });
+
+    const data = await groqRes.json();
+    if (!groqRes.ok) return res.status(500).json({ error: data.error?.message || 'Groq error' });
+
+    const text = data.choices?.[0]?.message?.content || '';
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: 'Could not parse AI response', raw: text });
+
+    res.json(JSON.parse(match[0]));
+  } catch (err) {
+    console.error('[analyze]', err);
+    res.status(500).json({ error: 'Analysis failed' });
+  }
+});
+
+// ─── AI: create Shopify product draft from AI analysis ───────────────────────
+router.post('/videos/:id/create-product', async (req, res) => {
+  const { title, description, tags, merchant_id, image_url } = req.body;
+  if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('shopify_domain, shopify_access_token')
+    .eq('id', merchant_id)
+    .single();
+
+  if (!merchant?.shopify_access_token) {
+    return res.status(400).json({ error: 'Shopify not connected — install the app to enable this.' });
+  }
+
+  const productPayload = {
+    product: {
+      title,
+      body_html: `<p>${description}</p>`,
+      tags: Array.isArray(tags) ? tags.join(', ') : (tags || ''),
+      status: 'draft',
+      ...(image_url ? { images: [{ src: image_url }] } : {}),
+    },
+  };
+
+  const shopifyRes = await fetch(
+    `https://${merchant.shopify_domain}/admin/api/2024-01/products.json`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': merchant.shopify_access_token },
+      body: JSON.stringify(productPayload),
+    }
+  );
+
+  if (!shopifyRes.ok) {
+    const err = await shopifyRes.json().catch(() => ({}));
+    return res.status(400).json({ error: 'Shopify product creation failed', details: err });
+  }
+
+  const { product } = await shopifyRes.json();
+  const variant = product.variants?.[0];
+
+  const { data: tag, error: tagErr } = await supabase.from('video_product_tags').insert({
+    video_id: req.params.id,
+    merchant_id,
+    shopify_product_id: String(product.id),
+    shopify_variant_id: variant ? String(variant.id) : null,
+    product_name: product.title,
+    product_handle: product.handle,
+    price: parseFloat(variant?.price || 0),
+    image_url: product.images?.[0]?.src || null,
+  }).select().single();
+
+  if (tagErr) return res.status(500).json({ error: tagErr.message });
+  res.json({ product, tag });
+});
+
+// ─── Widget: concierge chat ──────────────────────────────────────────────────
+router.post('/widget/chat', widgetCors, async (req, res) => {
+  const { k: apiKey, message, history, catalog, personality } = req.body;
+  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+  if (!message) return res.status(400).json({ error: 'Missing message' });
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('id, name')
+    .eq('api_key', apiKey)
+    .single();
+  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) return res.status(500).json({ error: 'Chat not configured' });
+
+  const storeName = merchant.name || 'this store';
+
+  // Build catalog context string
+  let catalogText = '';
+  if (Array.isArray(catalog) && catalog.length) {
+    catalogText = '\n\nStore products:\n' + catalog.map(p => {
+      const price = parseFloat(p.price || 0).toFixed(2);
+      const was = parseFloat(p.compare_at_price || 0);
+      const disc = was > parseFloat(p.price || 0) ? ` (was $${was.toFixed(2)}, ${Math.round((1 - parseFloat(p.price) / was) * 100)}% off)` : '';
+      return `- ${p.name}: $${price}${disc} [ID:${p.id}]`;
+    }).join('\n');
+  }
+
+  // Personality tone instructions
+  const toneMap = {
+    salesy:   'You are an enthusiastic, persuasive shopping assistant. Sell confidently — highlight why each product is special, what makes it stand out, and why the customer will love it. Create gentle urgency. 1–3 sentences max.',
+    friendly: 'You are a warm, helpful shopping assistant. Be conversational and supportive. 1–3 sentences max.',
+    expert:   'You are a knowledgeable product expert. Give precise, confident recommendations with brief reasoning. 1–3 sentences max.',
+    playful:  'You are a fun, upbeat shopping assistant. Use light humor and enthusiasm. 1–3 sentences max.',
+  };
+  const toneInstruction = toneMap[personality] || toneMap.salesy;
+
+  // Gift-query detection — ask 1 targeted clarifying question before showing products
+  const isGiftQuery = /gift|present|birthday|anniversary|christmas|holiday|surprise|for (my|a|the|him|her|them)/i.test(message);
+  const hasConversationHistory = Array.isArray(history) && history.length > 0;
+  const alreadyAskedClarifier = hasConversationHistory && history.some(m => /who.*for|budget|occasion|age|interest|style/i.test(m.content || ''));
+
+  const giftInstruction = (isGiftQuery && !alreadyAskedClarifier)
+    ? `\n\nThe customer is looking for a gift. Ask ONE short, friendly clarifying question to help narrow it down — like who it's for, their rough budget, or the occasion. Do NOT show products yet. Keep it warm and conversational.`
+    : '';
+
+  const systemPrompt = `You are a shopping assistant for ${storeName}. ${toneInstruction}${catalogText}
+
+${giftInstruction}
+
+IMPORTANT: Always respond with valid JSON in this exact format:
+{"reply": "your message", "product_ids": []}
+
+When recommending specific products from the catalog, include their IDs:
+{"reply": "These are perfect for you — here's why...", "product_ids": ["id1", "id2"]}
+
+Rules:
+- Use the exact ID strings shown after [ID:] in the catalog. Never invent product IDs.
+- When recommending products, briefly say WHY each is a great pick (1 sentence).
+- For gift queries without enough info, ask ONE clarifying question and return empty product_ids.
+- If a customer gives gift context (who/budget/occasion), recommend 2–4 matching products with enthusiasm.
+- Never be pushy. Be genuinely helpful.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...(Array.isArray(history) ? history.slice(-6) : []),
+    { role: 'user', content: message },
+  ];
+
+  try {
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqApiKey}` },
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages, max_tokens: 300, temperature: 0.6 }),
+    });
+    if (!groqRes.ok) {
+      const errBody = await groqRes.text().catch(() => '');
+      throw new Error('groq ' + groqRes.status + ': ' + errBody.slice(0, 200));
+    }
+    const data = await groqRes.json();
+    const raw = data.choices?.[0]?.message?.content?.trim() || '';
+
+    let reply = raw;
+    let product_ids = [];
+    try {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) {
+        const parsed = JSON.parse(m[0]);
+        reply = parsed.reply || raw;
+        product_ids = Array.isArray(parsed.product_ids) ? parsed.product_ids : [];
+      }
+    } catch (_) { /* plain text fallback */ }
+
+    res.json({ reply, product_ids });
+  } catch (err) {
+    console.error('[chat]', err.message);
+    res.json({ reply: "I'm having trouble right now. Please try again!", product_ids: [] });
+  }
+});
+
+// ─── Widget: order tracking ──────────────────────────────────────────────────
+router.post('/widget/order', widgetCors, async (req, res) => {
+  const { k: apiKey, order_number, email } = req.body;
+  if (!apiKey || !order_number || !email) return res.status(400).json({ error: 'Missing fields' });
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('id, shopify_domain, shopify_access_token')
+    .eq('api_key', apiKey)
+    .single();
+  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  if (!merchant.shopify_access_token) return res.status(400).json({ error: 'Store not connected' });
+
+  const orderName = order_number.startsWith('#') ? order_number : '#' + order_number;
+  try {
+    const shopifyRes = await fetch(
+      `https://${merchant.shopify_domain}/admin/api/2024-01/orders.json?name=${encodeURIComponent(orderName)}&email=${encodeURIComponent(email)}&status=any&limit=1`,
+      { headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token, 'Content-Type': 'application/json' } }
+    );
+    if (!shopifyRes.ok) throw new Error('shopify ' + shopifyRes.status);
+    const data = await shopifyRes.json();
+    const order = (data.orders || [])[0];
+    if (!order) return res.json({ error: 'Order not found' });
+
+    const fulfillment = (order.fulfillments || [])[0];
+    res.json({
+      order: {
+        order_number: order.order_number,
+        fulfillment_status: order.fulfillment_status || 'unfulfilled',
+        financial_status: order.financial_status,
+        total_price: order.total_price,
+        line_items: order.line_items || [],
+        tracking_url: fulfillment ? (fulfillment.tracking_url || null) : null,
+        tracking_number: fulfillment ? (fulfillment.tracking_number || null) : null,
+        created_at: order.created_at,
+      }
+    });
+  } catch (err) {
+    console.error('[order-track]', err.message);
+    res.status(500).json({ error: 'Could not fetch order' });
+  }
+});
+
+// ─── Widget: public config (Supabase Realtime credentials for browser WS) ────
+router.get('/widget/config', widgetCors, async (req, res) => {
+  const { k: apiKey } = req.query;
+  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+  const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  const { data: settings } = await supabase
+    .from('merchant_settings')
+    .select('bot_name, bot_greeting, bot_avatar_url, bot_personality')
+    .eq('merchant_id', merchant.id)
+    .single();
+  res.json({
+    supabase_url: process.env.SUPABASE_URL,
+    supabase_anon_key: process.env.SUPABASE_ANON_KEY || '',
+    bot_name: settings?.bot_name || null,
+    bot_subtitle: null,
+    bot_greeting: settings?.bot_greeting || null,
+    bot_avatar_url: settings?.bot_avatar_url || null,
+    bot_personality: settings?.bot_personality || 'salesy',
+  });
 });
 
 module.exports = router;

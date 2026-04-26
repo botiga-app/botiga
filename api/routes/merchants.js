@@ -50,7 +50,8 @@ router.put('/merchants/:id/settings', async (req, res) => {
     'negotiate_on_product', 'negotiate_on_cart', 'recovery_enabled', 'recovery_channel',
     'dwell_time_seconds', 'brand_value_statements',
     'proactive_delay', 'proactive_message', 'auto_open_delay',
-    'widget_type', 'show_trigger', 'chat_popup_delay', 'cart_trigger'
+    'widget_type', 'show_trigger', 'chat_popup_delay', 'cart_trigger',
+    'bot_name', 'bot_greeting', 'bot_avatar_url', 'bot_personality'
   ];
 
   const updates = {};

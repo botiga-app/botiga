@@ -63,7 +63,11 @@ export default function SettingsPage() {
           show_trigger: 'always',
           chat_popup_delay: 0,
           cart_trigger: 'always',
-          brand_value_statements: ['', '', '', '', '']
+          brand_value_statements: ['', '', '', '', ''],
+          bot_name: null,
+          bot_greeting: null,
+          bot_avatar_url: null,
+          bot_personality: 'salesy'
         };
         setSettings(s);
         setSavedSettings(s);
@@ -188,8 +192,56 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* AI Shopping Assistant */}
+      <Section title="AI Shopping Assistant">
+        <div className="space-y-4">
+          <div className="flex gap-4 items-start">
+            {settings.bot_avatar_url ? (
+              <img src={settings.bot_avatar_url} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-indigo-100 flex-shrink-0" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center text-2xl flex-shrink-0">🛍️</div>
+            )}
+            <div className="flex-1 space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Avatar image URL</label>
+                <input type="url" value={settings.bot_avatar_url || ''} onChange={e => update({ bot_avatar_url: e.target.value || null })}
+                  placeholder="https://your-store.com/logo.png" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                <p className="text-xs text-gray-400 mt-1">Paste your store logo URL. Will appear as a circular avatar next to the chat.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Bot name</label>
+                <input type="text" value={settings.bot_name || ''} onChange={e => update({ bot_name: e.target.value || null })}
+                  placeholder="e.g. Lily, Max, Sage…" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Opening greeting</label>
+            <textarea value={settings.bot_greeting || ''} onChange={e => update({ bot_greeting: e.target.value || null })} rows={2}
+              placeholder="Hi! 👋 What can I help you find today?" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-2">Chat personality</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'salesy', label: '🔥 Salesy', sub: 'Enthusiastic, highlights benefits, creates urgency' },
+                { value: 'friendly', label: '😊 Friendly', sub: 'Warm, helpful, conversational' },
+                { value: 'expert', label: '🎓 Expert', sub: 'Knowledgeable, precise, trusted advisor' },
+                { value: 'playful', label: '✨ Playful', sub: 'Fun, upbeat, light humor' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => update({ bot_personality: opt.value })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${(settings.bot_personality || 'salesy') === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <div className="text-sm font-semibold text-gray-800">{opt.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Section>
+
       {/* Bot Personality */}
-      <Section title="Bot Personality">
+      <Section title="Negotiation Bot Personality">
         <TonePicker value={settings.tone} onChange={tone => update({ tone })} />
       </Section>
 
