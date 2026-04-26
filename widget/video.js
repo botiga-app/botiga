@@ -2213,30 +2213,35 @@
     wrapW.appendChild(wrap);
     msgs.appendChild(wrapW);
 
-    // Conversational next-step chips — anticipate what the shopper wants
+    // After product results — drive toward a decision, weave W&S back in
     var firstP = products[0];
     if (firstP) {
       var firstName = (firstP.product_name || firstP.title || '').split(' ').slice(0, 3).join(' ');
       var firstHandle = firstP.handle || '';
-      _cncgAddChips(msgs, [
-        { label: '🤝 Negotiate the price', fn: function () {
+      var ws = _chipWatchShop();
+      _cncgAddChips(msgs, _buildChips(msgs, [
+        { label: '🤝 Negotiate the price', fn: function (m) {
           if (firstHandle) { window.open('/products/' + firstHandle + '?btg_neg=1', '_blank'); }
           else { closeConcierge(); openNegotiateModal(firstP); }
         }},
-        { label: '🛒 Add ' + (firstName || 'this') + ' to cart', fn: function () {
+        { label: ws.label, fn: ws.fn },
+        { label: '🛒 Add ' + (firstName || 'this') + ' to cart', fn: function (m) {
           var vid = firstP.shopify_variant_id || firstP.variant_id;
           if (!vid) return;
           addToCart(vid, function (ok) {
-            if (ok) { fireConfetti(); _cncgAddBot(msgs, '✓ Added! Want to checkout or keep browsing?');
-              _cncgAddChips(msgs, [
+            if (ok) {
+              fireConfetti();
+              _cncgAddBot(m, '✓ Added! Anything else catch your eye?');
+              var ws2 = _chipWatchShop(), deal2 = _chipDeal();
+              _cncgAddChips(m, _buildChips(m, [
+                { label: ws2.label, fn: ws2.fn },
+                { label: deal2.label, fn: deal2.fn },
                 { label: '⚡ Go to checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; }},
-                { label: '🔍 Keep browsing', fn: function () { _cncgFind(msgs); }},
-              ]);
+              ]));
             }
           });
         }},
-        { label: '🔍 Show me different options', fn: function () { _cncgFind(msgs); }},
-      ]);
+      ]));
     }
     msgs.scrollTop = msgs.scrollHeight;
   }
@@ -2302,48 +2307,75 @@
     msgs.scrollTop = msgs.scrollHeight;
   }
 
-  // ── Main menu chips ─────────────────────────────────────────────────────────
+  // ── Chip helpers — varied language so chips never feel like a phone menu ─────
+
+  // Watch & Shop chip — always leads; label rotates so it feels fresh on re-entry
+  var _wsLabels = ['🎬 Watch & Shop', '📱 Shop the videos', '🎬 See it in action', '🎬 Watch & find your pick'];
+  var _wsIdx = 0;
+  function _chipWatchShop() {
+    var label = _wsLabels[_wsIdx % _wsLabels.length]; _wsIdx++;
+    return { label: label, fn: function (msgs) { _cncgWatchShop(msgs); } };
+  }
+
+  // Deal chip — always second; rotates phrasing
+  var _dealLabels = ['🤝 Get me a deal', '💸 I want a better price', '🤝 Make an offer', '💰 Negotiate a price', '🤝 Can I pay less?'];
+  var _dealIdx = 0;
+  function _chipDeal() {
+    var label = _dealLabels[_dealIdx % _dealLabels.length]; _dealIdx++;
+    return { label: label, fn: function (msgs) { _cncgDeals(msgs); } };
+  }
+
+  // Find chip — conversational third option; rotates
+  var _findLabels = ['🔍 Help me find something', '🔍 Show me more options', '🔍 I\'m looking for something specific', '🔍 Browse the catalog'];
+  var _findIdx = 0;
+  function _chipFind() {
+    var label = _findLabels[_findIdx % _findLabels.length]; _findIdx++;
+    return { label: label, fn: function (msgs) { _cncgFind(msgs); } };
+  }
+
+  // Build chips with msgs injected into fns (chips need msgs at call time)
+  function _buildChips(msgs, defs) {
+    return defs.map(function (d) {
+      return { label: d.label, fn: function () { d.fn(msgs); } };
+    });
+  }
+
+  // ── Opening chips — W&S + Deal always first, third varies by context ─────────
   function _cncgMainMenu(msgs) {
     var ctx = _getPageContext();
+    var ws = _chipWatchShop(), deal = _chipDeal(), find = _chipFind();
+
     if (ctx.type === 'product' && ctx.title) {
-      // On a product page — make chips feel specific to what they're looking at
-      _cncgAddChips(msgs, [
-        { label: '🤝 Can I get a better price?', fn: function () {
-          var path = window.location.pathname;
-          var h = path.split('/products/')[1]; if (h) h = h.split('?')[0].split('#')[0];
-          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
-          else { _cncgDeals(msgs); }
+      _cncgAddChips(msgs, _buildChips(msgs, [
+        { label: ws.label, fn: ws.fn },
+        { label: deal.label, fn: deal.fn },
+        { label: '🔍 Show me similar items', fn: function (m) {
+          _cncgAddUser(m, 'Show me something similar to ' + ctx.title);
+          _cncgSend('Show me something similar to ' + ctx.title, m, _cncgEl._inp, _cncgEl._sendBtn);
         }},
-        { label: '🔍 Show me similar items', fn: function () {
-          _cncgAddUser(msgs, 'Show me similar items to ' + ctx.title);
-          _cncgSend('Show me similar items to ' + ctx.title, msgs, _cncgEl._inp, _cncgEl._sendBtn);
-        }},
-        { label: '🎬 Watch & Shop', fn: function () { _cncgWatchShop(msgs); }},
-      ]);
+      ]));
     } else if (ctx.type === 'cart') {
-      _cncgAddChips(msgs, [
-        { label: '🤝 Get a deal before I checkout', fn: function () { _cncgDeals(msgs); }},
-        { label: '🔍 Add more items', fn: function () { _cncgFind(msgs); }},
+      _cncgAddChips(msgs, _buildChips(msgs, [
+        { label: ws.label, fn: ws.fn },
+        { label: '🤝 Get a deal before checkout', fn: function (m) { _cncgDeals(m); }},
         { label: '⚡ Go to checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; }},
-      ]);
+      ]));
     } else {
-      // Homepage or collection — discovery-first
-      _cncgAddChips(msgs, [
-        { label: '🔥 What\'s trending?', fn: function () {
-          _cncgAddUser(msgs, "What's trending right now?");
-          _cncgSend("What's trending right now?", msgs, _cncgEl._inp, _cncgEl._sendBtn);
-        }},
-        { label: '🤝 I want a deal', fn: function () { _cncgDeals(msgs); }},
-        { label: '🔍 Help me find something', fn: function () { _cncgFind(msgs); }},
-      ]);
+      _cncgAddChips(msgs, _buildChips(msgs, [
+        { label: ws.label, fn: ws.fn },
+        { label: deal.label, fn: deal.fn },
+        { label: find.label, fn: find.fn },
+      ]));
     }
   }
 
+  // ── After any interaction — weave W&S and deal back in with fresh language ───
   function _cncgBackChip(msgs) {
-    _cncgAddChips(msgs, [
-      { label: '🤝 Get me a deal', fn: function () { _cncgDeals(msgs); }},
-      { label: '🔍 Find something else', fn: function () { _cncgFind(msgs); }},
-    ]);
+    var ws = _chipWatchShop(), deal = _chipDeal();
+    _cncgAddChips(msgs, _buildChips(msgs, [
+      { label: ws.label, fn: ws.fn },
+      { label: deal.label, fn: deal.fn },
+    ]));
   }
 
   // ── Chip renderer — removes row after tap, adds user bubble ─────────────────
@@ -2505,10 +2537,11 @@
       if (videos.length <= 1) vnext.style.display = 'none';
       vwrap.appendChild(vprev); vwrap.appendChild(vnext);
       msgs.appendChild(vwrap);
-      _cncgAddChips(msgs, [
-        { label: '🤝 Make an offer on a product', fn: function () { _cncgDeals(msgs); }},
-        { label: '🔍 Find something specific', fn: function () { _cncgFind(msgs); }},
-      ]);
+      var deal = _chipDeal(), find = _chipFind();
+      _cncgAddChips(msgs, _buildChips(msgs, [
+        { label: deal.label, fn: deal.fn },
+        { label: find.label, fn: find.fn },
+      ]));
       msgs.scrollTop = msgs.scrollHeight;
     }, 550);
   }
@@ -2590,10 +2623,11 @@
 
       if (!products.length) {
         _cncgAddBot(msgs, "I couldn't pull the product list right now — try Browse by collection instead!");
-        _cncgAddChips(msgs, [
-          { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); }},
-          { label: '🔍 Search for something', fn: function () { _cncgFind(msgs); }},
-        ]);
+        var ws = _chipWatchShop(), find = _chipFind();
+        _cncgAddChips(msgs, _buildChips(msgs, [
+          { label: ws.label, fn: ws.fn },
+          { label: find.label, fn: find.fn },
+        ]));
         return;
       }
 
