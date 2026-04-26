@@ -2150,10 +2150,13 @@
         badge.textContent = Math.round((1 - price / was) * 100) + '% off'; pr.appendChild(badge);
       }
 
-      // Card tap → open product page
+      // Card tap → open product page with negotiate modal pre-opened
       var handle = p.handle || '';
       (function (h) {
-        if (h) card.onclick = function (e) { if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return; window.open('/products/' + h + '?btg_neg=1', '_blank'); };
+        if (h) card.onclick = function (e) {
+          if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+          window.location.href = '/products/' + h + '?btg_neg=1';
+        };
       })(handle);
 
       var btns = document.createElement('div'); btns.className = '_btgv_cncg_pcard_btns';
@@ -2190,9 +2193,15 @@
       row.appendChild(cartBtn); row.appendChild(buyBtn);
       btns.appendChild(row);
 
-      // Row 2: Make an offer (full width)
+      // Row 2: Make an offer (full width) → navigate to product page with negotiate pre-opened
       var negBtn = document.createElement('button'); negBtn.className = '_btgv_cncg_pcard_neg'; negBtn.textContent = '🤝 Make an offer';
-      negBtn.onclick = function (e) { e.stopPropagation(); closeConcierge(); openNegotiateModal(p); };
+      (function (h) {
+        negBtn.onclick = function (e) {
+          e.stopPropagation();
+          if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+          else { closeConcierge(); openNegotiateModal(p); }
+        };
+      })(handle);
       btns.appendChild(negBtn);
 
       body.appendChild(nm); body.appendChild(pr); body.appendChild(btns);
@@ -2234,7 +2243,11 @@
           if (!vid) return;
           addToCart(vid, function (ok) { if (ok) { closeConcierge(); window.location.href = '/checkout'; } });
         }},
-        { label: '🤝 Make an offer', fn: function () { closeConcierge(); openNegotiateModal(firstP); }}
+        { label: '🤝 Make an offer', fn: function () {
+          var h = firstP && (firstP.handle || '');
+          if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+          else { closeConcierge(); openNegotiateModal(firstP); }
+        }}
       ];
       chips.forEach(function (c) {
         var ch = document.createElement('button'); ch.className = '_btgv_cncg_chip'; ch.textContent = c.label;
@@ -2445,7 +2458,12 @@
                 else { bBtn.textContent = '⚡ Buy Now'; bBtn.disabled = false; }
               });
             };
-            nBtn.onclick = function (e) { e.stopPropagation(); closeConcierge(); openNegotiateModal(fp); };
+            nBtn.onclick = function (e) {
+              e.stopPropagation();
+              var h = fp && (fp.handle || '');
+              if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+              else { closeConcierge(); openNegotiateModal(fp); }
+            };
           })(variantId, cartBtn, buyBtn, negBtn, firstProduct);
           prow.appendChild(cartBtn); prow.appendChild(buyBtn);
           panel.appendChild(prow); panel.appendChild(negBtn);
