@@ -191,15 +191,28 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
 });
 
 // Save customer contact captured via the price-gate UI (no auth needed — neg ID is the token)
+// Accepts either { contact: "..." } (single smart field) or legacy { email, phone }
 router.put('/negotiate/:id/contact', widgetCors, async (req, res) => {
-  const { email, phone } = req.body;
-  if (!email && !phone) return res.status(400).json({ error: 'email or phone required' });
+  const { email, phone, contact } = req.body;
+
+  let resolvedEmail = email ? email.trim() : null;
+  let resolvedPhone = phone ? phone.trim() : null;
+
+  if (contact) {
+    const val = contact.trim();
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+    if (isEmail) resolvedEmail = val;
+    else resolvedPhone = val;
+  }
+
+  if (!resolvedEmail && !resolvedPhone) return res.status(400).json({ error: 'contact required' });
+
   const updates = {};
-  if (email) updates.customer_email = email.toLowerCase().trim();
-  if (phone) updates.customer_whatsapp = phone.trim();
+  if (resolvedEmail) updates.customer_email = resolvedEmail.toLowerCase();
+  if (resolvedPhone) updates.customer_whatsapp = resolvedPhone; // column reused for phone/SMS
   const { error } = await supabase.from('negotiations').update(updates).eq('id', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
+  res.json({ ok: true, type: resolvedEmail ? 'email' : 'phone' });
 });
 
 // Debug endpoint — walks through opening flow step by step, returns exact failure point

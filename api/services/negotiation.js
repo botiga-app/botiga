@@ -7,6 +7,7 @@ const { checkRepeatNegotiator } = require('./fingerprint');
 const { trackNegotiationEvent } = require('../lib/posthog');
 const { createShopifyDiscountCode } = require('./shopify');
 const { sendDealEmail } = require('./email');
+const { sendDealSms } = require('./sms');
 const { resolveProductRules } = require('./rules');
 
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
@@ -121,8 +122,9 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     properties: { list_price: negotiation.list_price, deal_price: dealPrice, broker_fee: fees.brokerFee }
   });
 
-  // Send deal email — must await so Vercel doesn't terminate before SMTP completes
+  // Send deal notification — email if email captured, SMS if phone captured
   const emailTo = negotiation.customer_email || null;
+  const phoneTo = negotiation.customer_whatsapp || null; // stored as phone (not WhatsApp)
   if (emailTo) {
     try {
       await sendDealEmail({
@@ -138,8 +140,20 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     } catch (err) {
       console.error('[Email] strikeDeal send failed:', err.message);
     }
+  } else if (phoneTo) {
+    try {
+      await sendDealSms({
+        to: phoneTo,
+        productName: negotiation.product_name,
+        dealPrice,
+        discountCode,
+        checkoutUrl
+      });
+    } catch (err) {
+      console.error('[SMS] strikeDeal send failed:', err.message);
+    }
   } else {
-    console.warn('[Email] No customer_email on negotiation', negotiation.id);
+    console.warn('[Notify] No contact on negotiation', negotiation.id);
   }
 
   return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt, emailSentTo: emailTo };

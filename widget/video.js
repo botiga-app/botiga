@@ -836,33 +836,33 @@
       });
       g.innerHTML =
         '<div style="font-size:11px;font-weight:600;color:#6366f1;letter-spacing:0.03em;margin-bottom:8px">🔒 I found a private price on this</div>' +
-        '<div style="line-height:1.6;margin-bottom:14px">' + blurred + '</div>' +
-        '<form id="_btg_f" style="display:flex;gap:6px;margin-bottom:6px">' +
-          '<input id="_btg_e" type="email" placeholder="Email me my private price" autocomplete="email"' +
-          ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;font-family:inherit" />' +
-          '<button type="submit" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Unlock →</button>' +
+        '<div style="line-height:1.6;margin-bottom:12px">' + blurred + '</div>' +
+        '<div style="font-size:12px;color:#555;margin-bottom:8px">Drop your email or phone number and I\'ll send you the deal the moment it\'s locked in.</div>' +
+        '<form id="_btg_f" style="display:flex;gap:6px;margin-bottom:8px">' +
+          '<input id="_btg_c" type="text" placeholder="Email or phone number" autocomplete="email"' +
+          ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:9px 11px;font-size:13px;outline:none;font-family:inherit;transition:border-color .15s" />' +
+          '<button type="submit" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">Unlock →</button>' +
         '</form>' +
-        '<div style="text-align:center;font-size:10px;color:#bbb;margin:6px 0">— or —</div>' +
-        '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-          '<input id="_btg_w" type="tel" placeholder="WhatsApp number" autocomplete="tel"' +
-          ' style="flex:1;min-width:0;border:1.5px solid #e5e5e5;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;font-family:inherit" />' +
-          '<button type="button" id="_btg_ws" style="background:#25D366;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Send →</button>' +
-        '</div>' +
-        '<div style="font-size:10px;color:#ccc">No spam. Just your deal.</div>';
+        '<div id="_btg_err" style="font-size:11px;color:#ef4444;min-height:14px;margin-bottom:4px"></div>' +
+        '<div style="font-size:10px;color:#bbb">🔒 No spam. Just your deal — delivered instantly.</div>';
       msgsEl.appendChild(g); msgsEl.scrollTop = msgsEl.scrollHeight;
 
       setLoading(false); sendBtn.disabled = true; inp.disabled = true;
       requestAnimationFrame(function () {
-        var emailInp = shadow.querySelector('#_btg_e');
-        if (emailInp) emailInp.focus();
+        var ci = shadow.querySelector('#_btg_c');
+        if (ci) {
+          ci.focus();
+          ci.addEventListener('focus', function () { ci.style.borderColor = '#6366f1'; });
+          ci.addEventListener('blur', function () { ci.style.borderColor = '#e5e5e5'; });
+        }
       });
 
-      function doUnlock(contactPayload, triggerEl) {
+      function doUnlock(contact, triggerEl) {
         if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = '...'; }
         fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(contactPayload)
+          body: JSON.stringify({ contact: contact })
         }).then(function () {
           shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
           setTimeout(function () {
@@ -872,6 +872,7 @@
             setTimeout(function () { inp.focus(); }, 80);
           }, 900);
         }).catch(function () {
+          // Even on error, unblur and continue — don't block the user
           shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
           setTimeout(function () {
             g.remove();
@@ -883,15 +884,15 @@
 
       shadow.querySelector('#_btg_f').addEventListener('submit', function (ev) {
         ev.preventDefault();
-        var em = shadow.querySelector('#_btg_e').value.trim();
-        if (!em || em.indexOf('@') < 0) return;
-        doUnlock({ email: em }, shadow.querySelector('#_btg_f button[type=submit]'));
-      });
-
-      shadow.querySelector('#_btg_ws').addEventListener('click', function () {
-        var ph = shadow.querySelector('#_btg_w').value.trim();
-        if (!ph) { shadow.querySelector('#_btg_w').focus(); return; }
-        doUnlock({ phone: ph }, this);
+        var val = shadow.querySelector('#_btg_c').value.trim();
+        var errEl = shadow.querySelector('#_btg_err');
+        if (!val) { errEl.textContent = 'Please enter your email or phone number.'; return; }
+        // Basic validation: must look like email or have enough digits for a phone
+        var isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+        var isPhone = /^[\+\d][\d\s\-().]{6,}$/.test(val);
+        if (!isEmail && !isPhone) { errEl.textContent = 'Please enter a valid email or phone number.'; return; }
+        errEl.textContent = '';
+        doUnlock(val, shadow.querySelector('#_btg_f button[type=submit]'));
       });
     }
 
@@ -2152,7 +2153,7 @@
       // Card tap → open product page
       var handle = p.handle || '';
       (function (h) {
-        if (h) card.onclick = function (e) { if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return; window.open('/products/' + h, '_blank'); };
+        if (h) card.onclick = function (e) { if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return; window.open('/products/' + h + '?btg_neg=1', '_blank'); };
       })(handle);
 
       var btns = document.createElement('div'); btns.className = '_btgv_cncg_pcard_btns';
@@ -2840,6 +2841,37 @@
     if (path === '/cart' || path.startsWith('/cart/')) { handleCartPage(); return; }
     injectStyles();
     rtGetConfig(null); // fetch bot config (bot_name, bot_greeting) from API eagerly
+
+    // Auto-open negotiation modal if landing from a product card click
+    (function () {
+      try {
+        var params = new URL(window.location.href).searchParams;
+        if (params.get('btg_neg') === '1' && window.location.pathname.indexOf('/products/') !== -1) {
+          var handle = window.location.pathname.split('/products/')[1].split('?')[0].split('#')[0];
+          if (!handle) return;
+          fetch('/products/' + handle + '.json')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data || !data.product) return;
+              var p = data.product;
+              var v = p.variants && p.variants[0];
+              if (!v) return;
+              // Small delay so page paint finishes before modal appears
+              setTimeout(function () {
+                openNegotiateModal({
+                  shopify_product_id: String(p.id),
+                  product_name: p.title,
+                  price: v.price,
+                  compare_at_price: v.compare_at_price || '0',
+                  handle: p.handle,
+                  image_url: (p.images && p.images[0] && p.images[0].src) || '',
+                  variant_id: v.id,
+                });
+              }, 600);
+            }).catch(function () {});
+        }
+      } catch (e) {}
+    })();
 
     // Read deep-link param — open the right viewer after data loads
     var deepId = null;
