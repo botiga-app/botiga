@@ -18,6 +18,7 @@
   var BOT_GREETING = script.getAttribute('data-greeting') || "Hi! 👋 What can I help you find today?";
   var BOT_PERSONALITY = script.getAttribute('data-bot-personality') || 'salesy';
   var BOT_AVATAR = script.getAttribute('data-bot-avatar') || null;
+  var AUTO_OPEN_DELAY = script.hasAttribute('data-auto-open') ? parseInt(script.getAttribute('data-auto-open'), 10) : 2000;
 
   if (!API_KEY) return;
 
@@ -43,6 +44,7 @@
         if (d.bot_greeting && !script.getAttribute('data-greeting')) BOT_GREETING = d.bot_greeting;
         if (d.bot_avatar_url && !script.getAttribute('data-bot-avatar')) BOT_AVATAR = d.bot_avatar_url;
         if (d.bot_personality && !script.getAttribute('data-bot-personality')) BOT_PERSONALITY = d.bot_personality;
+        if (d.auto_open_delay !== undefined && d.auto_open_delay !== null && !script.hasAttribute('data-auto-open')) AUTO_OPEN_DELAY = d.auto_open_delay;
         if (cb && d.supabase_url && d.supabase_anon_key) cb(d);
       }).catch(function () {});
   }
@@ -376,20 +378,16 @@
       // View count overlay on video slide
       '._btgv_views{position:absolute;top:calc(env(safe-area-inset-top,16px) + 52px);right:12px;z-index:7;background:rgba(0,0,0,.48);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;padding:4px 10px 4px 8px;border-radius:20px;pointer-events:none}',
       '._btgv_views svg{width:14px;height:14px;flex-shrink:0;opacity:.9}',
-      // Floating launcher
-      '#_btgv_launcher{position:fixed;bottom:24px;right:20px;z-index:99998;display:flex;flex-direction:row-reverse;align-items:flex-end;gap:8px;cursor:pointer;-webkit-tap-highlight-color:transparent}',
-      '._btgv_lstack{display:flex;align-items:flex-end}',
-      '._btgv_lring{border-radius:50%;background:linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%);flex-shrink:0}',
-      '._btgv_lring_main{width:60px;height:60px;padding:3px;animation:_btgv_lpulse 2s ease-in-out infinite}',
-      '._btgv_lring_mid{width:44px;height:44px;padding:2.5px;margin-left:-14px;animation:_btgv_lpulse 2s ease-in-out infinite;animation-delay:.35s}',
-      '._btgv_lring_sm{width:34px;height:34px;padding:2px;margin-left:-12px;animation:_btgv_lpulse 2s ease-in-out infinite;animation-delay:.7s}',
-      '._btgv_lring_inner{width:100%;height:100%;border-radius:50%;background:#111;border:2.5px solid #fff;display:flex;align-items:center;justify-content:center;overflow:hidden}',
-      '._btgv_lring_inner video,._btgv_lring_inner img{width:100%;height:100%;object-fit:cover;border-radius:50%}',
-      '._btgv_lring_inner span{font-size:22px;line-height:1}',
-      '._btgv_lring_mid ._btgv_lring_inner{border-width:2px}',
-      '._btgv_lring_sm ._btgv_lring_inner{border-width:1.5px}',
-      '._btgv_llabel{background:#111;color:#fff;font-size:11px;font-weight:700;letter-spacing:.3px;padding:6px 12px;border-radius:99px;white-space:nowrap;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.3);user-select:none}',
-      '@keyframes _btgv_lpulse{0%,100%{box-shadow:0 0 0 0 rgba(220,39,67,.5),0 4px 14px rgba(220,39,67,.3)}50%{box-shadow:0 0 0 10px rgba(220,39,67,.0),0 4px 22px rgba(220,39,67,.55)}}',
+      // Floating launcher — chat bubble button with pulsating glow
+      '#_btgv_launcher{position:fixed;bottom:24px;right:20px;z-index:99998;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;-webkit-tap-highlight-color:transparent}',
+      '#_btgv_launcher_btn{width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;animation:_btgv_lpulse 2.2s ease-in-out infinite;box-shadow:0 4px 18px rgba(99,102,241,.55);transition:transform .15s;-webkit-tap-highlight-color:transparent;padding:0}',
+      '#_btgv_launcher_btn:hover{transform:scale(1.08)}',
+      '#_btgv_launcher_btn:active{transform:scale(.94);animation:none}',
+      '#_btgv_launcher_btn svg{width:28px;height:28px;fill:#fff;display:block}',
+      '._btgv_lbadge{position:absolute;top:-3px;right:-3px;width:14px;height:14px;background:#22c55e;border-radius:50%;border:2.5px solid #fff;animation:_btgv_cncg_pulse 2s ease-in-out infinite}',
+      '#_btgv_launcher_wrap{position:relative;width:60px;height:60px}',
+      '._btgv_llabel{background:rgba(15,15,25,.92);color:#fff;font-size:11px;font-weight:600;letter-spacing:.2px;padding:5px 11px;border-radius:99px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none;backdrop-filter:blur(8px)}',
+      '@keyframes _btgv_lpulse{0%,100%{box-shadow:0 4px 18px rgba(99,102,241,.55),0 0 0 0 rgba(99,102,241,.4)}55%{box-shadow:0 4px 24px rgba(99,102,241,.65),0 0 0 12px rgba(99,102,241,0)}}',
       // Preview card
       '#_btgv_preview{position:fixed;bottom:100px;right:20px;z-index:99997;width:200px;border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateY(16px) scale(.95);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.34,1.56,.64,1),opacity .2s}',
       '#_btgv_preview.open{transform:translateY(0) scale(1);opacity:1;pointer-events:all}',
@@ -420,10 +418,17 @@
       '._btgv_pbtn_neg{background:rgba(236,72,153,.9);color:#fff}',
 
       // ─── Concierge chat ───────────────────────────────────────────────────────
-      '#_btgv_cncg{position:fixed;bottom:90px;right:20px;z-index:99997;width:390px;background:#0c0c14;border-radius:20px;border:1px solid rgba(255,255,255,.06);box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden;transform:translateY(20px) scale(0.96);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .22s ease}',
+      // Widget window — portrait ratio (taller than wide) on all screen sizes
+      '#_btgv_cncg{position:fixed;bottom:16px;right:16px;z-index:99997;width:360px;height:min(640px,calc(100svh - 100px));background:#0c0c14;border-radius:20px;border:1px solid rgba(255,255,255,.06);box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden;transform:translateY(20px) scale(0.96);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .22s ease}',
       '#_btgv_cncg.open{transform:translateY(0) scale(1);opacity:1;pointer-events:all}',
-      '@media(max-width:440px){#_btgv_cncg{width:calc(100vw - 16px);right:8px;bottom:72px;border-radius:16px}}',
-      '@media(max-width:440px){._btgv_cncg_msgs{max-height:calc(100svh - 240px);min-height:220px}}',
+      '#_btgv_cncg ._btgv_cncg_msgs{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 12px 8px;display:flex;flex-direction:column;gap:9px;min-height:0;scrollbar-width:none}',
+      // expanded: wider but still portrait
+      '#_btgv_cncg.expanded{width:min(420px,calc(100vw - 32px));height:min(720px,calc(100svh - 40px))}',
+      // fullscreen
+      '#_btgv_cncg.fullscreen{inset:0;width:100vw;height:100svh;border-radius:0;transition:none}',
+      '@media(max-width:440px){#_btgv_cncg{width:calc(100vw - 16px);right:8px;bottom:8px;height:min(640px,calc(100svh - 80px));border-radius:16px}}',
+      '._btgv_cncg_expand{width:26px;height:26px;border:none;background:rgba(255,255,255,.07);border-radius:50%;color:rgba(255,255,255,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-right:2px}',
+      '._btgv_cncg_expand:hover{background:rgba(255,255,255,.13)}',
       // shimmer
       '._btgv_cncg_shim{height:3px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899,#f59e0b,#6366f1);background-size:200% 100%;animation:_btgv_cncg_shim 2.5s linear infinite;flex-shrink:0}',
       '@keyframes _btgv_cncg_shim{0%{background-position:0% 0%}100%{background-position:200% 0%}}',
@@ -437,8 +442,7 @@
       '._btgv_cncg_title{color:#fff;font-size:13px;font-weight:700}',
       '._btgv_cncg_sub{color:rgba(255,255,255,.38);font-size:10px;margin-top:1px}',
       '._btgv_cncg_x{width:26px;height:26px;border:none;background:rgba(255,255,255,.07);border-radius:50%;color:rgba(255,255,255,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}',
-      // messages area
-      '._btgv_cncg_msgs{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 12px 8px;display:flex;flex-direction:column;gap:9px;min-height:260px;max-height:460px;scrollbar-width:none}',
+      // messages area — fills remaining widget height, no min/max (widget height controls portrait ratio)
       '._btgv_cncg_msgs::-webkit-scrollbar{display:none}',
       // bubbles
       '._btgv_cncg_bot{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:13px;line-height:1.55;padding:10px 13px;border-radius:16px 16px 16px 4px;max-width:88%}',
@@ -457,22 +461,38 @@
       '._btgv_cncg_chip{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.82);font-size:12px;font-weight:500;padding:6px 12px;border-radius:99px;cursor:pointer;white-space:nowrap;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:background .15s,border-color .15s}',
       '._btgv_cncg_chip:active{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.25)}',
       // video carousel (inline in chat)
-      '._btgv_cncg_vcarousel{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}',
+      '._btgv_cncg_vcarouselw{position:relative;width:100%;padding:0 4px;box-sizing:border-box}',
+      '._btgv_cncg_vcarousel{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
       '._btgv_cncg_vcarousel::-webkit-scrollbar{display:none}',
-      '._btgv_cncg_vtile{flex-shrink:0;width:140px;height:220px;border-radius:14px;overflow:hidden;position:relative;cursor:pointer;background:#111;-webkit-tap-highlight-color:transparent;transition:transform .15s;scroll-snap-align:start}',
-      '._btgv_cncg_vtile:active{transform:scale(.97)}',
-      '._btgv_cncg_vtile video,._btgv_cncg_vtile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}',
-      '._btgv_cncg_vtile_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.1) 50%,transparent 100%)}',
-      '._btgv_cncg_vtile_foot{position:absolute;bottom:0;left:0;right:0;padding:10px 9px;display:flex;flex-direction:column;gap:6px}',
-      '._btgv_cncg_vtile_title{color:#fff;font-size:11px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
-      '._btgv_cncg_vtile_watch{background:rgba(255,255,255,.18);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:10px;font-weight:700;padding:5px 10px;border-radius:99px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center;letter-spacing:.3px}',
+      // tile: fixed 220px wide so height (300px) > width → always portrait on any screen
+      '._btgv_cncg_vtile{flex-shrink:0;width:220px;border-radius:14px;overflow:hidden;position:relative;background:#111;-webkit-tap-highlight-color:transparent;scroll-snap-align:start}',
+      '._btgv_cncg_vtile_media{position:relative;width:100%;height:300px;overflow:hidden}',
+      '._btgv_cncg_vtile_media video,._btgv_cncg_vtile_media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}',
+      '._btgv_cncg_vtile_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.1) 50%,rgba(0,0,0,.25) 100%)}',
+      // views — top left
+      '._btgv_cncg_vtile_views{position:absolute;top:8px;left:10px;display:flex;align-items:center;gap:3px;color:#fff;font-size:10px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.6)}',
+      '._btgv_cncg_vtile_views svg{width:12px;height:12px;opacity:.9}',
+      // right rail — likes, comments, share (vertically stacked, anchored to bottom of media)
+      '._btgv_cncg_vtile_rail{position:absolute;right:8px;bottom:52px;display:flex;flex-direction:column;align-items:center;gap:10px}',
+      '._btgv_cncg_vtile_action{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;-webkit-tap-highlight-color:transparent}',
+      '._btgv_cncg_vtile_action_ic{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;font-size:15px}',
+      '._btgv_cncg_vtile_action_lbl{color:#fff;font-size:9px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.7)}',
+      // title at bottom-left of media (leaves room for rail on right)
+      '._btgv_cncg_vtile_foot{position:absolute;bottom:0;left:0;right:48px;padding:10px 10px 12px;display:flex;flex-direction:column;gap:0}',
+      '._btgv_cncg_vtile_title{color:#fff;font-size:11px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 4px rgba(0,0,0,.6)}',
+      // white CTA panel below the video
+      '._btgv_cncg_vtile_panel{background:#fff;padding:8px 10px 10px;display:flex;flex-direction:column;gap:5px}',
+      '._btgv_cncg_vtile_prow{display:flex;gap:5px}',
+      '._btgv_cncg_vtile_pcart{flex:1;background:#111;border:none;border-radius:8px;color:#fff;font-size:10px;font-weight:700;padding:8px 3px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center;white-space:nowrap}',
+      '._btgv_cncg_vtile_pbuy{flex:1;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:8px;color:#fff;font-size:10px;font-weight:700;padding:8px 3px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center;white-space:nowrap}',
+      '._btgv_cncg_vtile_pneg{width:100%;background:rgba(236,72,153,.9);border:none;border-radius:8px;color:#fff;font-size:10px;font-weight:700;padding:7px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center}',
       '._btgv_cncg_vtile_title{position:absolute;bottom:0;left:0;right:0;padding:4px 6px;color:#fff;font-size:9px;font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       // product card carousel — portrait cards, scroll-snap, arrow nav
       '._btgv_cncg_pcardsw{position:relative;width:100%;padding:0 4px;box-sizing:border-box}',
       '._btgv_cncg_pcards{display:flex;gap:10px;overflow-x:auto;overflow-y:visible;padding:4px 4px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
       '._btgv_cncg_pcards::-webkit-scrollbar{display:none}',
-      '._btgv_cncg_pcard{flex-shrink:0;width:calc(100% - 44px);background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;scroll-snap-align:start;box-shadow:0 4px 16px rgba(0,0,0,.22);position:relative;cursor:pointer}',
-      '._btgv_cncg_pcard_img{width:100%;height:220px;object-fit:cover;object-position:50% 20%;display:block;background:#f3f4f6;flex-shrink:0}',
+      '._btgv_cncg_pcard{flex-shrink:0;width:220px;background:#fff;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;scroll-snap-align:start;box-shadow:0 4px 16px rgba(0,0,0,.22);position:relative;cursor:pointer}',
+      '._btgv_cncg_pcard_img{width:100%;height:260px;object-fit:cover;object-position:50% 20%;display:block;background:#f3f4f6;flex-shrink:0}',
       '._btgv_cncg_pcard_body{padding:10px 10px 12px;display:flex;flex-direction:column;gap:4px;background:#fff}',
       '._btgv_cncg_pcard_nm{color:#111;font-size:12px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}',
       '._btgv_cncg_pcard_pr{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
@@ -1893,50 +1913,23 @@
     launcherEl = document.createElement('div');
     launcherEl.id = '_btgv_launcher';
 
-    var stack = document.createElement('div');
-    stack.className = '_btgv_lstack';
+    // Wrapper holds button + green badge dot
+    var wrap = document.createElement('div');
+    wrap.id = '_btgv_launcher_wrap';
 
-    function makeRing(cls, previewSrc) {
-      var ring = document.createElement('div');
-      ring.className = '_btgv_lring ' + cls;
-      var inner = document.createElement('div');
-      inner.className = '_btgv_lring_inner';
-      if (previewSrc) {
-        var img = document.createElement('img');
-        img.src = previewSrc;
-        img.alt = '';
-        inner.appendChild(img);
-      } else {
-        var icon = document.createElement('span');
-        icon.textContent = '▶';
-        inner.appendChild(icon);
-      }
-      ring.appendChild(inner);
-      return ring;
-    }
+    // Chat bubble SVG button
+    var btn = document.createElement('button');
+    btn.id = '_btgv_launcher_btn';
+    btn.setAttribute('aria-label', 'Open shopping assistant');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4C2.9 2 2 2.9 2 4v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>';
 
-    // Pull thumbnail URLs from first 3 videos that have one
-    var thumbs = [];
-    feedItems.forEach(function (v) {
-      if (v._type !== 'product' && v.thumbnail_url && thumbs.length < 3) thumbs.push(v.thumbnail_url);
-    });
-    // Fallback: use collection thumbnails
-    if (thumbs.length < 3) {
-      cols.forEach(function (c) {
-        if (c.thumbnail_url && thumbs.length < 3) thumbs.push(c.thumbnail_url);
-      });
-    }
+    // Green online badge
+    var badge = document.createElement('div');
+    badge.className = '_btgv_lbadge';
 
-    stack.appendChild(makeRing('_btgv_lring_sm', thumbs[2] || null));
-    stack.appendChild(makeRing('_btgv_lring_mid', thumbs[1] || null));
-    stack.appendChild(makeRing('_btgv_lring_main', thumbs[0] || null));
-
-    var label = document.createElement('div');
-    label.className = '_btgv_llabel';
-    label.textContent = 'Watch & Shop';
-
-    launcherEl.appendChild(stack);
-    launcherEl.appendChild(label);
+    wrap.appendChild(btn);
+    wrap.appendChild(badge);
+    launcherEl.appendChild(wrap);
 
     launcherEl.onclick = function () {
       if (_cncgOpen) { closeConcierge(); } else { openConcierge(); }
@@ -1944,6 +1937,13 @@
 
     document.body.appendChild(launcherEl);
     buildConcierge(feedItems, cols);
+
+    // Auto-open after configured delay (default 2s; set to -1 to disable)
+    if (AUTO_OPEN_DELAY >= 0) {
+      setTimeout(function () {
+        if (!_cncgOpen) openConcierge();
+      }, AUTO_OPEN_DELAY);
+    }
   }
 
   // ─── Concierge chat ──────────────────────────────────────────────────────────
@@ -1971,9 +1971,27 @@
     nc.appendChild(t1); nc.appendChild(t2);
     var menuBtn = document.createElement('button'); menuBtn.className = '_btgv_cncg_menubtn'; menuBtn.innerHTML = '&#9776;';
     menuBtn.onclick = function (e) { e.stopPropagation(); _cncgToggleMenu(); };
+    // Expand / fullscreen toggle — cycles: normal → expanded → fullscreen → normal
+    var expandBtn = document.createElement('button'); expandBtn.className = '_btgv_cncg_expand';
+    expandBtn.innerHTML = '&#x26F6;'; // ⛶
+    expandBtn.title = 'Expand';
+    (function () {
+      var state = 0; // 0=normal, 1=expanded, 2=fullscreen
+      var icons = ['&#x26F6;', '&#x2922;', '&#x2921;']; // ⛶ ↢ ↡
+      expandBtn.onclick = function (e) {
+        e.stopPropagation();
+        state = (state + 1) % 3;
+        _cncgEl.classList.remove('expanded', 'fullscreen');
+        if (state === 1) { _cncgEl.classList.add('expanded'); expandBtn.title = 'Full screen'; }
+        else if (state === 2) { _cncgEl.classList.add('fullscreen'); expandBtn.title = 'Restore'; }
+        else { expandBtn.title = 'Expand'; }
+        expandBtn.innerHTML = icons[state];
+        if (_cncgEl._msgs) _cncgEl._msgs.scrollTop = _cncgEl._msgs.scrollHeight;
+      };
+    })();
     var xBtn = document.createElement('button'); xBtn.className = '_btgv_cncg_x'; xBtn.innerHTML = '&#x2715;';
     xBtn.onclick = function (e) { e.stopPropagation(); closeConcierge(); };
-    hdr.appendChild(av); hdr.appendChild(nc); hdr.appendChild(menuBtn); hdr.appendChild(xBtn);
+    hdr.appendChild(av); hdr.appendChild(nc); hdr.appendChild(menuBtn); hdr.appendChild(expandBtn); hdr.appendChild(xBtn);
     _cncgEl.appendChild(hdr);
 
     // Nav menu panel (hidden by default, overlays msgs)
@@ -2023,6 +2041,51 @@
     document.body.appendChild(_cncgEl);
   }
 
+  // ── Detect what page the shopper is on ──────────────────────────────────────
+  function _getPageContext() {
+    var path = window.location.pathname;
+    var ctx = { type: 'home', title: null, extra: null };
+
+    var productMatch = path.match(/\/products\/([^/?#]+)/);
+    var collectionMatch = path.match(/\/collections\/([^/?#]+)/);
+
+    if (productMatch) {
+      ctx.type = 'product';
+      // Try meta tag first, then h1
+      var ogTitle = document.querySelector('meta[property="og:title"]');
+      var h1 = document.querySelector('h1');
+      ctx.title = (ogTitle && ogTitle.content) ? ogTitle.content.split('–')[0].split('|')[0].trim()
+        : (h1 ? h1.textContent.trim() : null);
+      // Try to get price
+      var priceEl = document.querySelector('[class*="price"]:not([class*="compare"]):not([class*="was"])');
+      ctx.extra = priceEl ? priceEl.textContent.trim().replace(/\s+/g, ' ') : null;
+    } else if (collectionMatch) {
+      ctx.type = 'collection';
+      var h1c = document.querySelector('h1');
+      ctx.title = h1c ? h1c.textContent.trim() : collectionMatch[1].replace(/-/g, ' ');
+    } else if (path === '/cart' || path.indexOf('/cart') === 0) {
+      ctx.type = 'cart';
+    }
+
+    return ctx;
+  }
+
+  function _buildContextGreeting(ctx) {
+    if (ctx.type === 'product' && ctx.title) {
+      var msg = 'You\'re looking at "' + ctx.title + '"';
+      if (ctx.extra) msg += ' — ' + ctx.extra;
+      msg += '. Want the best deal, or have questions? I\'m here! 💬';
+      return msg;
+    }
+    if (ctx.type === 'collection' && ctx.title) {
+      return 'Browsing ' + ctx.title + '? I can help you find the perfect pick or snag a deal. 🛍️';
+    }
+    if (ctx.type === 'cart') {
+      return 'Your cart is ready! Want to negotiate a better price before checkout? I can help. 🤝';
+    }
+    return BOT_GREETING;
+  }
+
   function openConcierge() {
     if (!_cncgEl) return;
     _cncgOpen = true;
@@ -2030,17 +2093,27 @@
     if (!_cncgEl._greeted) {
       _cncgEl._greeted = true;
       var msgs = _cncgEl._msgs;
+      var ctx = _getPageContext();
+      // Step 1: greeting (300ms)
       setTimeout(function () {
-        _cncgAddBot(msgs, BOT_GREETING);
+        var greet = _buildContextGreeting(ctx);
+        _cncgAddBot(msgs, greet);
+      }, 300);
+      // Step 2: introduce as shopping assistant (1100ms)
+      setTimeout(function () {
+        _cncgAddBot(msgs, 'I\'m ' + BOT_NAME + ', your AI shopping assistant — I\'ll help you find the perfect product, snag a deal, or browse the full catalog. 🛍️');
+      }, 1100);
+      // Step 3: show action chips (1900ms)
+      setTimeout(function () {
         _cncgMainMenu(msgs);
-      }, 200);
+      }, 1900);
     }
   }
 
   function closeConcierge() {
     if (!_cncgEl) return;
     _cncgOpen = false;
-    _cncgEl.classList.remove('open');
+    _cncgEl.classList.remove('open', 'expanded', 'fullscreen');
   }
 
   // ── Nav menu toggle ──────────────────────────────────────────────────────────
@@ -2129,7 +2202,7 @@
     // Wrap carousel in a positioned container with prev/next arrows
     var wrapW = document.createElement('div'); wrapW.className = '_btgv_cncg_pcardsw';
     wrapW.appendChild(wrap);
-    var cardStep = 230; // 220px card + 10px gap
+    var cardStep = 230; // 220px card + 10px gap — matches video tiles
     var prevBtn = document.createElement('button'); prevBtn.className = '_btgv_cncg_pscrl _btgv_cncg_pscrl_l';
     prevBtn.innerHTML = '&#8249;'; prevBtn.style.display = 'none';
     prevBtn.onclick = function (e) { e.stopPropagation(); wrap.scrollBy({ left: -cardStep, behavior: 'smooth' }); };
@@ -2239,9 +2312,9 @@
   function _cncgMainMenu(msgs) {
     _cncgAddChips(msgs, [
       { label: '🎬 Watch & Shop', fn: function () { _cncgWatchShop(msgs); } },
-      { label: '🤝 I want a deal', fn: function () { _cncgDeals(msgs); } },
-      { label: '🗂 Browse Collections', fn: function () { _cncgBrowse(msgs); } },
-      { label: '🔍 Help me find...', fn: function () { _cncgFind(msgs); } },
+      { label: '🤝 Get me a deal', fn: function () { _cncgDeals(msgs); } },
+      { label: '🔍 Find something', fn: function () { _cncgFind(msgs); } },
+      { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); } },
     ]);
   }
 
@@ -2277,33 +2350,123 @@
         _cncgAddBot(msgs, "No videos uploaded yet. Check back soon! 🎬");
         _cncgBackChip(msgs); return;
       }
-      _cncgAddBot(msgs, "Here's what's trending right now 🔥 Tap to watch!");
+      _cncgAddBot(msgs, "Here's what's trending right now 🔥");
       var carousel = document.createElement('div'); carousel.className = '_btgv_cncg_vcarousel';
       videos.forEach(function (v) {
         var vIdx = feedItems.indexOf(v);
+        var products = v.video_product_tags || [];
+        var firstProduct = products[0] || null;
+
         var tile = document.createElement('div'); tile.className = '_btgv_cncg_vtile';
-        // Thumbnail first, then swap to video on hover/tap
+
+        // ── Media area ──
+        var media = document.createElement('div'); media.className = '_btgv_cncg_vtile_media';
+
         if (v.thumbnail_url) {
           var thumb = document.createElement('img'); thumb.src = v.thumbnail_url; thumb.alt = '';
-          tile.appendChild(thumb);
+          media.appendChild(thumb);
         }
         var vid = document.createElement('video');
         vid.src = v.s3_url; vid.muted = true; vid.loop = true; vid.playsInline = true;
-        vid.style.opacity = '0'; vid.style.transition = 'opacity .2s';
-        tile.appendChild(vid);
-        tile.addEventListener('mouseenter', function () { vid.play().catch(function () {}); vid.style.opacity = '1'; });
-        tile.addEventListener('mouseleave', function () { vid.pause(); vid.currentTime = 0; vid.style.opacity = '0'; });
-        var ov = document.createElement('div'); ov.className = '_btgv_cncg_vtile_ov';
-        tile.appendChild(ov);
-        var foot = document.createElement('div'); foot.className = '_btgv_cncg_vtile_foot';
-        if (v.title) { var tl = document.createElement('div'); tl.className = '_btgv_cncg_vtile_title'; tl.textContent = v.title; foot.appendChild(tl); }
-        var watchBtn = document.createElement('button'); watchBtn.className = '_btgv_cncg_vtile_watch'; watchBtn.textContent = '▶ Watch';
-        watchBtn.onclick = function (e) { e.stopPropagation(); closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems); };
-        foot.appendChild(watchBtn); tile.appendChild(foot);
+        vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .2s';
+        media.appendChild(vid);
+
+        // Auto-play video in media area
+        vid.play().catch(function () {});
+        setTimeout(function () { vid.style.opacity = '1'; }, 100);
+
+        var ov = document.createElement('div'); ov.className = '_btgv_cncg_vtile_ov'; media.appendChild(ov);
+
+        // Views — top left
+        var viewsEl = document.createElement('div'); viewsEl.className = '_btgv_cncg_vtile_views';
+        viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span>' + fmtCount(v.views_count || 0) + '</span>';
+        media.appendChild(viewsEl);
+
+        // Title overlay
+        if (v.title) {
+          var foot = document.createElement('div'); foot.className = '_btgv_cncg_vtile_foot';
+          var tl = document.createElement('div'); tl.className = '_btgv_cncg_vtile_title'; tl.textContent = v.title;
+          foot.appendChild(tl); media.appendChild(foot);
+        }
+
+        // Right rail — likes, comments, share
+        var rail = document.createElement('div'); rail.className = '_btgv_cncg_vtile_rail';
+        (function (vv, vvIdx) {
+          var likeAct = document.createElement('div'); likeAct.className = '_btgv_cncg_vtile_action';
+          var likeIc = document.createElement('div'); likeIc.className = '_btgv_cncg_vtile_action_ic'; likeIc.textContent = '❤️';
+          var likeLbl = document.createElement('div'); likeLbl.className = '_btgv_cncg_vtile_action_lbl'; likeLbl.textContent = fmtCount(vv.likes_count || 0);
+          likeAct.appendChild(likeIc); likeAct.appendChild(likeLbl); rail.appendChild(likeAct);
+
+          var cmtAct = document.createElement('div'); cmtAct.className = '_btgv_cncg_vtile_action';
+          var cmtIc = document.createElement('div'); cmtIc.className = '_btgv_cncg_vtile_action_ic'; cmtIc.textContent = '💬';
+          var cmtLbl = document.createElement('div'); cmtLbl.className = '_btgv_cncg_vtile_action_lbl'; cmtLbl.textContent = fmtCount(vv.comments_count || 0);
+          cmtAct.onclick = function (e) { e.stopPropagation(); closeConcierge(); openFeed(vvIdx >= 0 ? vvIdx : 0, feedItems); };
+          cmtAct.appendChild(cmtIc); cmtAct.appendChild(cmtLbl); rail.appendChild(cmtAct);
+
+          var shareAct = document.createElement('div'); shareAct.className = '_btgv_cncg_vtile_action';
+          var shareIc = document.createElement('div'); shareIc.className = '_btgv_cncg_vtile_action_ic'; shareIc.textContent = '↗️';
+          var shareLbl = document.createElement('div'); shareLbl.className = '_btgv_cncg_vtile_action_lbl'; shareLbl.textContent = 'Share';
+          shareAct.onclick = function (e) {
+            e.stopPropagation();
+            var url = window.location.href;
+            if (navigator.share) { navigator.share({ title: vv.title || 'Check this out', url: url }); }
+            else { navigator.clipboard && navigator.clipboard.writeText(url); }
+          };
+          shareAct.appendChild(shareIc); shareAct.appendChild(shareLbl); rail.appendChild(shareAct);
+        })(v, vIdx);
+        media.appendChild(rail);
+
+        tile.appendChild(media);
         tile.onclick = function () { closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems); };
+
+        // ── CTA panel (white strip below video) ──
+        if (firstProduct) {
+          var panel = document.createElement('div'); panel.className = '_btgv_cncg_vtile_panel';
+          var prow = document.createElement('div'); prow.className = '_btgv_cncg_vtile_prow';
+          var cartBtn = document.createElement('button'); cartBtn.className = '_btgv_cncg_vtile_pcart'; cartBtn.textContent = '🛒 Add to cart';
+          var buyBtn = document.createElement('button'); buyBtn.className = '_btgv_cncg_vtile_pbuy'; buyBtn.textContent = '⚡ Buy Now';
+          var negBtn = document.createElement('button'); negBtn.className = '_btgv_cncg_vtile_pneg'; negBtn.textContent = '🤝 Make an offer';
+          var variantId = firstProduct.shopify_variant_id || firstProduct.variant_id;
+          (function (vid2, cBtn, bBtn, nBtn, fp) {
+            cBtn.onclick = function (e) {
+              e.stopPropagation();
+              cBtn.textContent = 'Adding…'; cBtn.disabled = true;
+              addToCart(vid2, function (ok) {
+                if (ok) { fireConfetti(); cBtn.textContent = '✓ Added!'; cBtn.style.background = '#22c55e'; cBtn.disabled = false; }
+                else { cBtn.textContent = '🛒 Add to cart'; cBtn.disabled = false; }
+              });
+            };
+            bBtn.onclick = function (e) {
+              e.stopPropagation();
+              bBtn.textContent = 'Going…'; bBtn.disabled = true;
+              addToCart(vid2, function (ok) {
+                if (ok) { closeConcierge(); window.location.href = '/checkout'; }
+                else { bBtn.textContent = '⚡ Buy Now'; bBtn.disabled = false; }
+              });
+            };
+            nBtn.onclick = function (e) { e.stopPropagation(); closeConcierge(); openNegotiateModal(fp); };
+          })(variantId, cartBtn, buyBtn, negBtn, firstProduct);
+          prow.appendChild(cartBtn); prow.appendChild(buyBtn);
+          panel.appendChild(prow); panel.appendChild(negBtn);
+          tile.appendChild(panel);
+        }
+
         carousel.appendChild(tile);
       });
-      msgs.appendChild(carousel);
+      var vwrap = document.createElement('div'); vwrap.className = '_btgv_cncg_vcarouselw';
+      vwrap.appendChild(carousel);
+      var vstep = 230; // 220px tile + 10px gap
+      var vprev = document.createElement('button'); vprev.className = '_btgv_cncg_pscrl _btgv_cncg_pscrl_l'; vprev.innerHTML = '&#8249;'; vprev.style.display = 'none';
+      vprev.onclick = function (e) { e.stopPropagation(); carousel.scrollBy({ left: -vstep, behavior: 'smooth' }); };
+      var vnext = document.createElement('button'); vnext.className = '_btgv_cncg_pscrl _btgv_cncg_pscrl_r'; vnext.innerHTML = '&#8250;';
+      vnext.onclick = function (e) { e.stopPropagation(); carousel.scrollBy({ left: vstep, behavior: 'smooth' }); };
+      carousel.addEventListener('scroll', function () {
+        vprev.style.display = carousel.scrollLeft > 10 ? 'flex' : 'none';
+        vnext.style.display = (carousel.scrollLeft + carousel.clientWidth < carousel.scrollWidth - 10) ? 'flex' : 'none';
+      });
+      if (videos.length <= 1) vnext.style.display = 'none';
+      vwrap.appendChild(vprev); vwrap.appendChild(vnext);
+      msgs.appendChild(vwrap);
       _cncgAddChips(msgs, [
         { label: '▶ Watch all ' + videos.length + ' videos', fn: function () { closeConcierge(); openFeed(0, feedItems); } },
         { label: '🏠 Main menu', fn: function () { _cncgAddBot(msgs, 'What else can I help with? 😊'); _cncgMainMenu(msgs); } },
@@ -2559,10 +2722,11 @@
       });
     }
 
+    var pageCtx = _getPageContext();
     fetch(API_BASE + '/api/widget/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ k: API_KEY, message: text, history: _cncgHistory.slice(-6), catalog: catalog.slice(0, 12), personality: BOT_PERSONALITY })
+      body: JSON.stringify({ k: API_KEY, message: text, history: _cncgHistory.slice(-6), catalog: catalog.slice(0, 12), personality: BOT_PERSONALITY, page_context: pageCtx })
     })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {

@@ -744,7 +744,7 @@ router.post('/videos/:id/create-product', async (req, res) => {
 
 // ─── Widget: concierge chat ──────────────────────────────────────────────────
 router.post('/widget/chat', widgetCors, async (req, res) => {
-  const { k: apiKey, message, history, catalog, personality } = req.body;
+  const { k: apiKey, message, history, catalog, personality, page_context } = req.body;
   if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
@@ -789,7 +789,19 @@ router.post('/widget/chat', widgetCors, async (req, res) => {
     ? `\n\nThe customer is looking for a gift. Ask ONE short, friendly clarifying question to help narrow it down — like who it's for, their rough budget, or the occasion. Do NOT show products yet. Keep it warm and conversational.`
     : '';
 
-  const systemPrompt = `You are a shopping assistant for ${storeName}. ${toneInstruction}${catalogText}
+  // Page context — tell the AI what the shopper is currently viewing
+  let pageContextText = '';
+  if (page_context && page_context.type) {
+    if (page_context.type === 'product' && page_context.title) {
+      pageContextText = `\n\nThe customer is currently viewing the product page for "${page_context.title}"${page_context.extra ? ` (${page_context.extra})` : ''}. Reference this product if relevant.`;
+    } else if (page_context.type === 'collection' && page_context.title) {
+      pageContextText = `\n\nThe customer is currently browsing the "${page_context.title}" collection. Keep recommendations within this collection context if possible.`;
+    } else if (page_context.type === 'cart') {
+      pageContextText = `\n\nThe customer is on the cart page. They may be considering checkout — offer help with deals or reassurance.`;
+    }
+  }
+
+  const systemPrompt = `You are a shopping assistant for ${storeName}. ${toneInstruction}${catalogText}${pageContextText}
 
 ${giftInstruction}
 
