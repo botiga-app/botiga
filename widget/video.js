@@ -2477,35 +2477,82 @@
 
   // ── Deals — product cards with Add to Cart + Negotiate ──────────────────────
   function _cncgDeals(msgs) {
-    var feedItems = _cncgEl._feedItems || [];
-    var products = [];
-    feedItems.forEach(function (v) {
-      if (v._type !== 'product' && v.video_product_tags) {
-        v.video_product_tags.forEach(function (t) {
-          if (!products.some(function (p) { return p.shopify_product_id === t.shopify_product_id; })) products.push(t);
+    var dealPhrases = [
+      'Scanning the full catalog…',
+      'Finding the best prices just for you…',
+      'Checking what\'s dealworthy right now…',
+      'Handpicking the top offers…',
+      'Almost there — making sure these are worth your time…',
+    ];
+    var typing = _cncgTyping(msgs, dealPhrases);
+
+    // Pull from all available sources — video-tagged + all Shopify products
+    function gatherProducts() {
+      var seen = {};
+      var products = [];
+
+      // Video-tagged products first (merchant-featured)
+      var feedItems = _cncgEl._feedItems || [];
+      feedItems.forEach(function (v) {
+        if (v._type !== 'product' && v.video_product_tags) {
+          v.video_product_tags.forEach(function (t) {
+            if (!seen[t.shopify_product_id]) {
+              seen[t.shopify_product_id] = true;
+              products.push(t);
+            }
+          });
+        }
+      });
+
+      // Augment with all Shopify products if available
+      if (_cncgEl._shopifyProducts) {
+        _cncgEl._shopifyProducts.forEach(function (p) {
+          var v = p.variants && p.variants[0];
+          if (!v) return;
+          var sid = String(p.id);
+          if (!seen[sid]) {
+            seen[sid] = true;
+            products.push({
+              shopify_product_id: sid,
+              product_name: p.title,
+              price: v.price,
+              compare_at_price: v.compare_at_price || '0',
+              handle: p.handle,
+              image_url: (p.images && p.images[0] && p.images[0].src) || '',
+              variant_id: v.id,
+            });
+          }
         });
       }
-    });
-    var typing = _cncgTyping(msgs);
+
+      return products;
+    }
+
     setTimeout(function () {
       typing.remove();
+      var products = gatherProducts();
+
       if (!products.length) {
-        _cncgAddBot(msgs, "No products tagged yet. Browse videos to discover items! 🎬");
+        _cncgAddBot(msgs, "I couldn't pull the product list right now — try Browse by collection instead!");
         _cncgAddChips(msgs, [
-          { label: '🎬 Watch & Shop', fn: function () { _cncgWatchShop(msgs); } },
+          { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); } },
           { label: '🏠 Main menu', fn: function () { _cncgAddBot(msgs, 'What else can I help with? 😊'); _cncgMainMenu(msgs); } },
         ]);
         return;
       }
-      // Discounted products first
+
+      // Sort: discounted first, then by price descending (higher-value deals feel more satisfying)
       products.sort(function (a, b) {
-        var da = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
-        var db = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
-        return db - da;
+        var discA = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
+        var discB = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
+        if (discB !== discA) return discB - discA;
+        return parseFloat(b.price || 0) - parseFloat(a.price || 0);
       });
-      _cncgAddBot(msgs, "Here are our best picks 🔥 Tap Offer to make a deal!");
-      _cncgRenderProducts(msgs, products, { showNegotiate: true });
-    }, 550);
+
+      _cncgAddBot(msgs, "I've handpicked these just for you — every one is dealworthy. Tap \"Offer\" on any and I'll get you the best price I can. 🤝");
+      _cncgRenderProducts(msgs, products.slice(0, 8), { showNegotiate: true });
+      _cncgBackChip(msgs);
+    }, 3200);
   }
 
   // ── Browse Collections — Shopify AJAX product collections ───────────────────
@@ -2636,19 +2683,20 @@
 
   // ── Typing indicator helper ──────────────────────────────────────────────────
   var _typingPhrases = ['Searching…', 'Curating finds…', 'Hunting down the best…', 'Finding perfect matches…', 'Exploring the catalog…', 'Sifting through products…'];
-  function _cncgTyping(msgs) {
+  function _cncgTyping(msgs, customPhrases) {
+    var phrases = customPhrases || _typingPhrases;
     var el = document.createElement('div'); el.className = '_btgv_cncg_typing';
     var dots = document.createElement('div'); dots.className = '_btgv_cncg_typing_dots';
     for (var i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
     el.appendChild(dots);
     var hint = document.createElement('span'); hint.className = '_btgv_cncg_typing_hint';
-    hint.textContent = _typingPhrases[0]; el.appendChild(hint);
+    hint.textContent = phrases[0]; el.appendChild(hint);
     var idx = 0;
     var iv = setInterval(function () {
-      idx = (idx + 1) % _typingPhrases.length;
+      idx = (idx + 1) % phrases.length;
       hint.style.opacity = '0';
-      setTimeout(function () { hint.textContent = _typingPhrases[idx]; hint.style.opacity = '1'; }, 150);
-    }, 1600);
+      setTimeout(function () { hint.textContent = phrases[idx]; hint.style.opacity = '1'; }, 150);
+    }, 900);
     msgs.appendChild(el); msgs.scrollTop = msgs.scrollHeight;
     return { remove: function () { clearInterval(iv); el.remove(); } };
   }
