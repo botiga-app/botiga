@@ -2150,14 +2150,26 @@
         badge.textContent = Math.round((1 - price / was) * 100) + '% off'; pr.appendChild(badge);
       }
 
-      // Card tap → open product page in new tab with negotiate modal pre-opened
+      // Resolve handle — check _shopifyProducts cache if tag didn't include it
       var handle = p.handle || '';
-      (function (h) {
-        if (h) card.onclick = function (e) {
+      if (!handle && (p.shopify_product_id || p.id) && _cncgEl && _cncgEl._shopifyProducts) {
+        var _sid = String(p.shopify_product_id || p.id);
+        for (var _si = 0; _si < _cncgEl._shopifyProducts.length; _si++) {
+          if (String(_cncgEl._shopifyProducts[_si].id) === _sid) {
+            handle = _cncgEl._shopifyProducts[_si].handle || '';
+            break;
+          }
+        }
+      }
+
+      // Card tap → open product page in new tab with negotiate modal pre-opened
+      (function (h, prod) {
+        card.onclick = function (e) {
           if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-          window.open('/products/' + h + '?btg_neg=1', '_blank');
+          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
+          else { closeConcierge(); openNegotiateModal(prod); }
         };
-      })(handle);
+      })(handle, p);
 
       var btns = document.createElement('div'); btns.className = '_btgv_cncg_pcard_btns';
       var variantId = p.shopify_variant_id || p.variant_id;
@@ -2195,13 +2207,13 @@
 
       // Row 2: Make an offer (full width) → new tab with negotiate pre-opened
       var negBtn = document.createElement('button'); negBtn.className = '_btgv_cncg_pcard_neg'; negBtn.textContent = '🤝 Make an offer';
-      (function (h) {
+      (function (h, prod) {
         negBtn.onclick = function (e) {
           e.stopPropagation();
           if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
-          else { closeConcierge(); openNegotiateModal(p); }
+          else { closeConcierge(); openNegotiateModal(prod); }
         };
-      })(handle);
+      })(handle, p);
       btns.appendChild(negBtn);
 
       body.appendChild(nm); body.appendChild(pr); body.appendChild(btns);
@@ -2575,74 +2587,93 @@
     var dealPhrases = shuffled.slice(0, 5);
     var typing = _cncgTyping(msgs, dealPhrases);
 
-    // Pull from all available sources — video-tagged + all Shopify products
-    function gatherProducts() {
-      var seen = {};
-      var products = [];
+    // Ensure full Shopify catalog is loaded, then build product list
+    function ensureShopifyProducts(cb) {
+      if (_cncgEl && _cncgEl._shopifyProducts) { cb(_cncgEl._shopifyProducts); return; }
+      fetch('/products.json?limit=150')
+        .then(function (r) { return r.ok ? r.json() : { products: [] }; })
+        .then(function (d) {
+          if (_cncgEl) _cncgEl._shopifyProducts = d.products || [];
+          cb(_cncgEl ? _cncgEl._shopifyProducts : []);
+        }).catch(function () { cb([]); });
+    }
 
-      // Video-tagged products first (merchant-featured)
+    function gatherProducts(shopifyProducts) {
+      var seen = {}, products = [];
+      // Build a handle lookup by product ID from Shopify catalog
+      var handleById = {};
+      (shopifyProducts || []).forEach(function (sp) { handleById[String(sp.id)] = sp.handle; });
+
+      // Video-tagged products first — enrich handle from Shopify catalog if missing
       var feedItems = _cncgEl._feedItems || [];
       feedItems.forEach(function (v) {
         if (v._type !== 'product' && v.video_product_tags) {
           v.video_product_tags.forEach(function (t) {
             if (!seen[t.shopify_product_id]) {
               seen[t.shopify_product_id] = true;
-              products.push(t);
+              var enriched = Object.assign({}, t);
+              if (!enriched.handle) enriched.handle = handleById[String(t.shopify_product_id)] || '';
+              products.push(enriched);
             }
           });
         }
       });
 
-      // Augment with all Shopify products if available
-      if (_cncgEl._shopifyProducts) {
-        _cncgEl._shopifyProducts.forEach(function (p) {
-          var v = p.variants && p.variants[0];
-          if (!v) return;
-          var sid = String(p.id);
-          if (!seen[sid]) {
-            seen[sid] = true;
-            products.push({
-              shopify_product_id: sid,
-              product_name: p.title,
-              price: v.price,
-              compare_at_price: v.compare_at_price || '0',
-              handle: p.handle,
-              image_url: (p.images && p.images[0] && p.images[0].src) || '',
-              variant_id: v.id,
-            });
-          }
-        });
-      }
+      // Add remaining Shopify products not yet in the list
+      (shopifyProducts || []).forEach(function (p) {
+        var v = p.variants && p.variants[0];
+        if (!v) return;
+        var sid = String(p.id);
+        if (!seen[sid]) {
+          seen[sid] = true;
+          products.push({
+            shopify_product_id: sid,
+            product_name: p.title,
+            price: v.price,
+            compare_at_price: v.compare_at_price || '0',
+            handle: p.handle,
+            image_url: (p.images && p.images[0] && p.images[0].src) || '',
+            variant_id: v.id,
+          });
+        }
+      });
 
       return products;
     }
 
-    setTimeout(function () {
-      typing.remove();
-      var products = gatherProducts();
+    // Wait the full curation delay (or until products load, whichever is later)
+    var elapsed = 0, interval = 50, target = 3200;
+    var waitTimer = setInterval(function () { elapsed += interval; }, interval);
 
-      if (!products.length) {
-        _cncgAddBot(msgs, "I couldn't pull the product list right now — try Browse by collection instead!");
-        var ws = _chipWatchShop(), find = _chipFind();
-        _cncgAddChips(msgs, _buildChips(msgs, [
-          { label: ws.label, fn: ws.fn },
-          { label: find.label, fn: find.fn },
-        ]));
-        return;
-      }
+    ensureShopifyProducts(function (shopifyProducts) {
+      var remaining = Math.max(0, target - elapsed);
+      clearInterval(waitTimer);
+      setTimeout(function () {
+        typing.remove();
+        var products = gatherProducts(shopifyProducts);
 
-      // Sort: discounted first, then by price descending (higher-value deals feel more satisfying)
-      products.sort(function (a, b) {
-        var discA = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
-        var discB = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
-        if (discB !== discA) return discB - discA;
-        return parseFloat(b.price || 0) - parseFloat(a.price || 0);
-      });
+        if (!products.length) {
+          _cncgAddBot(msgs, "I couldn't pull the product list right now — try browsing by collection instead!");
+          var ws = _chipWatchShop(), find = _chipFind();
+          _cncgAddChips(msgs, _buildChips(msgs, [
+            { label: ws.label, fn: ws.fn },
+            { label: find.label, fn: find.fn },
+          ]));
+          return;
+        }
 
-      _cncgAddBot(msgs, "I've handpicked these just for you — every one is dealworthy. Tap \"Offer\" on any and I'll get you the best price I can. 🤝");
-      _cncgRenderProducts(msgs, products.slice(0, 8), { showNegotiate: true });
-      _cncgBackChip(msgs);
-    }, 3200);
+        products.sort(function (a, b) {
+          var discA = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
+          var discB = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
+          if (discB !== discA) return discB - discA;
+          return parseFloat(b.price || 0) - parseFloat(a.price || 0);
+        });
+
+        _cncgAddBot(msgs, "I've handpicked these just for you — every one is dealworthy. Tap \"Offer\" on any and I'll get you the best price I can. 🤝");
+        _cncgRenderProducts(msgs, products.slice(0, 8), { showNegotiate: true });
+        _cncgBackChip(msgs);
+      }, remaining);
+    });
   }
 
   // ── Browse Collections — Shopify AJAX product collections ───────────────────
