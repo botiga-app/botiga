@@ -462,11 +462,11 @@
       '._btgv_cncg_chip:active{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.25)}',
       // video carousel (inline in chat)
       '._btgv_cncg_vcarouselw{position:relative;width:100%;padding:0 4px;box-sizing:border-box}',
-      '._btgv_cncg_vcarousel{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
+      '._btgv_cncg_vcarousel{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding:2px 4px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
       '._btgv_cncg_vcarousel::-webkit-scrollbar{display:none}',
       // tile: fixed 220px wide so height (300px) > width → always portrait on any screen
-      '._btgv_cncg_vtile{flex-shrink:0;width:220px;border-radius:14px;overflow:hidden;position:relative;background:#111;-webkit-tap-highlight-color:transparent;scroll-snap-align:start}',
-      '._btgv_cncg_vtile_media{position:relative;width:100%;height:300px;overflow:hidden}',
+      '._btgv_cncg_vtile{flex-shrink:0;width:calc(100% - 32px);border-radius:16px;overflow:hidden;position:relative;background:#111;-webkit-tap-highlight-color:transparent;scroll-snap-align:start;cursor:pointer}',
+      '._btgv_cncg_vtile_media{position:relative;width:100%;height:380px;overflow:hidden}',
       '._btgv_cncg_vtile_media video,._btgv_cncg_vtile_media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}',
       '._btgv_cncg_vtile_ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.1) 50%,rgba(0,0,0,.25) 100%)}',
       // views — top left
@@ -488,11 +488,11 @@
       '._btgv_cncg_vtile_pneg{width:100%;background:rgba(236,72,153,.9);border:none;border-radius:8px;color:#fff;font-size:10px;font-weight:700;padding:7px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center}',
       '._btgv_cncg_vtile_title{position:absolute;bottom:0;left:0;right:0;padding:4px 6px;color:#fff;font-size:9px;font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       // product card carousel — portrait cards, scroll-snap, arrow nav
-      '._btgv_cncg_pcardsw{position:relative;width:100%;padding:0 4px;box-sizing:border-box}',
-      '._btgv_cncg_pcards{display:flex;gap:10px;overflow-x:auto;overflow-y:visible;padding:4px 4px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
+      '._btgv_cncg_pcardsw{position:relative;width:100%;padding:0;box-sizing:border-box}',
+      '._btgv_cncg_pcards{display:flex;gap:12px;overflow-x:auto;overflow-y:visible;padding:4px 4px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
       '._btgv_cncg_pcards::-webkit-scrollbar{display:none}',
-      '._btgv_cncg_pcard{flex-shrink:0;width:220px;background:#fff;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;scroll-snap-align:start;box-shadow:0 4px 16px rgba(0,0,0,.22);position:relative;cursor:pointer}',
-      '._btgv_cncg_pcard_img{width:100%;height:260px;object-fit:cover;object-position:50% 20%;display:block;background:#f3f4f6;flex-shrink:0}',
+      '._btgv_cncg_pcard{flex-shrink:0;width:calc(100% - 32px);background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;scroll-snap-align:start;box-shadow:0 6px 24px rgba(0,0,0,.18);position:relative;cursor:pointer}',
+      '._btgv_cncg_pcard_img{width:100%;height:300px;object-fit:cover;object-position:50% 20%;display:block;background:#f3f4f6;flex-shrink:0}',
       '._btgv_cncg_pcard_body{padding:10px 10px 12px;display:flex;flex-direction:column;gap:4px;background:#fff}',
       '._btgv_cncg_pcard_nm{color:#111;font-size:12px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}',
       '._btgv_cncg_pcard_pr{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
@@ -2150,12 +2150,12 @@
         badge.textContent = Math.round((1 - price / was) * 100) + '% off'; pr.appendChild(badge);
       }
 
-      // Card tap → open product page with negotiate modal pre-opened
+      // Card tap → open product page in new tab with negotiate modal pre-opened
       var handle = p.handle || '';
       (function (h) {
         if (h) card.onclick = function (e) {
           if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-          window.location.href = '/products/' + h + '?btg_neg=1';
+          window.open('/products/' + h + '?btg_neg=1', '_blank');
         };
       })(handle);
 
@@ -2193,12 +2193,12 @@
       row.appendChild(cartBtn); row.appendChild(buyBtn);
       btns.appendChild(row);
 
-      // Row 2: Make an offer (full width) → navigate to product page with negotiate pre-opened
+      // Row 2: Make an offer (full width) → new tab with negotiate pre-opened
       var negBtn = document.createElement('button'); negBtn.className = '_btgv_cncg_pcard_neg'; negBtn.textContent = '🤝 Make an offer';
       (function (h) {
         negBtn.onclick = function (e) {
           e.stopPropagation();
-          if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
           else { closeConcierge(); openNegotiateModal(p); }
         };
       })(handle);
@@ -2209,55 +2209,35 @@
       wrap.appendChild(card);
     });
 
-    // Wrap carousel in a positioned container with prev/next arrows
     var wrapW = document.createElement('div'); wrapW.className = '_btgv_cncg_pcardsw';
     wrapW.appendChild(wrap);
-    var cardStep = 230; // 220px card + 10px gap — matches video tiles
-    var prevBtn = document.createElement('button'); prevBtn.className = '_btgv_cncg_pscrl _btgv_cncg_pscrl_l';
-    prevBtn.innerHTML = '&#8249;'; prevBtn.style.display = 'none';
-    prevBtn.onclick = function (e) { e.stopPropagation(); wrap.scrollBy({ left: -cardStep, behavior: 'smooth' }); };
-    var nextBtn = document.createElement('button'); nextBtn.className = '_btgv_cncg_pscrl _btgv_cncg_pscrl_r';
-    nextBtn.innerHTML = '&#8250;';
-    nextBtn.onclick = function (e) { e.stopPropagation(); wrap.scrollBy({ left: cardStep, behavior: 'smooth' }); };
-    wrap.addEventListener('scroll', function () {
-      prevBtn.style.display = wrap.scrollLeft > 10 ? 'flex' : 'none';
-      nextBtn.style.display = (wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 10) ? 'flex' : 'none';
-    });
-    // hide next arrow if only 1 card
-    if (products.length <= 1) nextBtn.style.display = 'none';
-    wrapW.appendChild(prevBtn); wrapW.appendChild(nextBtn);
     msgs.appendChild(wrapW);
 
-    // Suggestion chips below the carousel
+    // Conversational next-step chips — anticipate what the shopper wants
     var firstP = products[0];
     if (firstP) {
-      var chipWrap = document.createElement('div'); chipWrap.className = '_btgv_cncg_chips';
-      var chips = [
-        { label: '🛒 Add to cart', fn: function () {
-          var vid = firstP.shopify_variant_id || firstP.variant_id;
-          if (!vid) return;
-          addToCart(vid, function (ok) { if (ok) { fireConfetti(); _cncgAddBot(msgs, '✓ Added to cart! Ready to checkout?'); _cncgBackChip(msgs); } });
-        }},
-        { label: '⚡ Buy Now', fn: function () {
-          var vid = firstP.shopify_variant_id || firstP.variant_id;
-          if (!vid) return;
-          addToCart(vid, function (ok) { if (ok) { closeConcierge(); window.location.href = '/checkout'; } });
-        }},
-        { label: '🤝 Make an offer', fn: function () {
-          var h = firstP && (firstP.handle || '');
-          if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+      var firstName = (firstP.product_name || firstP.title || '').split(' ').slice(0, 3).join(' ');
+      var firstHandle = firstP.handle || '';
+      _cncgAddChips(msgs, [
+        { label: '🤝 Negotiate the price', fn: function () {
+          if (firstHandle) { window.open('/products/' + firstHandle + '?btg_neg=1', '_blank'); }
           else { closeConcierge(); openNegotiateModal(firstP); }
-        }}
-      ];
-      chips.forEach(function (c) {
-        var ch = document.createElement('button'); ch.className = '_btgv_cncg_chip'; ch.textContent = c.label;
-        ch.onclick = function (e) { e.stopPropagation(); c.fn(); };
-        chipWrap.appendChild(ch);
-      });
-      msgs.appendChild(chipWrap);
+        }},
+        { label: '🛒 Add ' + (firstName || 'this') + ' to cart', fn: function () {
+          var vid = firstP.shopify_variant_id || firstP.variant_id;
+          if (!vid) return;
+          addToCart(vid, function (ok) {
+            if (ok) { fireConfetti(); _cncgAddBot(msgs, '✓ Added! Want to checkout or keep browsing?');
+              _cncgAddChips(msgs, [
+                { label: '⚡ Go to checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; }},
+                { label: '🔍 Keep browsing', fn: function () { _cncgFind(msgs); }},
+              ]);
+            }
+          });
+        }},
+        { label: '🔍 Show me different options', fn: function () { _cncgFind(msgs); }},
+      ]);
     }
-
-    _cncgBackChip(msgs);
     msgs.scrollTop = msgs.scrollHeight;
   }
 
@@ -2324,17 +2304,45 @@
 
   // ── Main menu chips ─────────────────────────────────────────────────────────
   function _cncgMainMenu(msgs) {
-    _cncgAddChips(msgs, [
-      { label: '🎬 Watch & Shop', fn: function () { _cncgWatchShop(msgs); } },
-      { label: '🤝 Get me a deal', fn: function () { _cncgDeals(msgs); } },
-      { label: '🔍 Find something', fn: function () { _cncgFind(msgs); } },
-      { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); } },
-    ]);
+    var ctx = _getPageContext();
+    if (ctx.type === 'product' && ctx.title) {
+      // On a product page — make chips feel specific to what they're looking at
+      _cncgAddChips(msgs, [
+        { label: '🤝 Can I get a better price?', fn: function () {
+          var path = window.location.pathname;
+          var h = path.split('/products/')[1]; if (h) h = h.split('?')[0].split('#')[0];
+          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
+          else { _cncgDeals(msgs); }
+        }},
+        { label: '🔍 Show me similar items', fn: function () {
+          _cncgAddUser(msgs, 'Show me similar items to ' + ctx.title);
+          _cncgSend('Show me similar items to ' + ctx.title, msgs, _cncgEl._inp, _cncgEl._sendBtn);
+        }},
+        { label: '🎬 Watch & Shop', fn: function () { _cncgWatchShop(msgs); }},
+      ]);
+    } else if (ctx.type === 'cart') {
+      _cncgAddChips(msgs, [
+        { label: '🤝 Get a deal before I checkout', fn: function () { _cncgDeals(msgs); }},
+        { label: '🔍 Add more items', fn: function () { _cncgFind(msgs); }},
+        { label: '⚡ Go to checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; }},
+      ]);
+    } else {
+      // Homepage or collection — discovery-first
+      _cncgAddChips(msgs, [
+        { label: '🔥 What\'s trending?', fn: function () {
+          _cncgAddUser(msgs, "What's trending right now?");
+          _cncgSend("What's trending right now?", msgs, _cncgEl._inp, _cncgEl._sendBtn);
+        }},
+        { label: '🤝 I want a deal', fn: function () { _cncgDeals(msgs); }},
+        { label: '🔍 Help me find something', fn: function () { _cncgFind(msgs); }},
+      ]);
+    }
   }
 
   function _cncgBackChip(msgs) {
     _cncgAddChips(msgs, [
-      { label: '🏠 Main menu', fn: function () { _cncgAddBot(msgs, 'What else can I help with? 😊'); _cncgMainMenu(msgs); } },
+      { label: '🤝 Get me a deal', fn: function () { _cncgDeals(msgs); }},
+      { label: '🔍 Find something else', fn: function () { _cncgFind(msgs); }},
     ]);
   }
 
@@ -2396,10 +2404,16 @@
         viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span>' + fmtCount(v.views_count || 0) + '</span>';
         media.appendChild(viewsEl);
 
-        // Title overlay
-        if (v.title) {
+        // Title overlay — skip filename-style titles (mvi_2462, IMG_1234, etc.)
+        var cleanTitle = (v.title || '').trim();
+        if (/^(mvi|img|vid|dsc|mov|mp4|vlc)[_\-]?\d+/i.test(cleanTitle) ||
+            (/^\S+\.\w{2,4}$/.test(cleanTitle)) ||
+            (cleanTitle.length > 0 && cleanTitle.indexOf(' ') === -1 && /^\d/.test(cleanTitle))) {
+          cleanTitle = '';
+        }
+        if (cleanTitle) {
           var foot = document.createElement('div'); foot.className = '_btgv_cncg_vtile_foot';
-          var tl = document.createElement('div'); tl.className = '_btgv_cncg_vtile_title'; tl.textContent = v.title;
+          var tl = document.createElement('div'); tl.className = '_btgv_cncg_vtile_title'; tl.textContent = cleanTitle;
           foot.appendChild(tl); media.appendChild(foot);
         }
 
@@ -2431,7 +2445,12 @@
         media.appendChild(rail);
 
         tile.appendChild(media);
-        tile.onclick = function () { closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems); };
+        // Tile click → open product in new tab if there's a product, else open feed
+        tile.onclick = function () {
+          var fp2 = firstProduct;
+          if (fp2 && fp2.handle) { window.open('/products/' + fp2.handle, '_blank'); }
+          else { closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems); }
+        };
 
         // ── CTA panel (white strip below video) ──
         if (firstProduct) {
@@ -2461,7 +2480,7 @@
             nBtn.onclick = function (e) {
               e.stopPropagation();
               var h = fp && (fp.handle || '');
-              if (h) { window.location.href = '/products/' + h + '?btg_neg=1'; }
+              if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
               else { closeConcierge(); openNegotiateModal(fp); }
             };
           })(variantId, cartBtn, buyBtn, negBtn, firstProduct);
@@ -2487,8 +2506,8 @@
       vwrap.appendChild(vprev); vwrap.appendChild(vnext);
       msgs.appendChild(vwrap);
       _cncgAddChips(msgs, [
-        { label: '▶ Watch all ' + videos.length + ' videos', fn: function () { closeConcierge(); openFeed(0, feedItems); } },
-        { label: '🏠 Main menu', fn: function () { _cncgAddBot(msgs, 'What else can I help with? 😊'); _cncgMainMenu(msgs); } },
+        { label: '🤝 Make an offer on a product', fn: function () { _cncgDeals(msgs); }},
+        { label: '🔍 Find something specific', fn: function () { _cncgFind(msgs); }},
       ]);
       msgs.scrollTop = msgs.scrollHeight;
     }, 550);
@@ -2572,8 +2591,8 @@
       if (!products.length) {
         _cncgAddBot(msgs, "I couldn't pull the product list right now — try Browse by collection instead!");
         _cncgAddChips(msgs, [
-          { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); } },
-          { label: '🏠 Main menu', fn: function () { _cncgAddBot(msgs, 'What else can I help with? 😊'); _cncgMainMenu(msgs); } },
+          { label: '🛍️ Browse by collection', fn: function () { _cncgBrowse(msgs); }},
+          { label: '🔍 Search for something', fn: function () { _cncgFind(msgs); }},
         ]);
         return;
       }
