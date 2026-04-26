@@ -2477,13 +2477,31 @@
 
   // ── Deals — product cards with Add to Cart + Negotiate ──────────────────────
   function _cncgDeals(msgs) {
-    var dealPhrases = [
+    var _allDealPhrases = [
       'Scanning the full catalog…',
       'Finding the best prices just for you…',
       'Checking what\'s dealworthy right now…',
       'Handpicking the top offers…',
       'Almost there — making sure these are worth your time…',
+      'Running the numbers on every item…',
+      'Comparing prices across the whole store…',
+      'Pulling out the hidden gems…',
+      'Sorting through everything so you don\'t have to…',
+      'Looking for the best value for your money…',
+      'Checking which items have the most room to negotiate…',
+      'Filtering out anything that isn\'t worth your time…',
+      'Finding deals that actually make sense…',
+      'Cross-referencing prices — almost done…',
+      'Making sure these picks are genuinely good…',
+      'Hunting down the items with the best margins…',
+      'Shortlisting only the dealworthy ones…',
+      'Doing the homework so you can just shop…',
+      'This one\'s worth the wait — nearly there…',
+      'Locking in your personalized picks…',
     ];
+    // Pick 5 at random so the sequence feels fresh each time
+    var shuffled = _allDealPhrases.slice().sort(function () { return Math.random() - 0.5; });
+    var dealPhrases = shuffled.slice(0, 5);
     var typing = _cncgTyping(msgs, dealPhrases);
 
     // Pull from all available sources — video-tagged + all Shopify products
