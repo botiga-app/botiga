@@ -6,6 +6,7 @@ const { calculateBrokerFee } = require('./broker-fee');
 const { checkRepeatNegotiator } = require('./fingerprint');
 const { trackNegotiationEvent } = require('../lib/posthog');
 const { createShopifyDiscountCode } = require('./shopify');
+const { upsertNegotiatedItem } = require('./draftOrder');
 const { sendDealEmail } = require('./email');
 const { sendDealSms } = require('./sms');
 const { resolveProductRules } = require('./rules');
@@ -64,35 +65,56 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     resolvedImage = await fetchProductImage(negotiation.product_url);
   }
   let checkoutUrl, discountCode;
-  if (negotiation.is_cart_bundle) {
-    // Cart bundle: items already in cart, just apply discount at checkout
-    discountCode = shopifyDomain && shopifyAccessToken
-      ? await (async () => {
-          try {
-            const { createShopifyDiscountCode } = require('./shopify');
-            return await createShopifyDiscountCode({
-              shop: shopifyDomain, accessToken: shopifyAccessToken,
-              listPrice: negotiation.list_price, dealPrice,
-              negotiationId: negotiation.id, expiresAt
-            });
-          } catch (e) { console.error('[Shopify] Cart bundle discount failed:', e.message); return null; }
-        })()
-      : null;
-    const origin = shopifyDomain ? `https://${shopifyDomain}` : '';
-    checkoutUrl = discountCode
-      ? `${origin}/checkout?discount=${discountCode}`
-      : `${origin}/checkout`;
-  } else {
-    ({ url: checkoutUrl, discountCode } = await generateCheckoutUrl({
-      productUrl: negotiation.product_url,
-      variantId: negotiation.variant_id,
-      dealPrice,
-      listPrice: negotiation.list_price,
-      negotiationId: negotiation.id,
-      expiresAt,
-      shopifyDomain,
-      shopifyAccessToken
-    }));
+  let draftOrderId = null, draftOrderLineItemId = null, draftOrderInvoiceUrl = null;
+
+  if (shopifyDomain && shopifyAccessToken && negotiation.variant_id && !negotiation.is_cart_bundle) {
+    // Primary path: Draft Order — exact per-item price, supports multiple items
+    try {
+      const result = await upsertNegotiatedItem({
+        supabase,
+        shop: shopifyDomain,
+        accessToken: shopifyAccessToken,
+        sessionToken: negotiation.session_token || negotiation.session_id,
+        variantId: negotiation.variant_id,
+        negotiatedPrice: dealPrice,
+        listPrice: negotiation.list_price
+      });
+      draftOrderId = result.draftOrderId;
+      draftOrderLineItemId = result.lineItemId ? parseInt(result.lineItemId, 10) : null;
+      draftOrderInvoiceUrl = result.invoiceUrl;
+      checkoutUrl = result.invoiceUrl;
+      discountCode = null;
+      console.log('[DraftOrder] Upserted:', draftOrderId, 'line item:', draftOrderLineItemId);
+    } catch (err) {
+      console.error('[DraftOrder] Failed, falling back to discount code:', err.message);
+    }
+  }
+
+  // Fallback: discount code (cart-bundle or Draft Order failed or no Shopify creds)
+  if (!checkoutUrl) {
+    if (negotiation.is_cart_bundle) {
+      discountCode = shopifyDomain && shopifyAccessToken
+        ? await (async () => {
+            try {
+              return await createShopifyDiscountCode({
+                shop: shopifyDomain, accessToken: shopifyAccessToken,
+                listPrice: negotiation.list_price, dealPrice,
+                negotiationId: negotiation.id, expiresAt
+              });
+            } catch (e) { console.error('[Shopify] Cart bundle discount failed:', e.message); return null; }
+          })()
+        : null;
+      const origin = shopifyDomain ? `https://${shopifyDomain}` : '';
+      checkoutUrl = discountCode ? `${origin}/checkout?discount=${discountCode}` : `${origin}/checkout`;
+    } else {
+      ({ url: checkoutUrl, discountCode } = await generateCheckoutUrl({
+        productUrl: negotiation.product_url,
+        variantId: negotiation.variant_id,
+        dealPrice, listPrice: negotiation.list_price,
+        negotiationId: negotiation.id, expiresAt,
+        shopifyDomain, shopifyAccessToken
+      }));
+    }
   }
 
   const fees = calculateBrokerFee({
@@ -102,7 +124,7 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     brokerFeePct: merchantSettings.broker_fee_pct || 25
   });
 
-  const reply = `You've got a deal at $${dealPrice}! 🎉 Heading you to checkout now.`;
+  const reply = `You've got a deal at $${dealPrice}! 🎉`;
 
   await supabase.from('negotiations').update({
     messages: [...messages, { role: 'assistant', content: reply }],
@@ -112,6 +134,9 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     broker_fee: fees.brokerFee,
     checkout_url: checkoutUrl,
     discount_code: discountCode,
+    draft_order_id: draftOrderId,
+    draft_order_line_item_id: draftOrderLineItemId,
+    draft_order_invoice_url: draftOrderInvoiceUrl,
     deal_expires_at: expiresAt,
     bot_last_offered_price: dealPrice,
     updated_at: new Date().toISOString()
@@ -156,7 +181,11 @@ async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDom
     console.warn('[Notify] No contact on negotiation', negotiation.id);
   }
 
-  return { reply, status: 'won', dealPrice, checkoutUrl, discountCode, brokerFee: fees.brokerFee, expiresAt, emailSentTo: emailTo };
+  return {
+    reply, status: 'won', dealPrice, checkoutUrl, discountCode,
+    draftOrderId, draftOrderLineItemId, draftOrderInvoiceUrl,
+    brokerFee: fees.brokerFee, expiresAt, emailSentTo: emailTo
+  };
 }
 
 function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
@@ -172,7 +201,7 @@ function pickBrandStatement(brandStatements, stepIndex, usedStatements) {
 
 async function processNegotiation({
   merchantId, merchantSettings, shopifyDomain, shopifyAccessToken,
-  sessionId, negotiationId, productName, productUrl, productImage, variantId,
+  sessionId, sessionToken, negotiationId, productName, productUrl, productImage, variantId,
   listPrice, customerMessage, isOpening, isCartBundle, customerEmail, productContext
 }) {
   let negotiation;
@@ -212,6 +241,7 @@ async function processNegotiation({
     const { data, error } = await supabase.from('negotiations').insert({
       merchant_id: merchantId,
       session_id: sessionId,
+      session_token: sessionToken || sessionId,
       product_name: productName,
       product_url: productUrl,
       product_image: productImage || null,
@@ -334,7 +364,7 @@ async function processNegotiation({
     // Pass freshly-detected email/phone — negotiation object was loaded before contact detection ran
     const freshEmail = contactUpdates.customer_email || negotiation.customer_email;
     const result = await strikeDeal({
-      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail },
+      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail, session_token: sessionToken || sessionId },
       dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId, productImage
     });
     return { negotiationId: negotiation.id, ...result };
@@ -361,6 +391,11 @@ async function processNegotiation({
     nextStep += 1;
     nextPrice = priceLadder[nextStep] ?? Math.round(floorPrice);
   }
+  // Never offer below customer's stated willingness — they've signaled this much.
+  // Floor still wins if customer is below floor (handled by lowball branch above).
+  if (customerOffer !== null && customerOffer >= Math.ceil(floorPrice) && nextPrice < customerOffer) {
+    nextPrice = Math.round(customerOffer);
+  }
   const isFinalOffer = nextStep === 5;
 
   // ── NEAR-MISS: if customer named a price and bot's next step lands within $5
@@ -370,7 +405,7 @@ async function processNegotiation({
     const updatedMessages = [...messages, { role: 'user', content: customerMessage }];
     const freshEmail = contactUpdates.customer_email || negotiation.customer_email;
     const result = await strikeDeal({
-      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail },
+      negotiation: { ...negotiation, messages: updatedMessages, customer_email: freshEmail, session_token: sessionToken || sessionId },
       dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages: updatedMessages, merchantId, productImage
     });
     return { negotiationId: negotiation.id, ...result };

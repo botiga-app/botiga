@@ -1,12 +1,14 @@
-name = "Botiga AI Negotiation"
-client_id = "" # Fill in from Shopify Partner Dashboard → App → Client ID
+name = "Botiga AI Sales Assistant"
+client_id = "9024718457c9563257b14484174b9e32" # The currently active app in dev.shopify.com
+application_url = "https://botiga-api-two.vercel.app/api/shopify/auth"
+embedded = false
 
 [build]
 automatically_update_urls_on_dev = true
 dev_store_url = "jxavr1-ur.myshopify.com"
 
 [access_scopes]
-scopes = "write_price_rules,write_discounts,read_products"
+scopes = "write_price_rules,write_discounts,read_products,write_draft_orders"
 
 [auth]
 redirect_urls = [
@@ -21,17 +23,10 @@ api_version = "2024-01"
   topics = ["app/uninstalled"]
   uri = "https://botiga-api-two.vercel.app/webhooks/app/uninstalled"
 
-  [[webhooks.subscriptions]]
-  topics = ["customers/data_request"]
-  uri = "https://botiga-api-two.vercel.app/webhooks/customers/data_request"
-
-  [[webhooks.subscriptions]]
-  topics = ["customers/redact"]
-  uri = "https://botiga-api-two.vercel.app/webhooks/customers/redact"
-
-  [[webhooks.subscriptions]]
-  topics = ["shop/redact"]
-  uri = "https://botiga-api-two.vercel.app/webhooks/shop/redact"
+  [webhooks.privacy_compliance]
+  customer_data_request_url = "https://botiga-api-two.vercel.app/webhooks/customers/data_request"
+  customer_deletion_url = "https://botiga-api-two.vercel.app/webhooks/customers/redact"
+  shop_deletion_url = "https://botiga-api-two.vercel.app/webhooks/shop/redact"
 
 [pos]
 embedded = false

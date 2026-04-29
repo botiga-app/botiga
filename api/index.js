@@ -25,10 +25,12 @@ app.options('*', widgetCors);
 
 // Routes
 app.use('/api', require('./routes/negotiate'));
+app.use('/api', require('./routes/draft-order'));
 app.use('/api', require('./routes/merchants'));
 app.use('/api', require('./routes/deals'));
 app.use('/api', require('./routes/recovery'));
 app.use('/api', require('./routes/shopify-oauth'));
+app.use('/api', require('./routes/shopify-token-exchange'));
 app.use('/api', require('./routes/rules'));
 app.use('/api', require('./routes/billing'));
 app.use('/api', require('./routes/cron'));
@@ -44,12 +46,14 @@ app.use('/public', (req, res, next) => {
   next();
 }, require('express').static(path.join(__dirname, 'public')));
 
-// Serve widget script — CORS open so any Shopify store can load it
+// Serve widget script — CORS open so any Shopify store can load it.
+// Source of truth lives in widget/dist/n.js; build copies into public/ so
+// vercel.json's "includeFiles": ["public/**"] picks it up at deploy time.
 app.get('/n.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache, no-store');
-  res.sendFile(path.join(__dirname, '../widget/dist/n.js'));
+  res.sendFile(path.join(__dirname, 'public/n.js'));
 });
 
 // Serve shoppable video widget — CORS open so any Shopify store can load it
@@ -57,7 +61,7 @@ app.get('/video.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache, no-store');
-  res.sendFile(path.join(__dirname, '../widget/video.js'));
+  res.sendFile(path.join(__dirname, 'public/video.js'));
 });
 
 // Health check

@@ -744,7 +744,7 @@ router.post('/videos/:id/create-product', async (req, res) => {
 
 // ─── Widget: concierge chat ──────────────────────────────────────────────────
 router.post('/widget/chat', widgetCors, async (req, res) => {
-  const { k: apiKey, message, history, catalog, personality, page_context } = req.body;
+  const { k: apiKey, message, history, catalog, personality, page_context, customer_profile } = req.body;
   if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
@@ -773,10 +773,10 @@ router.post('/widget/chat', widgetCors, async (req, res) => {
 
   // Personality tone instructions
   const toneMap = {
-    salesy:   'You are an enthusiastic, persuasive shopping assistant. Sell confidently — highlight why each product is special, what makes it stand out, and why the customer will love it. Create gentle urgency. 1–3 sentences max.',
-    friendly: 'You are a warm, helpful shopping assistant. Be conversational and supportive. 1–3 sentences max.',
-    expert:   'You are a knowledgeable product expert. Give precise, confident recommendations with brief reasoning. 1–3 sentences max.',
-    playful:  'You are a fun, upbeat shopping assistant. Use light humor and enthusiasm. 1–3 sentences max.',
+    salesy:   'You are a warm, enthusiastic personal shopper — part best friend, part style expert. You genuinely care about finding the perfect item at the best price. Compliment great taste. Celebrate good deals. Be encouraging about negotiations. 2–4 sentences max.',
+    friendly: 'You are a warm, caring personal shopping assistant. Be conversational, supportive, and genuinely interested in helping. 2–4 sentences max.',
+    expert:   'You are a knowledgeable personal stylist and product expert. Give precise, confident recommendations with brief reasoning. Show genuine enthusiasm for great products. 2–4 sentences max.',
+    playful:  'You are a fun, upbeat personal shopper. Use light humor, enthusiasm, and genuine excitement about finding great products. 2–4 sentences max.',
   };
   const toneInstruction = toneMap[personality] || toneMap.salesy;
 
@@ -801,9 +801,22 @@ router.post('/widget/chat', widgetCors, async (req, res) => {
     }
   }
 
-  const systemPrompt = `You are a shopping assistant for ${storeName}. ${toneInstruction}${catalogText}${pageContextText}
+  // Customer profile context — what we know about this shopper
+  let customerProfileText = '';
+  if (customer_profile && typeof customer_profile === 'string' && customer_profile.trim()) {
+    customerProfileText = `\n\nWhat I know about this customer: ${customer_profile}. Use this to make recommendations feel personal and tailored — reference their browsing history, price sensitivity, and past deals naturally in conversation.`;
+  }
 
+  const systemPrompt = `You are ${storeName}'s personal shopping assistant — like having a knowledgeable friend who knows the entire store inside out. ${toneInstruction}${catalogText}${pageContextText}${customerProfileText}
 ${giftInstruction}
+
+You are a genuine personal shopper with these qualities:
+- You remember what the customer has been looking at and reference it naturally
+- You compliment great taste and choices warmly but not excessively
+- You celebrate when they get a good deal ("That's an amazing price for that quality!")
+- You help with the full shopping journey: discovery, comparison, negotiation support, order tracking, styling advice
+- You understand price sensitivity and work with it — never push above what they seem comfortable with
+- You know the catalog deeply and can make specific, opinionated recommendations
 
 IMPORTANT: Always respond with valid JSON in this exact format:
 {"reply": "your message", "product_ids": []}
@@ -813,14 +826,17 @@ When recommending specific products from the catalog, include their IDs:
 
 Rules:
 - Use the exact ID strings shown after [ID:] in the catalog. Never invent product IDs.
-- When recommending products, briefly say WHY each is a great pick (1 sentence).
-- For gift queries without enough info, ask ONE clarifying question and return empty product_ids.
-- If a customer gives gift context (who/budget/occasion), recommend 2–4 matching products with enthusiasm.
-- Never be pushy. Be genuinely helpful.`;
+- When recommending products, say WHY each is a great pick for THIS specific customer.
+- For gift queries without enough info, ask ONE warm clarifying question and return empty product_ids.
+- If a customer gives gift context, recommend 2–4 matching products with genuine enthusiasm.
+- Keep replies conversational, warm, and personal — not robotic or template-like.`;
+
+  // Use full history but cap at 40 turns to stay within token budget
+  const historyMessages = Array.isArray(history) ? history.slice(-40) : [];
 
   const messages = [
     { role: 'system', content: systemPrompt },
-    ...(Array.isArray(history) ? history.slice(-6) : []),
+    ...historyMessages,
     { role: 'user', content: message },
   ];
 
@@ -828,7 +844,7 @@ Rules:
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqApiKey}` },
-      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages, max_tokens: 300, temperature: 0.6 }),
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages, max_tokens: 400, temperature: 0.72 }),
     });
     if (!groqRes.ok) {
       const errBody = await groqRes.text().catch(() => '');
@@ -847,6 +863,24 @@ Rules:
         product_ids = Array.isArray(parsed.product_ids) ? parsed.product_ids : [];
       }
     } catch (_) { /* plain text fallback */ }
+
+    // Llama often dumps "[ID:xxxx]" or product list bullets into the reply text
+    // instead of product_ids. Extract any IDs from the text, then strip the
+    // raw mentions so the user sees a clean human reply + product cards.
+    const idMatches = (reply.match(/\[ID:\s*([0-9a-zA-Z_-]+)\s*\]/g) || [])
+      .map(s => s.replace(/\[ID:\s*/, '').replace(/\s*\]/, ''));
+    if (idMatches.length) {
+      const known = new Set((Array.isArray(catalog) ? catalog : []).map(p => String(p.id)));
+      const extracted = idMatches.filter(id => known.has(String(id)));
+      if (extracted.length && !product_ids.length) product_ids = extracted;
+      // Strip the bullet-list of products + ID brackets so reply text is clean.
+      reply = reply
+        .replace(/\[ID:\s*[0-9a-zA-Z_-]+\s*\]/g, '')
+        .replace(/(?:^|\n)\s*[-•*]\s*[^\n]*\(\$[\d.,]+\)\s*/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([,.!?])/g, '$1')
+        .trim();
+    }
 
     res.json({ reply, product_ids });
   } catch (err) {

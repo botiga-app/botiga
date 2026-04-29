@@ -86,6 +86,7 @@ router.get('/widget/product-rules', widgetCors, settingsLimiter, async (req, res
 router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async (req, res) => {
   const {
     session_id,
+    session_token,
     negotiation_id,
     product_name,
     product_url,
@@ -157,6 +158,7 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       shopifyDomain,
       shopifyAccessToken,
       sessionId: session_id,
+      sessionToken: session_token || session_id,
       negotiationId: negotiation_id || null,
       productName: product_name || 'this item',
       productUrl: product_url || null,
@@ -178,6 +180,9 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
       deal_price: result.dealPrice,
       checkout_url: result.checkoutUrl,
       discount_code: result.discountCode || null,
+      draft_order_id: result.draftOrderId || null,
+      draft_order_line_item_id: result.draftOrderLineItemId || null,
+      draft_order_invoice_url: result.draftOrderInvoiceUrl || null,
       broker_fee: result.brokerFee,
       expires_at: result.expiresAt,
       needs_lead_capture: result.needsLeadCapture || false,

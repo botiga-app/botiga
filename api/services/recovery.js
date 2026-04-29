@@ -100,11 +100,38 @@ async function sendStep3Recovery(negotiation) {
   }
 }
 
+// Won deal that hasn't been paid: 1h before deal_expires_at, ping the customer once.
+async function sendDealExpiringRecovery(negotiation) {
+  const message = `Heads up — your $${negotiation.deal_price} deal on ${negotiation.product_name} expires in about an hour ⏰\n\nFinish checkout → ${negotiation.checkout_url}`;
+
+  try {
+    if (negotiation.customer_whatsapp) {
+      await sendWhatsApp(negotiation.customer_whatsapp, message);
+    }
+    if (negotiation.customer_email) {
+      await sendEmail(
+        negotiation.customer_email,
+        `1 hour left on your $${negotiation.deal_price} deal`,
+        `<p>${message.replace(/\n/g, '<br>')}</p>`
+      );
+    }
+    await supabase.from('recovery_attempts').insert({
+      negotiation_id: negotiation.id,
+      step: 'deal_expiring',
+      channel: negotiation.customer_whatsapp ? 'whatsapp' : 'email',
+      sent_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[Recovery] deal_expiring failed for', negotiation.id, err.message);
+  }
+}
+
 // Run by cron every 15 minutes
 async function processRecoveryQueue() {
   const now = new Date();
   const twoHoursAgo = new Date(now - 2 * 60 * 60 * 1000).toISOString();
   const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const inOneHour = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
 
   // Step 2: pending negotiations older than 2h, not yet sent
   const { data: step2Candidates } = await supabase
@@ -127,19 +154,62 @@ async function processRecoveryQueue() {
     .not('recovery_sent_at', 'is', null)
     .lt('created_at', twentyFourHoursAgo);
 
-  // Filter: only those where no step 3 attempt exists
   for (const neg of (step3Candidates || [])) {
     const { data: existing } = await supabase
       .from('recovery_attempts')
       .select('id')
       .eq('negotiation_id', neg.id)
-      .eq('step', 3)
+      .eq('step', '3')
       .single();
+    if (!existing) await sendStep3Recovery(neg);
+  }
 
-    if (!existing) {
-      await sendStep3Recovery(neg);
+  // Won deals expiring within ~1h that haven't been paid (best-effort: skip if their
+  // draft order is completed). Only fire if we have a contact channel and we haven't
+  // already sent the deal_expiring reminder.
+  const { data: expiringCandidates } = await supabase
+    .from('negotiations')
+    .select('*')
+    .eq('status', 'won')
+    .gt('deal_expires_at', now.toISOString())
+    .lt('deal_expires_at', inOneHour);
+
+  for (const neg of (expiringCandidates || [])) {
+    if (!neg.customer_whatsapp && !neg.customer_email) continue;
+    if (!neg.checkout_url && !neg.draft_order_invoice_url) continue;
+    const { data: existing } = await supabase
+      .from('recovery_attempts')
+      .select('id')
+      .eq('negotiation_id', neg.id)
+      .eq('step', 'deal_expiring')
+      .single();
+    if (existing) continue;
+
+    // Skip if the Shopify draft order has already been paid (status=completed)
+    if (neg.draft_order_id) {
+      try {
+        const { data: merchant } = await supabase
+          .from('merchants')
+          .select('shopify_domain, shopify_access_token')
+          .eq('id', neg.merchant_id)
+          .single();
+        if (merchant?.shopify_domain && merchant?.shopify_access_token) {
+          const r = await fetch(`https://${merchant.shopify_domain}/admin/api/2024-01/draft_orders/${neg.draft_order_id}.json`, {
+            headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token }
+          });
+          if (r.ok) {
+            const j = await r.json();
+            if (j.draft_order && j.draft_order.status === 'completed') continue;
+          }
+        }
+      } catch (_) { /* ignore — fall through and send anyway */ }
     }
+
+    await sendDealExpiringRecovery({
+      ...neg,
+      checkout_url: neg.draft_order_invoice_url || neg.checkout_url
+    });
   }
 }
 
-module.exports = { processRecoveryQueue, sendStep2Recovery, sendStep3Recovery };
+module.exports = { processRecoveryQueue, sendStep2Recovery, sendStep3Recovery, sendDealExpiringRecovery };
