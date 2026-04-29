@@ -13,6 +13,18 @@
     : 'Watch & Shop';
   var EMBED_MODE = script.getAttribute('data-layout') === 'embed';
   var SESSION_ID = 'btgv_' + Math.random().toString(36).slice(2);
+  // SESSION_TOKEN persists across page loads so multi-item negotiations link to one Draft Order
+  var SESSION_TOKEN = (function () {
+    try {
+      var key = '_btgv_tok_' + API_KEY;
+      var raw = localStorage.getItem(key);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && parsed.id && (Date.now() - (parsed.ts || 0)) < 86400000) return parsed.id;
+      var id = 'btgvs_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      localStorage.setItem(key, JSON.stringify({ id: id, ts: Date.now() }));
+      return id;
+    } catch (e) { return SESSION_ID; }
+  })();
   var BOT_NAME = script.getAttribute('data-bot-name') || 'Botiga';
   var BOT_SUBTITLE = script.getAttribute('data-bot-subtitle') || 'AI Shopping Assistant · Online';
   var BOT_GREETING = script.getAttribute('data-greeting') || "Hi! 👋 What can I help you find today?";
@@ -27,6 +39,38 @@
   var feedEl = null, pollTimer = null;
   var launcherEl = null;
   var _cncgEl = null, _cncgOpen = false, _cncgHistory = [];
+  var _btgNegProduct = null;
+
+  // ─── Deal persistence (localStorage, 24h TTL) ────────────────────────────────
+  function _btgvSaveDeal(deal) {
+    try {
+      var key = '_btgv_deals_' + API_KEY;
+      var existing = _btgvGetDeals();
+      // Replace if same negotiation ID, otherwise append
+      var idx = existing.findIndex ? existing.findIndex(function (d) { return d.negotiationId === deal.negotiationId; }) : -1;
+      if (idx >= 0) existing[idx] = deal; else existing.push(deal);
+      // Prune expired
+      var now = Date.now();
+      existing = existing.filter(function (d) { return !d.expiresAt || new Date(d.expiresAt).getTime() > now; });
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch (e) {}
+  }
+
+  function _btgvGetDeals() {
+    try {
+      var raw = localStorage.getItem('_btgv_deals_' + API_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      var now = Date.now();
+      return arr.filter(function (d) { return !d.expiresAt || new Date(d.expiresAt).getTime() > now; });
+    } catch (e) { return []; }
+  }
+
+  function _btgvRemoveDeal(negotiationId) {
+    try {
+      var deals = _btgvGetDeals().filter(function (d) { return d.negotiationId !== negotiationId; });
+      localStorage.setItem('_btgv_deals_' + API_KEY, JSON.stringify(deals));
+    } catch (e) {}
+  }
 
   // ─── Supabase Realtime ───────────────────────────────────────────────────────
   var _rtCfg = null, _rtWs = null, _rtHb = null, _rtRef = 0;
@@ -229,6 +273,42 @@
       body: JSON.stringify({ items: [{ id: parseInt(variantId, 10), quantity: 1 }] })
     }).then(function (r) { if (cb) cb(r.ok); }).catch(function () { if (cb) cb(false); });
   }
+
+  // ─── Feed pause/resume — keep the video focused while user is acting on it ──
+  function pauseFeedForAction() {
+    if (!feedEl) return;
+    var scroll = feedEl.querySelector('#_btgv_scroll');
+    if (scroll) {
+      scroll._prevOverflowY = scroll.style.overflowY;
+      scroll._prevTouchAction = scroll.style.touchAction;
+      scroll.style.overflowY = 'hidden';
+      scroll.style.touchAction = 'none';
+    }
+    feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) {
+      if (!v.paused) { v._wasPlaying = true; v.pause(); }
+    });
+  }
+
+  function resumeFeedAfterAction() {
+    if (!feedEl) return;
+    var scroll = feedEl.querySelector('#_btgv_scroll');
+    if (scroll) {
+      scroll.style.overflowY = scroll._prevOverflowY || '';
+      scroll.style.touchAction = scroll._prevTouchAction || '';
+      delete scroll._prevOverflowY;
+      delete scroll._prevTouchAction;
+    }
+    feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) {
+      if (v._wasPlaying) {
+        v._wasPlaying = false;
+        try { v.currentTime = 0; } catch (_) {}
+        v.play().catch(function () {});
+      }
+    });
+  }
+
+  // Resume whenever the negotiation modal closes
+  document.addEventListener('botiga:neg-closed', resumeFeedAfterAction);
 
   // ─── Styles ─────────────────────────────────────────────────────────────────
   function injectStyles() {
@@ -548,6 +628,19 @@
       '._btgv_cncg_inp:focus{border-color:rgba(99,102,241,.5);background:rgba(255,255,255,.08);outline:none}',
       '._btgv_cncg_send{width:34px;height:34px;border:none;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s}',
       '._btgv_cncg_send:disabled{opacity:.35;cursor:default}',
+      // negotiated cart deal cards
+      '._btgv_neg_cart{display:flex;flex-direction:column;gap:8px;width:100%;margin:4px 0}',
+      '._btgv_neg_cart_card{display:flex;align-items:center;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:10px 12px;gap:8px}',
+      '._btgv_neg_cart_info{flex:1;min-width:0}',
+      '._btgv_neg_cart_name{color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}',
+      '._btgv_neg_cart_price{display:flex;align-items:center;gap:5px;flex-wrap:wrap}',
+      '._btgv_neg_cart_deal{color:#22c55e;font-size:14px;font-weight:800}',
+      '._btgv_neg_cart_orig{color:rgba(255,255,255,.35);font-size:11px;text-decoration:line-through}',
+      '._btgv_neg_cart_badge{background:rgba(34,197,94,.18);color:#22c55e;font-size:9px;font-weight:700;padding:2px 6px;border-radius:99px;white-space:nowrap}',
+      '._btgv_neg_cart_rm{background:none;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:rgba(255,255,255,.4);cursor:pointer;font-size:12px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-family:inherit}',
+      '._btgv_neg_cart_rm:hover{border-color:rgba(239,68,68,.5);color:#ef4444}',
+      '._btgv_neg_cart_checkout{width:100%;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:12px;color:#fff;font-size:13px;font-weight:700;padding:13px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center}',
+      '._btgv_neg_cart_checkout:active{opacity:.85}',
     ].join('');
     document.head.appendChild(s);
   }
@@ -603,22 +696,27 @@
 
       actions.appendChild(iconBtn('_btgv_ib_cart', '🛒', 'Cart', function (btn) {
         track(videoId, 'add_to_cart', tag.shopify_product_id);
+        pauseFeedForAction();
         addToCart(tag.shopify_variant_id, function (ok) {
           fireConfetti();
           if (ok) {
             btn.innerHTML = '<span style="font-size:16px">✓</span><span class="_btgv_icon_lbl">Added</span>';
             setTimeout(function () { btn.innerHTML = '<span style="font-size:16px">🛒</span><span class="_btgv_icon_lbl">Cart</span>'; }, 2500);
           }
+          resumeFeedAfterAction();
         });
       }));
       actions.appendChild(iconBtn('_btgv_ib_buy', '⚡', 'Buy', function () {
         track(videoId, 'add_to_cart', tag.shopify_product_id);
+        pauseFeedForAction();
         addToCart(tag.shopify_variant_id, function (ok) {
           if (ok) { fireConfetti(); window.location.href = '/checkout'; }
+          else { resumeFeedAfterAction(); }
         });
       }));
       actions.appendChild(iconBtn('_btgv_ib_neg', '🤝', 'Negotiate', function () {
         track(videoId, 'negotiate', tag.shopify_product_id);
+        pauseFeedForAction();
         openNegotiateModal(tag);
       }));
 
@@ -635,6 +733,10 @@
   function openNegotiateModal(tag) {
     var existingHost = document.getElementById('_btgv_neg_host');
     if (existingHost) { existingHost.remove(); return; }
+
+    // Normalize field names — accept both naming conventions from different callers
+    if (!tag.shopify_variant_id && tag.variant_id) tag.shopify_variant_id = tag.variant_id;
+    if (!tag.product_handle && tag.handle) tag.product_handle = tag.handle;
 
     var listPrice = parseFloat(tag.price || 0);
     var negId = null, loading = false, dealShown = false;
@@ -765,6 +867,7 @@
 
     function closeNeg() {
       host.remove();
+      try { document.dispatchEvent(new CustomEvent('botiga:neg-closed')); } catch (e) {}
     }
 
     function removeTyping() {
@@ -818,7 +921,11 @@
           var counterBtn = document.createElement('button'); counterBtn.className = 'chip-counter';
           counterBtn.textContent = 'Make a counter';
           acceptBtn.addEventListener('click', function () { chips.remove(); inp.value = 'I accept'; send(); });
-          counterBtn.addEventListener('click', function () { chips.remove(); inp.focus(); });
+          counterBtn.addEventListener('click', function () {
+            chips.remove();
+            appendMsg('bot', 'Sure, what\'s your counter offer? Type it below 👇');
+            inp.focus();
+          });
           chips.appendChild(counterBtn); chips.appendChild(acceptBtn);
           msgsEl.appendChild(chips);
         }
@@ -830,6 +937,53 @@
 
     function showGate(d) {
       removeTyping();
+
+      // Try to resolve contact from Shopify customer session or prior capture — skip the form if found
+      var _savedContact = (function () {
+        try { return localStorage.getItem('_btgv_contact_' + API_KEY) || null; } catch (e) { return null; }
+      })();
+      var _shopifyEmail = (function () {
+        try {
+          return (window.meta && window.meta.page && window.meta.page.email) ||
+            (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.email) ||
+            null;
+        } catch (e) { return null; }
+      })();
+      var _autoContact = _savedContact || _shopifyEmail;
+
+      function doUnlock(contact, triggerEl) {
+        // Persist for future negotiations
+        try { localStorage.setItem('_btgv_contact_' + API_KEY, contact); } catch (e) {}
+        if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = '...'; }
+        fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact: contact })
+        }).then(function () {
+          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
+          setTimeout(function () {
+            if (g && g.parentNode) g.remove();
+            appendMsg('bot', d.bot_reply);
+            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+            setTimeout(function () { inp.focus(); }, 80);
+          }, 900);
+        }).catch(function () {
+          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
+          setTimeout(function () {
+            if (g && g.parentNode) g.remove();
+            appendMsg('bot', d.bot_reply);
+            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+          }, 900);
+        });
+      }
+
+      // If contact already known, skip the gate entirely
+      if (_autoContact) {
+        setLoading(false); sendBtn.disabled = false; inp.disabled = false;
+        doUnlock(_autoContact, null);
+        return;
+      }
+
       var g = document.createElement('div'); g.className = 'msg bot';
       var blurred = d.bot_reply.replace(/\$[\d,]+(?:\.\d{1,2})?/g, function (m) {
         return '<span class="_btg_p" style="filter:blur(2px);transition:filter 0.8s ease;display:inline-block;user-select:none">' + m + '</span>';
@@ -857,37 +1011,11 @@
         }
       });
 
-      function doUnlock(contact, triggerEl) {
-        if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = '...'; }
-        fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contact: contact })
-        }).then(function () {
-          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
-          setTimeout(function () {
-            g.remove();
-            appendMsg('bot', d.bot_reply);
-            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
-            setTimeout(function () { inp.focus(); }, 80);
-          }, 900);
-        }).catch(function () {
-          // Even on error, unblur and continue — don't block the user
-          shadow.querySelectorAll('._btg_p').forEach(function (el) { el.style.filter = 'blur(0px)'; });
-          setTimeout(function () {
-            g.remove();
-            appendMsg('bot', d.bot_reply);
-            setLoading(false); sendBtn.disabled = false; inp.disabled = false;
-          }, 900);
-        });
-      }
-
       shadow.querySelector('#_btg_f').addEventListener('submit', function (ev) {
         ev.preventDefault();
         var val = shadow.querySelector('#_btg_c').value.trim();
         var errEl = shadow.querySelector('#_btg_err');
         if (!val) { errEl.textContent = 'Please enter your email or phone number.'; return; }
-        // Basic validation: must look like email or have enough digits for a phone
         var isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
         var isPhone = /^[\+\d][\d\s\-().]{6,}$/.test(val);
         if (!isEmail && !isPhone) { errEl.textContent = 'Please enter a valid email or phone number.'; return; }
@@ -896,13 +1024,31 @@
       });
     }
 
-    function showDeal(dealPrice, checkoutUrl, discountCode) {
+    function showDeal(dealPrice, checkoutUrl, discountCode, invoiceUrl) {
       if (dealShown) return; dealShown = true;
       var inputRowEl = shadow.querySelector('#input-row'); if (inputRowEl) inputRowEl.remove();
       var saved = Math.round(listPrice - dealPrice);
       var savedPct = Math.round((saved / listPrice) * 100);
 
-      // Brief celebration screen — auto-redirects to cart, no button needed
+      // Resolve final destination once — Draft Order URL wins.
+      var finalUrl = invoiceUrl || checkoutUrl || '';
+      var isDraftOrder = /\/(invoices|checkouts)\//.test(finalUrl);
+      var dest = isDraftOrder
+        ? finalUrl
+        : (discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart');
+
+      // No-Draft-Order fallback: ensure variant is in cart so /cart?discount works.
+      if (!isDraftOrder && tag.shopify_variant_id) {
+        addToCart(tag.shopify_variant_id, function () {});
+      }
+
+      // Persist this deal into the concierge chat history so the conversation
+      // continues seamlessly when the user re-opens the concierge.
+      try {
+        _cncgSaveMsg('b', '🎁 Locked in ' + (tag.product_name || 'this item') + ' at $' + Math.round(dealPrice) + (saved > 0 ? ' (saved $' + saved + ')' : ''));
+      } catch (e) {}
+
+      // Per-deal confirmation — celebration is gated behind the Checkout click
       var ds = document.createElement('div'); ds.className = 'deal-screen';
       ds.innerHTML =
         '<svg class="deal-check" viewBox="0 0 52 52" width="52" height="52">' +
@@ -913,26 +1059,45 @@
         '<div class="deal-product">' + (tag.product_name || '') + '</div>' +
         '<div class="deal-orig-num">' + (listPrice !== dealPrice ? '$' + Math.round(listPrice) : '') + '</div>' +
         '<div class="deal-price-wrap"><div class="deal-price-num" id="_dp">$' + Math.round(dealPrice) + '</div></div>' +
-        '<div class="deal-savings" id="_ds show">' + (saved > 0 ? 'You saved $' + saved + ' · ' + savedPct + '% off' : 'Deal locked in') + '</div>' +
-        '<div class="deal-redirect-msg" id="_drm" style="font-size:13px;color:#888;margin-top:18px">Taking you to cart...</div>';
+        '<div class="deal-savings" id="_ds">' + (saved > 0 ? 'You saved $' + saved + ' · ' + savedPct + '% off' : 'Deal locked in') + '</div>' +
+        '<div id="_btg_post" style="display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:280px;align-self:center">' +
+          '<button id="_btg_keep" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.3);padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px">🛍️ Keep shopping</button>' +
+          '<button id="_btg_chk" style="background:#16a34a;color:#fff;border:none;padding:11px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">⚡ Checkout</button>' +
+        '</div>';
       panel.appendChild(ds);
       requestAnimationFrame(function () { ds.classList.add('visible'); });
 
-      // Animate savings badge in immediately
       setTimeout(function () {
         var badge = shadow.querySelector('#_ds'); if (badge) badge.classList.add('show');
       }, 300);
 
-      // Add to cart then redirect — 2.2s gives the animation time to land
-      addToCart(tag.shopify_variant_id, function () {
-        var dest = discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart';
-        setTimeout(function () { window.location.href = dest; }, 2200);
+      var keepBtn = shadow.querySelector('#_btg_keep');
+      if (keepBtn) keepBtn.addEventListener('click', function () {
+        // Close the negotiation modal, then proactively suggest more options
+        _btgNegProduct = null;
+        closeNeg();
+        _cncgShowMoreOptions();
+      });
+
+      var chkBtn = shadow.querySelector('#_btg_chk');
+      if (chkBtn) chkBtn.addEventListener('click', function () {
+        var post = shadow.querySelector('#_btg_post');
+        if (post) post.style.display = 'none';
+        var headline = document.createElement('div');
+        headline.style.cssText = 'font-size:22px;font-weight:700;color:#fff;margin-top:18px;letter-spacing:0.2px;text-align:center';
+        headline.textContent = 'Deal Done, Darling! 🎉';
+        ds.appendChild(headline);
+        var sub = document.createElement('div');
+        sub.style.cssText = 'font-size:13px;color:#888;margin-top:8px;text-align:center';
+        sub.textContent = 'Taking you to checkout…';
+        ds.appendChild(sub);
+        setTimeout(function () { if (dest) window.location.href = dest; }, 1100);
       });
     }
 
     function doNegotiate(customerMsg) {
       var body = {
-        api_key: API_KEY, session_id: SESSION_ID,
+        api_key: API_KEY, session_id: SESSION_ID, session_token: SESSION_TOKEN,
         product_name: tag.product_name || '',
         product_url: window.location.href,
         product_image: tag.image_url || null,
@@ -963,28 +1128,24 @@
           } else {
             appendMsg('bot', d.bot_reply);
             if (d.status === 'won' && d.deal_price) {
-              // Save to _botiga_session deals array (multiple deals supported)
-              try {
-                var raw = sessionStorage.getItem('_botiga_session');
-                var sess = raw ? JSON.parse(raw) : {};
-                var newDeal = {
-                  price: d.deal_price,
-                  checkoutUrl: d.checkout_url,
-                  expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-                  displayExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-                  discountCode: d.discount_code || null,
-                  productName: tag.product_name || ''
-                };
-                var deals = sess.deals || (sess.deal ? [sess.deal] : []);
-                var idx = -1;
-                deals.forEach(function (x, i) { if (x.productName === newDeal.productName) idx = i; });
-                if (idx >= 0) deals[idx] = newDeal; else deals.push(newDeal);
-                sess.deals = deals;
-                sess.ts = Date.now();
-                sessionStorage.setItem('_botiga_session', JSON.stringify(sess));
-              } catch (e) {}
+              // Persist deal to localStorage (survives page navigation)
+              var newDeal = {
+                negotiationId: d.negotiation_id,
+                productName: tag.product_name || '',
+                listPrice: listPrice,
+                price: d.deal_price,
+                checkoutUrl: d.checkout_url,
+                invoiceUrl: d.draft_order_invoice_url || d.checkout_url,
+                draftOrderId: d.draft_order_id || null,
+                lineItemId: d.draft_order_line_item_id || null,
+                discountCode: d.discount_code || null,
+                expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+              };
+              _btgvSaveDeal(newDeal);
+              _cncgUpdateProfile({ negotiated: { name: tag.product_name, dealPrice: Math.round(d.deal_price), listPrice: Math.round(listPrice) } });
+              _cncgUpdateProfile({ priceSignal: { accepted: d.deal_price } });
               try { document.dispatchEvent(new CustomEvent('botiga:deal', { detail: { price: d.deal_price } })); } catch (e) {}
-              showDeal(d.deal_price, d.checkout_url, d.discount_code);
+              showDeal(d.deal_price, d.checkout_url, d.discount_code, d.draft_order_invoice_url);
             } else {
               setLoading(false); sendBtn.disabled = false; inp.disabled = false;
               setTimeout(function () { inp.focus(); }, 80);
@@ -1826,87 +1987,101 @@
 
   // ─── Cart deal banner + confetti ────────────────────────────────────────────
   function handleCartPage() {
-    var deals;
-    try {
-      var raw = sessionStorage.getItem('_botiga_session');
-      if (!raw) return;
-      var sess = JSON.parse(raw);
-      // Support both new (deals array) and legacy (deal object) formats
-      deals = sess.deals || (sess.deal ? [sess.deal] : []);
-      deals = deals.filter(function (d) {
-        return d && d.price && d.checkoutUrl &&
-          (!d.expiresAt || Date.now() < new Date(d.expiresAt).getTime());
-      });
-      if (!deals.length) return;
-    } catch (e) { return; }
+    var deals = _btgvGetDeals();
+
+    if (!deals.length) {
+      // No active deals — still launch the concierge in cart mode
+      injectStyles();
+      buildLauncher([], []);
+      return;
+    }
 
     setTimeout(fireConfetti, 400);
 
-    // Render one banner per active deal, stacked from top
-    var totalOffset = parseInt(document.body.style.paddingTop || '0');
-    deals.forEach(function (deal) {
-      var banner = document.createElement('div');
-      banner.className = '_btgv_deal_banner';
-      banner.style.cssText = [
-        'position:fixed;left:0;right:0;z-index:2147483645;',
-        'background:#111;color:#fff;font-family:system-ui,sans-serif;',
-        'padding:11px 20px;display:flex;align-items:center;justify-content:center;',
-        'gap:12px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.3);flex-wrap:wrap;',
-        'top:' + totalOffset + 'px;'
-      ].join('');
-
-      var textEl = document.createElement('span');
-      textEl.innerHTML = '🎁 Deal on <strong>' + (deal.productName || 'this item') +
-        '</strong> — <strong>$' + deal.price + '</strong>' +
-        (deal.discountCode
-          ? ' &middot; <code style="background:#222;padding:2px 6px;border-radius:4px;font-size:11px">' + deal.discountCode + '</code>'
-          : '');
-
-      var timerEl = document.createElement('span');
-      timerEl.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:44px;';
-
-      var closeBtn = document.createElement('button');
-      closeBtn.style.cssText = 'background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;';
-      closeBtn.innerHTML = '&times;';
-
-      banner.appendChild(textEl);
-      banner.appendChild(timerEl);
-      if (deal.checkoutUrl) {
-        var chkBtn = document.createElement('a');
-        chkBtn.href = deal.checkoutUrl;
-        chkBtn.style.cssText = 'background:#16a34a;color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;flex-shrink:0;';
-        chkBtn.textContent = 'Checkout →';
-        banner.appendChild(chkBtn);
+    // ── Single consolidated banner — multi-item summary or single-item label ──
+    var total = deals.reduce(function (s, d) { return s + (parseFloat(d.price) || 0); }, 0);
+    var ckDest = null;
+    for (var di = deals.length - 1; di >= 0; di--) {
+      if (deals[di].invoiceUrl) { ckDest = deals[di].invoiceUrl; break; }
+    }
+    if (!ckDest) {
+      for (var dj = deals.length - 1; dj >= 0; dj--) {
+        if (deals[dj].checkoutUrl) { ckDest = deals[dj].checkoutUrl; break; }
       }
-      banner.appendChild(closeBtn);
-      document.body.prepend(banner);
+    }
 
-      var bannerH = banner.offsetHeight || 46;
-      totalOffset += bannerH;
-      document.body.style.paddingTop = totalOffset + 'px';
+    var bannerText;
+    if (deals.length === 1) {
+      var d0 = deals[0];
+      bannerText = '🎁 Deal on <strong>' + (d0.productName || 'this item') +
+        '</strong> — <strong>$' + d0.price + '</strong>';
+    } else {
+      bannerText = '🎁 <strong>' + deals.length + ' deals locked in</strong> — total <strong>$' + Math.round(total) + '</strong>';
+    }
 
-      closeBtn.onclick = (function (b, h) {
-        return function () {
-          document.body.style.paddingTop = Math.max(0, parseInt(document.body.style.paddingTop || '0') - h) + 'px';
-          b.remove();
-        };
-      })(banner, bannerH);
+    var banner = document.createElement('div');
+    banner.className = '_btgv_deal_banner';
+    banner.style.cssText = [
+      'position:fixed;left:0;right:0;top:0;z-index:2147483645;',
+      'background:#111;color:#fff;font-family:system-ui,sans-serif;',
+      'padding:11px 20px;display:flex;align-items:center;justify-content:center;',
+      'gap:12px;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.3);flex-wrap:wrap;'
+    ].join('');
 
-      var displayExp = deal.displayExpiresAt ? new Date(deal.displayExpiresAt) : new Date(Date.now() + 15 * 60 * 1000);
-      var tick = setInterval(function () {
-        var remaining = Math.max(0, displayExp - Date.now());
-        var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
-        timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-        if (remaining <= 120000) timerEl.style.color = '#ef4444';
-        if (remaining <= 0) {
-          clearInterval(tick);
-          timerEl.textContent = 'Expired';
-          banner.style.background = '#333';
-          var chk = banner.querySelector('a'); if (chk) chk.style.display = 'none';
-        }
-      }, 1000);
-    });
+    var textEl = document.createElement('span');
+    textEl.innerHTML = bannerText;
+    var timerEl = document.createElement('span');
+    timerEl.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;color:#fbbf24;min-width:44px;';
+    var closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;';
+    closeBtn.innerHTML = '&times;';
+
+    banner.appendChild(textEl);
+    banner.appendChild(timerEl);
+    if (ckDest) {
+      var chkBtn = document.createElement('button');
+      chkBtn.style.cssText = 'background:#16a34a;color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0;';
+      chkBtn.textContent = 'Checkout →';
+      chkBtn.onclick = function () { _cncgCelebrateAndGo(ckDest); };
+      banner.appendChild(chkBtn);
+    }
+    banner.appendChild(closeBtn);
+    document.body.prepend(banner);
+
+    var bannerH = banner.offsetHeight || 46;
+    document.body.style.paddingTop = bannerH + 'px';
+
+    closeBtn.onclick = function () {
+      document.body.style.paddingTop = '0';
+      banner.remove();
+    };
+
+    // Soonest-to-expire timer drives the countdown
+    var earliestExp = deals.reduce(function (acc, d) {
+      var exp = d.displayExpiresAt ? new Date(d.displayExpiresAt).getTime() : (Date.now() + 15 * 60 * 1000);
+      return acc === null ? exp : Math.min(acc, exp);
+    }, null) || (Date.now() + 15 * 60 * 1000);
+    var tick = setInterval(function () {
+      var remaining = Math.max(0, earliestExp - Date.now());
+      var mins = Math.floor(remaining / 60000), secs = Math.floor((remaining % 60000) / 1000);
+      timerEl.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      if (remaining <= 120000) timerEl.style.color = '#ef4444';
+      if (remaining <= 0) {
+        clearInterval(tick);
+        timerEl.textContent = 'Expired';
+        banner.style.background = '#333';
+        var chk = banner.querySelector('a'); if (chk) chk.style.display = 'none';
+      }
+    }, 1000);
+
+    // Spin up the concierge with a deal celebration greeting
+    injectStyles();
+    buildLauncher([], []);
+    // Mark the concierge to open with a deal celebration instead of generic intro
+    _btgCartDeals = deals;
   }
+
+  var _btgCartDeals = null; // set by handleCartPage when active deals exist
 
   // ─── Floating launcher ───────────────────────────────────────────────────────
   function buildLauncher(feedItems, cols) {
@@ -1939,11 +2114,19 @@
     document.body.appendChild(launcherEl);
     buildConcierge(feedItems, cols);
 
-    // Auto-open after configured delay (default 2s; set to -1 to disable)
-    if (AUTO_OPEN_DELAY >= 0) {
+    // Auto-open: immediately for deal celebrations, 800ms for product nego pages, 2s default
+    var _autoDelay = AUTO_OPEN_DELAY;
+    if (_btgCartDeals && _btgCartDeals.length) {
+      _autoDelay = 600; // open promptly to show deal celebration
+    } else {
+      try {
+        if (new URL(window.location.href).searchParams.get('btg_neg') === '1') _autoDelay = Math.min(_autoDelay, 800);
+      } catch (e) {}
+    }
+    if (_autoDelay >= 0) {
       setTimeout(function () {
         if (!_cncgOpen) openConcierge();
-      }, AUTO_OPEN_DELAY);
+      }, _autoDelay);
     }
   }
 
@@ -1998,8 +2181,8 @@
     // Nav menu panel (hidden by default, overlays msgs)
     var menuPanel = document.createElement('div'); menuPanel.className = '_btgv_cncg_menupanel';
     var menuItems = [
-      { icon: '🔄', label: 'New conversation', fn: function () { _cncgEl._msgs.innerHTML = ''; _cncgHistory = []; _cncgEl._greeted = false; _cncgToggleMenu(); openConcierge(); } },
-      { icon: '⭐', label: "What's recommended?", fn: function () { _cncgToggleMenu(); _cncgAddUser(_cncgEl._msgs, "What's recommended?"); _cncgSend("What's recommended?", _cncgEl._msgs, _cncgEl._inp, _cncgEl._sendBtn); } },
+      { icon: '🔄', label: 'New conversation', fn: function () { _cncgEl._msgs.innerHTML = ''; _cncgClearHistory(); _cncgEl._greeted = false; _cncgToggleMenu(); openConcierge(); } },
+      { icon: '⭐', label: "What's recommended?", fn: function () { _cncgToggleMenu(); _cncgSend("What's recommended?", _cncgEl._msgs, _cncgEl._inp, _cncgEl._sendBtn); } },
       { icon: '📦', label: 'Track my order', fn: function () { _cncgToggleMenu(); _cncgTrackOrder(_cncgEl._msgs); } },
       { icon: '🛒', label: 'View cart', fn: function () { closeConcierge(); window.location.href = '/cart'; } },
       { icon: '💳', label: 'Checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; } },
@@ -2019,6 +2202,27 @@
     var msgs = document.createElement('div'); msgs.className = '_btgv_cncg_msgs';
     _cncgEl.appendChild(msgs);
     _cncgEl._msgs = msgs;
+
+    // Restore prior conversation from localStorage (same session, within 30 min)
+    var _priorMsgs = _cncgGetMsgHistory();
+    if (_priorMsgs.length) {
+      // Divider so user knows this is restored history
+      var divider = document.createElement('div');
+      divider.style.cssText = 'text-align:center;font-size:10px;color:rgba(255,255,255,.25);padding:6px 0 2px;letter-spacing:0.04em;';
+      divider.textContent = '— earlier in this session —';
+      msgs.appendChild(divider);
+      _priorMsgs.forEach(function (m) {
+        var el = document.createElement('div');
+        el.className = m.r === 'u' ? '_btgv_cncg_usr' : '_btgv_cncg_bot';
+        el.style.opacity = '0.6';
+        el.textContent = m.t;
+        msgs.appendChild(el);
+        // Rebuild LLM history context
+        _cncgHistory.push({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t });
+      });
+      // Mark greeted so we don't replay the intro, but allow new context (product page etc.)
+      _cncgEl._greeted = true;
+    }
 
     // Input row — always visible
     var inputrow = document.createElement('div'); inputrow.className = '_btgv_cncg_inputrow';
@@ -2040,6 +2244,15 @@
     _cncgEl._inp = inp; _cncgEl._sendBtn = sendBtn;
 
     document.body.appendChild(_cncgEl);
+
+    // Eagerly load Shopify catalog so handle resolution works for ALL product clicks
+    // (not just after the user runs the "Get me a deal" flow)
+    if (!_cncgEl._shopifyProducts) {
+      fetch('/products.json?limit=250')
+        .then(function (r) { return r.ok ? r.json() : { products: [] }; })
+        .then(function (d) { if (_cncgEl) _cncgEl._shopifyProducts = d.products || []; })
+        .catch(function () { if (_cncgEl) _cncgEl._shopifyProducts = []; });
+    }
   }
 
   // ── Detect what page the shopper is on ──────────────────────────────────────
@@ -2072,42 +2285,255 @@
   }
 
   function _buildContextGreeting(ctx) {
+    var profile = _cncgGetProfile();
+    var hasHistory = _cncgGetMsgHistory().length > 0;
+    var returning = hasHistory && profile.viewedProducts && profile.viewedProducts.length;
+
+    // If the user has active deals, lead with those — keeps the conversation moving toward checkout
+    var activeDeals = (typeof _btgvGetDeals === 'function') ? _btgvGetDeals() : [];
+    if (activeDeals.length) {
+      if (activeDeals.length > 1) {
+        var totalNeg = activeDeals.reduce(function (s, d) { return s + (parseFloat(d.price) || 0); }, 0);
+        return "Picking up where we left off — you've got " + activeDeals.length + " deals locked in totaling $" + Math.round(totalNeg) + ". Want to keep shopping or head to checkout?";
+      }
+      var d0 = activeDeals[0];
+      return "Welcome back! Your $" + Math.round(d0.price) + " deal on " + (d0.productName || 'your pick') + " is still locked in. Keep browsing or checkout?";
+    }
+
+    if (returning) {
+      var last = profile.viewedProducts[0];
+      var greetings = [
+        'Welcome back! 🌟 Still thinking about ' + last.name + '? I can help you snag a better price — or find something you\'ll love even more.',
+        'Hey, great to see you again! 👋 You were looking at ' + last.name + ' — want me to dig into the details or find you a deal?',
+        'You\'re back! 🎉 I remember you were eyeing ' + last.name + '. I\'m here whenever you\'re ready.',
+      ];
+      return greetings[Math.floor(Math.random() * greetings.length)];
+    }
+
     if (ctx.type === 'product' && ctx.title) {
-      var msg = 'You\'re looking at "' + ctx.title + '"';
-      if (ctx.extra) msg += ' — ' + ctx.extra;
-      msg += '. Want the best deal, or have questions? I\'m here! 💬';
-      return msg;
+      var openers = [
+        'Ooh, great choice! ✨ "' + ctx.title + '" is gorgeous' + (ctx.extra ? ' — ' + ctx.extra : '') + '. Want me to get you the best possible price?',
+        'Nice taste! 😍 "' + ctx.title + '"' + (ctx.extra ? ' at ' + ctx.extra : '') + ' — I can check if there\'s a better deal waiting for you.',
+        '"' + ctx.title + '" — solid pick! 👌' + (ctx.extra ? ' ' + ctx.extra + '.' : '') + ' I\'m here if you want to talk through it or get a deal.',
+      ];
+      return openers[Math.floor(Math.random() * openers.length)];
     }
     if (ctx.type === 'collection' && ctx.title) {
-      return 'Browsing ' + ctx.title + '? I can help you find the perfect pick or snag a deal. 🛍️';
+      var collOpeners = [
+        'Love the ' + ctx.title + ' collection! 💫 Tell me what you\'re looking for and I\'ll find your perfect match.',
+        'Browsing ' + ctx.title + '? Amazing pieces in here. What\'s catching your eye — I can help narrow it down!',
+        'Great taste — you\'re in the right place. 🛍️ I know every item in ' + ctx.title + ', just ask!',
+      ];
+      return collOpeners[Math.floor(Math.random() * collOpeners.length)];
     }
     if (ctx.type === 'cart') {
-      return 'Your cart is ready! Want to negotiate a better price before checkout? I can help. 🤝';
+      var deals = _btgvGetDeals();
+      if (deals.length) return '🎉 Your deals are locked in! Ready to checkout, or want to keep finding more great pieces?';
+      return 'Almost there! 🛒 Before you checkout — want me to see if I can get you a better price on anything in your cart?';
     }
-    return BOT_GREETING;
+
+    // Generic warm home/other page greetings
+    var genericGreetings = [
+      BOT_GREETING,
+      'Hey there! 👋 I\'m your personal shopper — I know every product in this store, can negotiate prices, and I\'m here to make sure you find exactly what you\'re looking for.',
+      'Hi! Great to have you here 🌟 I\'m not just a chatbot — I\'m a personal shopper. Ask me anything, or let me find you something amazing.',
+    ];
+    return genericGreetings[Math.floor(Math.random() * genericGreetings.length)];
+  }
+
+  // ─── Negotiated cart in concierge ────────────────────────────────────────────
+  function _cncgShowNegCart(msgs) {
+    var deals = _btgvGetDeals();
+    if (!deals.length) {
+      _cncgAddBot(msgs, "Hmm, I don't see any active deals. Want to negotiate something?");
+      _cncgBackChip(msgs);
+      return;
+    }
+
+    // If concierge was opened fresh (greeted = false), mark it greeted so we don't show generic intro
+    if (_cncgEl && !_cncgEl._greeted) _cncgEl._greeted = true;
+
+    var totalSaved = deals.reduce(function (sum, d) {
+      return sum + (d.listPrice && d.price ? Math.round(d.listPrice - d.price) : 0);
+    }, 0);
+    var headerMsg = deals.length === 1
+      ? '🎉 Deal done, darling! Your exclusive price is locked in:'
+      : '🎉 Look at you — ' + deals.length + ' deals! You just saved $' + totalSaved + ' total. Ready to make it official?';
+    _cncgAddBot(msgs, headerMsg, true);
+
+    // Pick the best checkout URL: Draft Order invoice URL > discount-coded cart URL > /cart
+    var checkoutUrl = null;
+    for (var ci = deals.length - 1; ci >= 0; ci--) {
+      if (deals[ci].invoiceUrl && deals[ci].invoiceUrl.indexOf('/checkout') >= 0) {
+        checkoutUrl = deals[ci].invoiceUrl; break;
+      }
+    }
+    if (!checkoutUrl) {
+      // Fallback: items have been added to cart with a discount code — go to cart with code applied
+      var lastCode = null;
+      for (var di = deals.length - 1; di >= 0; di--) {
+        if (deals[di].discountCode) { lastCode = deals[di].discountCode; break; }
+      }
+      checkoutUrl = lastCode ? '/cart?discount=' + encodeURIComponent(lastCode) : '/cart';
+    }
+
+    // Render deal cards
+    var cardsWrap = document.createElement('div'); cardsWrap.className = '_btgv_neg_cart';
+    deals.forEach(function (deal) {
+      var card = document.createElement('div'); card.className = '_btgv_neg_cart_card';
+      var saved = deal.listPrice && deal.price ? Math.round(deal.listPrice - deal.price) : 0;
+      var savedPct = (saved > 0 && deal.listPrice) ? Math.round((saved / deal.listPrice) * 100) : 0;
+
+      var info = document.createElement('div'); info.className = '_btgv_neg_cart_info';
+      var nm = document.createElement('div'); nm.className = '_btgv_neg_cart_name';
+      nm.textContent = deal.productName || 'Item';
+      var pr = document.createElement('div'); pr.className = '_btgv_neg_cart_price';
+      pr.innerHTML = '<span class="_btgv_neg_cart_deal">$' + Math.round(deal.price) + '</span>' +
+        (deal.listPrice && deal.listPrice !== deal.price ? ' <span class="_btgv_neg_cart_orig">$' + Math.round(deal.listPrice) + '</span>' : '') +
+        (savedPct > 0 ? ' <span class="_btgv_neg_cart_badge">' + savedPct + '% off</span>' : '');
+      info.appendChild(nm); info.appendChild(pr);
+
+      var rmBtn = document.createElement('button'); rmBtn.className = '_btgv_neg_cart_rm'; rmBtn.innerHTML = '&#x2715;';
+      rmBtn.title = 'Remove deal';
+      (function (d, cardEl, rmb) {
+        rmb.onclick = function () {
+          rmb.disabled = true; rmb.textContent = '…';
+          fetch(API_BASE + '/api/draft-order/line-item', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ negotiation_id: d.negotiationId })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              _btgvRemoveDeal(d.negotiationId);
+              cardEl.remove();
+              // Update checkout URL if we got a new invoice URL
+              if (res.invoice_url) {
+                checkoutUrl = res.invoice_url;
+                var ckBtn = cardsWrap.parentNode && cardsWrap.parentNode.querySelector('._btgv_neg_cart_checkout');
+                if (ckBtn) ckBtn.setAttribute('data-url', res.invoice_url);
+              }
+              var remaining = _btgvGetDeals();
+              if (!remaining.length) {
+                cardsWrap.remove();
+                _cncgAddBot(msgs, 'Deal removed. Want to negotiate something else?');
+                _cncgBackChip(msgs);
+              }
+            })
+            .catch(function () { rmb.disabled = false; rmb.textContent = '✕'; });
+        };
+      })(deal, card, rmBtn);
+
+      card.appendChild(info); card.appendChild(rmBtn);
+      cardsWrap.appendChild(card);
+    });
+
+    setTimeout(function () {
+      msgs.appendChild(cardsWrap);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      // Checkout button — celebrate, then redirect
+      var ckBtn = document.createElement('button'); ckBtn.className = '_btgv_neg_cart_checkout';
+      ckBtn.textContent = '⚡ Checkout with my deals';
+      ckBtn.setAttribute('data-url', checkoutUrl);
+      ckBtn.onclick = function () {
+        var url = ckBtn.getAttribute('data-url') || '/checkout';
+        _cncgCelebrateAndGo(url);
+      };
+
+      var keepBtn = document.createElement('button'); keepBtn.className = '_btgv_cncg_chip';
+      keepBtn.textContent = '🛍️ Keep shopping';
+      keepBtn.onclick = function () { _cncgMainMenu(msgs); };
+
+      var btnRow = document.createElement('div'); btnRow.style.cssText = 'display:flex;gap:8px;flex-direction:column;padding:4px 0;';
+      btnRow.appendChild(ckBtn); btnRow.appendChild(keepBtn);
+      msgs.appendChild(btnRow);
+      msgs.scrollTop = msgs.scrollHeight;
+    }, 400);
+  }
+
+  function _cncgShowNegProductIntro(msgs) {
+    var prod = _btgNegProduct;
+    _cncgUpdateProfile({ viewedProduct: { name: prod.product_name, price: parseFloat(prod.price || 0).toFixed(2) } });
+
+    // If user already negotiated this exact product, skip intro and show the deal
+    var profile = _cncgGetProfile();
+    var alreadyNegotiated = (profile.negotiated || []).find(function (n) { return n.name === prod.product_name; });
+    if (alreadyNegotiated) {
+      setTimeout(function () {
+        _cncgAddBot(msgs, '👋 You already locked in ' + prod.product_name + ' for $' + alreadyNegotiated.dealPrice + '. Want to checkout, or shall we find something else amazing?', true);
+        _cncgShowNegCart(msgs);
+      }, 300);
+      return;
+    }
+
+    var price = parseFloat(prod.price || 0);
+    var compareAt = parseFloat(prod.compare_at_price || 0);
+    var priceStr = price > 0 ? '$' + price.toFixed(2) : '';
+    var discountStr = '';
+    if (compareAt > price && price > 0) {
+      discountStr = ' (already ' + Math.round((1 - price / compareAt) * 100) + '% off!)';
+    }
+    setTimeout(function () {
+      _cncgAddBot(msgs, '👀 ' + prod.product_name + (priceStr ? ' — ' + priceStr + discountStr : '') + '. Want me to push for an even better price?', true);
+    }, 300);
+    setTimeout(function () {
+      var negProd = prod;
+      _cncgAddChips(msgs, [
+        { label: '🤝 Push for a better price', fn: function () { openNegotiateModal(negProd); }},
+        { label: '🛒 Add to cart at ' + (priceStr || 'list price'), fn: function () {
+          var vid = negProd.variant_id;
+          if (!vid) return;
+          addToCart(vid, function (ok) {
+            if (ok) { fireConfetti(); _cncgAddBot(msgs, '✓ Added to cart! Ready to checkout?'); _cncgAddChips(msgs, [{ label: '⚡ Go to checkout', fn: function () { window.location.href = '/checkout'; } }]); }
+          });
+        }},
+        { label: '🔍 Show me similar items', fn: function () { _cncgFind(msgs); }},
+      ]);
+    }, 1000);
   }
 
   function openConcierge() {
     if (!_cncgEl) return;
     _cncgOpen = true;
     requestAnimationFrame(function () { _cncgEl.classList.add('open'); });
+
+    // Product page via ?btg_neg=1 — always show product context regardless of greeted state
+    if (_btgNegProduct && !_cncgEl._negProductShown) {
+      _cncgEl._negProductShown = true;
+      _cncgShowNegProductIntro(_cncgEl._msgs);
+      _cncgEl._greeted = true;
+      return;
+    }
+
     if (!_cncgEl._greeted) {
       _cncgEl._greeted = true;
       var msgs = _cncgEl._msgs;
+
+      // Cart page after a deal — show full negotiated cart UI
+      if (_btgCartDeals && _btgCartDeals.length) {
+        setTimeout(function () { _cncgShowNegCart(msgs); }, 400);
+        return;
+      }
+
       var ctx = _getPageContext();
-      // Step 1: greeting (300ms)
+      var hasHistory = _cncgGetMsgHistory().length > 0;
+      var openingDeals = (typeof _btgvGetDeals === 'function') ? _btgvGetDeals() : [];
       setTimeout(function () {
         var greet = _buildContextGreeting(ctx);
         _cncgAddBot(msgs, greet);
       }, 300);
-      // Step 2: introduce as shopping assistant (1100ms)
       setTimeout(function () {
-        _cncgAddBot(msgs, 'I\'m ' + BOT_NAME + ', your AI shopping assistant — I\'ll help you find the perfect product, snag a deal, or browse the full catalog. 🛍️');
-      }, 1100);
-      // Step 3: show action chips (1900ms)
-      setTimeout(function () {
-        _cncgMainMenu(msgs);
-      }, 1900);
+        if (openingDeals.length) {
+          // Conversation continues toward checkout — lead with the two real next moves
+          _cncgAddChips(msgs, _buildChips(msgs, [
+            { label: '⚡ Checkout', fn: function () { _cncgCelebrateAndGo(_cncgPickCheckoutDest()); }},
+            { label: '🛍️ Keep shopping', fn: function () { _cncgShowMoreOptions(); }}
+          ]));
+        } else {
+          _cncgMainMenu(msgs);
+        }
+      }, hasHistory ? 900 : 1100);
     }
   }
 
@@ -2121,6 +2547,82 @@
   function _cncgToggleMenu() {
     if (!_cncgEl || !_cncgEl._menuPanel) return;
     _cncgEl._menuPanel.classList.toggle('open');
+  }
+
+  // ── Robust handle resolution: id match → exact name → fuzzy name ───────────
+  function _resolveProductHandle(p) {
+    var h = p.handle || p.product_handle || '';
+    if (h) return h;
+    if (!_cncgEl || !_cncgEl._shopifyProducts) return '';
+
+    var sid = p.shopify_product_id || p.id;
+    if (sid) {
+      for (var i = 0; i < _cncgEl._shopifyProducts.length; i++) {
+        if (String(_cncgEl._shopifyProducts[i].id) === String(sid)) {
+          return _cncgEl._shopifyProducts[i].handle || '';
+        }
+      }
+    }
+    var name = (p.product_name || p.title || p.name || '').toLowerCase().trim();
+    if (!name) return '';
+    // Exact name match
+    for (var j = 0; j < _cncgEl._shopifyProducts.length; j++) {
+      if ((_cncgEl._shopifyProducts[j].title || '').toLowerCase().trim() === name) {
+        return _cncgEl._shopifyProducts[j].handle || '';
+      }
+    }
+    // Fuzzy: longest common name overlap
+    var bestHandle = '', bestScore = 0;
+    var nameWords = name.split(/\s+/).filter(function (w) { return w.length > 2; });
+    if (!nameWords.length) return '';
+    for (var k = 0; k < _cncgEl._shopifyProducts.length; k++) {
+      var t = (_cncgEl._shopifyProducts[k].title || '').toLowerCase();
+      var score = nameWords.reduce(function (s, w) { return s + (t.indexOf(w) >= 0 ? w.length : 0); }, 0);
+      if (score > bestScore) { bestScore = score; bestHandle = _cncgEl._shopifyProducts[k].handle || ''; }
+    }
+    return bestScore >= 4 ? bestHandle : '';
+  }
+
+  // Always-new-tab navigator: handle → URL → search fallback (NEVER opens local modal)
+  function _navProductInNewTab(p, withNeg) {
+    var h = _resolveProductHandle(p);
+    var qs = withNeg ? '?btg_neg=1' : '';
+    if (h) { window.open('/products/' + h + qs, '_blank'); return true; }
+    if (p.url) {
+      var sep = p.url.indexOf('?') >= 0 ? '&' : '?';
+      window.open(p.url + (withNeg ? sep + 'btg_neg=1' : ''), '_blank');
+      return true;
+    }
+    var name = p.product_name || p.title || p.name || '';
+    if (name) { window.open('/search?q=' + encodeURIComponent(name), '_blank'); return true; }
+    return false;
+  }
+
+  // ── Exclude current product + items already in cart from a recommendation list ─
+  function _btgvFilterShown(products, cb) {
+    var currentHandle = '';
+    var m = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    if (m) currentHandle = m[1];
+
+    fetch('/cart.js', { headers: { 'Accept': 'application/json' }})
+      .then(function (r) { return r.ok ? r.json() : { items: [] }; })
+      .catch(function () { return { items: [] }; })
+      .then(function (cart) {
+        var cartHandles = {}; var cartIds = {};
+        (cart.items || []).forEach(function (it) {
+          if (it.handle) cartHandles[it.handle] = 1;
+          if (it.product_id) cartIds[String(it.product_id)] = 1;
+        });
+        var filtered = products.filter(function (p) {
+          var h = (p.handle || _resolveProductHandle(p) || '').toLowerCase();
+          var id = String(p.id || p.shopify_product_id || '');
+          if (currentHandle && h && h === currentHandle.toLowerCase()) return false;
+          if (h && cartHandles[h]) return false;
+          if (id && cartIds[id]) return false;
+          return true;
+        });
+        cb(filtered);
+      });
   }
 
   // ── Unified horizontal product card renderer ─────────────────────────────────
@@ -2138,7 +2640,7 @@
 
       var body = document.createElement('div'); body.className = '_btgv_cncg_pcard_body';
       var nm = document.createElement('div'); nm.className = '_btgv_cncg_pcard_nm';
-      nm.textContent = p.product_name || p.title || '';
+      nm.textContent = p.product_name || p.title || p.name || '';
       var pr = document.createElement('div'); pr.className = '_btgv_cncg_pcard_pr';
       var price = parseFloat(p.price || 0), was = parseFloat(p.compare_at_price || 0);
       var priceEl = document.createElement('span'); priceEl.className = '_btgv_cncg_pcard_price';
@@ -2150,29 +2652,13 @@
         badge.textContent = Math.round((1 - price / was) * 100) + '% off'; pr.appendChild(badge);
       }
 
-      // Resolve handle — check _shopifyProducts cache if tag didn't include it
-      var handle = p.handle || '';
-      if (!handle && (p.shopify_product_id || p.id) && _cncgEl && _cncgEl._shopifyProducts) {
-        var _sid = String(p.shopify_product_id || p.id);
-        for (var _si = 0; _si < _cncgEl._shopifyProducts.length; _si++) {
-          if (String(_cncgEl._shopifyProducts[_si].id) === _sid) {
-            handle = _cncgEl._shopifyProducts[_si].handle || '';
-            break;
-          }
-        }
-      }
-
-      console.log('[Botiga] card product:', JSON.stringify({ name: p.product_name || p.title, handle: handle, shopify_product_id: p.shopify_product_id || p.id, has_shopify_products: !!(_cncgEl && _cncgEl._shopifyProducts && _cncgEl._shopifyProducts.length) }));
-
-      // Card tap → open product page in new tab with negotiate modal pre-opened
-      (function (h, prod) {
+      // Card tap → always open in new tab (handle → URL → search), never local modal
+      (function (prod) {
         card.onclick = function (e) {
-          console.log('[Botiga] card click — handle:', h, 'target:', e.target.tagName, 'closest button:', !!e.target.closest('button'));
           if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
-          else { closeConcierge(); openNegotiateModal(prod); }
+          _navProductInNewTab(prod, true);
         };
-      })(handle, p);
+      })(p);
 
       var btns = document.createElement('div'); btns.className = '_btgv_cncg_pcard_btns';
       var variantId = p.shopify_variant_id || p.variant_id;
@@ -2208,15 +2694,14 @@
       row.appendChild(cartBtn); row.appendChild(buyBtn);
       btns.appendChild(row);
 
-      // Row 2: Make an offer (full width) → new tab with negotiate pre-opened
+      // Row 2: Make an offer (full width) → always new tab
       var negBtn = document.createElement('button'); negBtn.className = '_btgv_cncg_pcard_neg'; negBtn.textContent = '🤝 Make an offer';
-      (function (h, prod) {
+      (function (prod) {
         negBtn.onclick = function (e) {
           e.stopPropagation();
-          if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
-          else { closeConcierge(); openNegotiateModal(prod); }
+          _navProductInNewTab(prod, true);
         };
-      })(handle, p);
+      })(p);
       btns.appendChild(negBtn);
 
       body.appendChild(nm); body.appendChild(pr); body.appendChild(btns);
@@ -2228,34 +2713,30 @@
     wrapW.appendChild(wrap);
     msgs.appendChild(wrapW);
 
-    // After product results — drive toward a decision, weave W&S back in
+    // Track which products are in context so downstream chips act on them directly
+    if (_cncgEl) _cncgEl._lastShownProducts = products.slice(0, 8);
+
+    // Post-card chips: "Make an offer" is already on every card, so don't repeat it.
+    // Show only: Add [first product] to cart + Shop the videos (max 2 chips).
     var firstP = products[0];
     if (firstP) {
-      var firstName = (firstP.product_name || firstP.title || '').split(' ').slice(0, 3).join(' ');
-      var firstHandle = firstP.handle || '';
+      var firstVid = firstP.shopify_variant_id || firstP.variant_id;
       var ws = _chipWatchShop();
       _cncgAddChips(msgs, _buildChips(msgs, [
-        { label: '🤝 Negotiate the price', fn: function (m) {
-          if (firstHandle) { window.open('/products/' + firstHandle + '?btg_neg=1', '_blank'); }
-          else { closeConcierge(); openNegotiateModal(firstP); }
-        }},
-        { label: ws.label, fn: ws.fn },
-        { label: '🛒 Add ' + (firstName || 'this') + ' to cart', fn: function (m) {
-          var vid = firstP.shopify_variant_id || firstP.variant_id;
-          if (!vid) return;
-          addToCart(vid, function (ok) {
+        { label: '🛒 Add to cart', fn: function (m) {
+          if (!firstVid) return;
+          addToCart(firstVid, function (ok) {
             if (ok) {
               fireConfetti();
-              _cncgAddBot(m, '✓ Added! Anything else catch your eye?');
-              var ws2 = _chipWatchShop(), deal2 = _chipDeal();
+              _cncgAddBot(m, '✓ Added to cart! Ready to checkout or keep browsing?');
               _cncgAddChips(m, _buildChips(m, [
-                { label: ws2.label, fn: ws2.fn },
-                { label: deal2.label, fn: deal2.fn },
-                { label: '⚡ Go to checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; }},
+                { label: '⚡ Checkout', fn: function () { window.location.href = '/checkout'; }},
+                { label: _chipWatchShop().label, fn: _chipWatchShop().fn },
               ]));
             }
           });
         }},
+        { label: ws.label, fn: ws.fn },
       ]));
     }
     msgs.scrollTop = msgs.scrollHeight;
@@ -2357,6 +2838,8 @@
 
   // ── Opening chips — W&S + Deal always first, third varies by context ─────────
   function _cncgMainMenu(msgs) {
+    // Returning to main menu means we've left product context
+    if (_cncgEl) _cncgEl._lastShownProducts = null;
     var ctx = _getPageContext();
     var ws = _chipWatchShop(), deal = _chipDeal(), find = _chipFind();
 
@@ -2365,7 +2848,6 @@
         { label: ws.label, fn: ws.fn },
         { label: deal.label, fn: deal.fn },
         { label: '🔍 Show me similar items', fn: function (m) {
-          _cncgAddUser(m, 'Show me something similar to ' + ctx.title);
           _cncgSend('Show me something similar to ' + ctx.title, m, _cncgEl._inp, _cncgEl._sendBtn);
         }},
       ]));
@@ -2386,6 +2868,7 @@
 
   // ── After any interaction — weave W&S and deal back in with fresh language ───
   function _cncgBackChip(msgs) {
+    if (_cncgEl) _cncgEl._lastShownProducts = null;
     var ws = _chipWatchShop(), deal = _chipDeal();
     _cncgAddChips(msgs, _buildChips(msgs, [
       { label: ws.label, fn: ws.fn },
@@ -2419,7 +2902,8 @@
         _cncgAddBot(msgs, "No videos uploaded yet. Check back soon! 🎬");
         _cncgBackChip(msgs); return;
       }
-      _cncgAddBot(msgs, "Here's what's trending right now 🔥");
+      var wsGreets = ["I picked these out just for you — take a look 🔥", "Here's what's trending right now, and honestly, the quality is stunning 😍", "These are my favorites this week — I think you'll love them 🎬"];
+      _cncgAddBot(msgs, wsGreets[Math.floor(Math.random() * wsGreets.length)]);
       var carousel = document.createElement('div'); carousel.className = '_btgv_cncg_vcarousel';
       videos.forEach(function (v) {
         var vIdx = feedItems.indexOf(v);
@@ -2495,8 +2979,8 @@
         // Tile click → open product in new tab if there's a product, else open feed
         tile.onclick = function () {
           var fp2 = firstProduct;
-          if (fp2 && fp2.handle) { window.open('/products/' + fp2.handle, '_blank'); }
-          else { closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems); }
+          if (fp2 && _navProductInNewTab(fp2, false)) return;
+          closeConcierge(); openFeed(vIdx >= 0 ? vIdx : 0, feedItems);
         };
 
         // ── CTA panel (white strip below video) ──
@@ -2526,9 +3010,7 @@
             };
             nBtn.onclick = function (e) {
               e.stopPropagation();
-              var h = fp && (fp.handle || '');
-              if (h) { window.open('/products/' + h + '?btg_neg=1', '_blank'); }
-              else { closeConcierge(); openNegotiateModal(fp); }
+              if (fp) _navProductInNewTab(fp, true);
             };
           })(variantId, cartBtn, buyBtn, negBtn, firstProduct);
           prow.appendChild(cartBtn); prow.appendChild(buyBtn);
@@ -2563,6 +3045,15 @@
 
   // ── Deals — product cards with Add to Cart + Negotiate ──────────────────────
   function _cncgDeals(msgs) {
+    // If products are already in view, negotiate the first one directly — no discovery needed
+    if (_cncgEl && _cncgEl._lastShownProducts && _cncgEl._lastShownProducts.length) {
+      var ctxProd = _cncgEl._lastShownProducts[0];
+      var shortName = (ctxProd.product_name || ctxProd.title || '').split(' ').slice(0, 4).join(' ');
+      _cncgAddBot(msgs, 'Ooh, let me work on getting you a better price on ' + (shortName || 'this') + '! Opening the offer now... 🤝');
+      setTimeout(function () { _navProductInNewTab(ctxProd, true); }, 600);
+      return;
+    }
+
     var _allDealPhrases = [
       'Scanning the full catalog…',
       'Finding the best prices just for you…',
@@ -2592,15 +3083,13 @@
 
     // Ensure full Shopify catalog is loaded, then build product list
     function ensureShopifyProducts(cb) {
-      if (_cncgEl && _cncgEl._shopifyProducts) { console.log('[Botiga] shopify products already cached:', _cncgEl._shopifyProducts.length); cb(_cncgEl._shopifyProducts); return; }
-      console.log('[Botiga] fetching /products.json...');
+      if (_cncgEl && _cncgEl._shopifyProducts) { cb(_cncgEl._shopifyProducts); return; }
       fetch('/products.json?limit=150')
         .then(function (r) { return r.ok ? r.json() : { products: [] }; })
         .then(function (d) {
           if (_cncgEl) _cncgEl._shopifyProducts = d.products || [];
-          console.log('[Botiga] /products.json loaded:', (d.products || []).length, 'products');
           cb(_cncgEl ? _cncgEl._shopifyProducts : []);
-        }).catch(function (err) { console.error('[Botiga] /products.json failed:', err); cb([]); });
+        }).catch(function () { cb([]); });
     }
 
     function gatherProducts(shopifyProducts) {
@@ -2653,11 +3142,9 @@
     ensureShopifyProducts(function (shopifyProducts) {
       var remaining = Math.max(0, target - elapsed);
       clearInterval(waitTimer);
-      console.log('[Botiga] gatherProducts — shopify count:', shopifyProducts.length, 'remaining wait:', remaining + 'ms');
       setTimeout(function () {
         typing.remove();
         var products = gatherProducts(shopifyProducts);
-        console.log('[Botiga] products gathered:', products.length, 'first:', products[0] && JSON.stringify({ name: products[0].product_name, handle: products[0].handle, id: products[0].shopify_product_id }));
 
         if (!products.length) {
           _cncgAddBot(msgs, "I couldn't pull the product list right now — try browsing by collection instead!");
@@ -2829,14 +3316,101 @@
     return { remove: function () { clearInterval(iv); el.remove(); } };
   }
 
-  function _cncgAddBot(msgs, text) {
-    var el = document.createElement('div'); el.className = '_btgv_cncg_bot'; el.textContent = text;
-    msgs.appendChild(el); msgs.scrollTop = msgs.scrollHeight; return el;
+  // ── Chat history persistence (24h TTL, unlimited messages) ─────────────────
+  var _CHAT_KEY = '_btgv_chat_v2_' + API_KEY;
+  var _CHAT_TTL = 86400000;
+
+  function _cncgSaveMsg(role, text) {
+    try {
+      var raw = localStorage.getItem(_CHAT_KEY);
+      var data = raw ? JSON.parse(raw) : { ts: Date.now(), msgs: [] };
+      // Refresh TTL on each message
+      data.ts = Date.now();
+      data.msgs.push({ r: role, t: text });
+      localStorage.setItem(_CHAT_KEY, JSON.stringify(data));
+    } catch (e) {}
   }
 
-  function _cncgAddUser(msgs, text) {
+  function _cncgGetMsgHistory() {
+    try {
+      var raw = localStorage.getItem(_CHAT_KEY);
+      if (!raw) return [];
+      var data = JSON.parse(raw);
+      if (!data || !data.ts || !data.msgs) return [];
+      if (Date.now() - data.ts > _CHAT_TTL) { localStorage.removeItem(_CHAT_KEY); return []; }
+      return data.msgs;
+    } catch (e) { return []; }
+  }
+
+  function _cncgClearHistory() {
+    try { localStorage.removeItem(_CHAT_KEY); } catch (e) {}
+    _cncgHistory = [];
+  }
+
+  // ── Customer profile — remembers what they like, budget signals, viewed products ──
+  var _PROFILE_KEY = '_btgv_profile_' + API_KEY;
+
+  function _cncgGetProfile() {
+    try {
+      var raw = localStorage.getItem(_PROFILE_KEY);
+      return raw ? JSON.parse(raw) : { viewedProducts: [], priceSignals: [], interests: [], negotiated: [] };
+    } catch (e) { return { viewedProducts: [], priceSignals: [], interests: [], negotiated: [] }; }
+  }
+
+  function _cncgUpdateProfile(update) {
+    try {
+      var p = _cncgGetProfile();
+      if (update.viewedProduct) {
+        // Keep last 10 unique viewed products
+        p.viewedProducts = p.viewedProducts.filter(function (v) { return v.name !== update.viewedProduct.name; });
+        p.viewedProducts.unshift(update.viewedProduct);
+        if (p.viewedProducts.length > 10) p.viewedProducts = p.viewedProducts.slice(0, 10);
+      }
+      if (update.priceSignal) {
+        p.priceSignals.push(update.priceSignal);
+        if (p.priceSignals.length > 20) p.priceSignals = p.priceSignals.slice(-20);
+      }
+      if (update.interest) {
+        if (!p.interests.includes(update.interest)) p.interests.push(update.interest);
+      }
+      if (update.negotiated) {
+        p.negotiated.push(update.negotiated);
+        if (p.negotiated.length > 20) p.negotiated = p.negotiated.slice(-20);
+      }
+      localStorage.setItem(_PROFILE_KEY, JSON.stringify(p));
+    } catch (e) {}
+  }
+
+  function _cncgProfileSummary() {
+    var p = _cncgGetProfile();
+    var parts = [];
+    if (p.viewedProducts && p.viewedProducts.length) {
+      parts.push('Recently viewed: ' + p.viewedProducts.slice(0, 5).map(function (v) { return v.name + ' ($' + v.price + ')'; }).join(', '));
+    }
+    if (p.negotiated && p.negotiated.length) {
+      parts.push('Has negotiated: ' + p.negotiated.map(function (n) { return n.name + ' → $' + n.dealPrice; }).join(', '));
+    }
+    if (p.interests && p.interests.length) {
+      parts.push('Interested in: ' + p.interests.join(', '));
+    }
+    if (p.priceSignals && p.priceSignals.length) {
+      var maxWilling = Math.max.apply(null, p.priceSignals.map(function (s) { return s.accepted || 0; }).filter(Boolean));
+      if (maxWilling > 0) parts.push('Has accepted prices up to $' + maxWilling);
+    }
+    return parts.join('. ');
+  }
+
+  function _cncgAddBot(msgs, text, ephemeral) {
+    var el = document.createElement('div'); el.className = '_btgv_cncg_bot'; el.textContent = text;
+    msgs.appendChild(el); msgs.scrollTop = msgs.scrollHeight;
+    if (!ephemeral) _cncgSaveMsg('b', text);
+    return el;
+  }
+
+  function _cncgAddUser(msgs, text, ephemeral) {
     var el = document.createElement('div'); el.className = '_btgv_cncg_usr'; el.textContent = text;
     msgs.appendChild(el); msgs.scrollTop = msgs.scrollHeight;
+    if (!ephemeral) _cncgSaveMsg('u', text);
   }
 
   // ── Local keyword search fallback (no LLM needed) ───────────────────────────
@@ -2864,12 +3438,181 @@
     });
   }
 
+  // ── After "Keep shopping": proactively suggest more options + a checkout escape ─
+  function _cncgShowMoreOptions() {
+    if (!_cncgOpen) openConcierge();
+    if (!_cncgEl) return;
+    var msgs = _cncgEl._msgs;
+    if (!msgs) return;
+
+    var deals = (typeof _btgvGetDeals === 'function') ? _btgvGetDeals() : [];
+    var greet = deals.length > 1
+      ? "Love that — you're stacking up wins. Here are more pieces I'd add to your haul: 🛍️"
+      : "Nice grab! Want to layer in something else? These are my next favorites for you: ✨";
+    _cncgAddBot(msgs, greet);
+
+    var typing = _cncgTyping(msgs, ['Curating your next picks…', 'Pulling complementary finds…', 'Looking at what pairs well…']);
+
+    function loadAndShow() {
+      var shopifyProducts = (_cncgEl && _cncgEl._shopifyProducts) || [];
+      if (!shopifyProducts.length) {
+        fetch('/products.json?limit=150')
+          .then(function (r) { return r.ok ? r.json() : { products: [] }; })
+          .then(function (d) {
+            if (_cncgEl) _cncgEl._shopifyProducts = d.products || [];
+            renderPicks(_cncgEl._shopifyProducts || []);
+          }).catch(function () { renderPicks([]); });
+      } else {
+        renderPicks(shopifyProducts);
+      }
+    }
+
+    function renderPicks(shopifyProducts) {
+      typing.remove();
+      var picks = (shopifyProducts || []).map(function (p) {
+        var v = p.variants && p.variants[0];
+        if (!v) return null;
+        return {
+          id: String(p.id), name: p.title, product_name: p.title,
+          price: v.price, compare_at_price: v.compare_at_price || '0',
+          handle: p.handle, image_url: (p.images && p.images[0] && p.images[0].src) || '',
+          variant_id: v.id, shopify_variant_id: v.id, shopify_product_id: String(p.id)
+        };
+      }).filter(Boolean);
+
+      // Prioritize items on sale (more negotiation room)
+      picks.sort(function (a, b) {
+        var aHas = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
+        var bHas = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
+        return bHas - aHas;
+      });
+
+      _btgvFilterShown(picks.slice(0, 16), function (filtered) {
+        if (!filtered.length) {
+          _cncgAddBot(msgs, "Looks like you've covered the highlights — ready to checkout?");
+          _cncgAddChips(msgs, _buildChips(msgs, [
+            { label: '⚡ Checkout', fn: function () { _cncgCelebrateAndGo(_cncgPickCheckoutDest()); }},
+            { label: '🛍️ Browse all', fn: function (m) { _cncgMainMenu(m); }}
+          ]));
+          return;
+        }
+        _cncgRenderProducts(msgs, filtered.slice(0, 6), { showNegotiate: true });
+        _cncgAddChips(msgs, _buildChips(msgs, [
+          { label: '⚡ Checkout', fn: function () { _cncgCelebrateAndGo(_cncgPickCheckoutDest()); }},
+          { label: '🔍 Show me something else', fn: function (m) { _cncgFind(m); }}
+        ]));
+      });
+    }
+
+    setTimeout(loadAndShow, 400);
+  }
+
+  // Cross-widget hook so n.js can ask the concierge to take over after "Keep shopping"
+  document.addEventListener('botiga:show-recommendations', function () {
+    _cncgShowMoreOptions();
+  });
+
+  // ── Big "Deal Done, Darling!" celebration — shown only when user heads to checkout ─
+  function _cncgCelebrateAndGo(url) {
+    if (!_cncgEl) { window.location.href = url; return; }
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;background:linear-gradient(180deg,#0a0a0a,#1a1a2e);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2147483647;border-radius:inherit;color:#fff;font-family:system-ui,sans-serif;text-align:center;padding:32px;';
+    overlay.innerHTML =
+      '<div style="font-size:28px;font-weight:800;letter-spacing:0.3px;margin-bottom:14px">Deal Done, Darling! 🎉</div>' +
+      '<svg viewBox="0 0 52 52" width="64" height="64" style="margin-bottom:14px">' +
+        '<circle cx="26" cy="26" r="24" fill="none" stroke="#22c55e" stroke-width="3"/>' +
+        '<path fill="none" stroke="#22c55e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14 27l8 8 16-16"/>' +
+      '</svg>' +
+      '<div style="font-size:14px;color:#aaa">Taking you to checkout…</div>';
+    _cncgEl.appendChild(overlay);
+    setTimeout(function () { window.location.href = url; }, 1200);
+  }
+
+  // ── Natural-language intents handled before the LLM call ────────────────────
+  function _cncgDetectIntent(text) {
+    var t = (text || '').toLowerCase().trim();
+    // Reject if too long — likely a real question, not a command
+    if (t.length > 60) return null;
+    if (/^(check\s*out|checkout|go to checkout|take me to checkout|let'?s checkout|i'?ll buy|buy (it|this)( now)?|complete (my )?purchase|pay now|finish( my)? order)\.?!?$/i.test(t)) {
+      return 'checkout';
+    }
+    if (/^(add (it|this)?( to)? cart|add to (the )?cart|put (it|this) in (my )?cart|add to bag|cart it)\.?!?$/i.test(t)) {
+      return 'add_to_cart';
+    }
+    return null;
+  }
+
+  function _cncgPickAddToCartTarget() {
+    // Prefer the product page the user is on
+    var m = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    if (m && _cncgEl && _cncgEl._shopifyProducts) {
+      var handle = m[1];
+      for (var i = 0; i < _cncgEl._shopifyProducts.length; i++) {
+        var p = _cncgEl._shopifyProducts[i];
+        if (p.handle === handle && p.variants && p.variants[0]) {
+          return { variantId: p.variants[0].id, name: p.title };
+        }
+      }
+    }
+    // Otherwise the most recently shown product in concierge
+    if (_cncgEl && _cncgEl._lastShownProducts && _cncgEl._lastShownProducts.length) {
+      var sp = _cncgEl._lastShownProducts[0];
+      var vid = sp.shopify_variant_id || sp.variant_id;
+      if (vid) return { variantId: vid, name: sp.product_name || sp.title || sp.name || 'this item' };
+    }
+    return null;
+  }
+
+  function _cncgPickCheckoutDest() {
+    // Latest Draft Order invoice URL among saved deals
+    var deals = (typeof _btgvGetDeals === 'function') ? _btgvGetDeals() : [];
+    for (var i = deals.length - 1; i >= 0; i--) {
+      if (deals[i].invoiceUrl) return deals[i].invoiceUrl;
+    }
+    for (var j = deals.length - 1; j >= 0; j--) {
+      if (deals[j].checkoutUrl) return deals[j].checkoutUrl;
+    }
+    return '/checkout';
+  }
+
   // ── LLM free-form chat with full store catalog ───────────────────────────────
   function _cncgSend(text, msgs, inp, sendBtn) {
     if (!msgs) return;
     inp.value = ''; sendBtn.disabled = true;
     _cncgAddUser(msgs, text);
     _cncgHistory.push({ role: 'user', content: text });
+
+    // Intent shortcut — skip the LLM and just do the thing
+    var intent = _cncgDetectIntent(text);
+    if (intent === 'checkout') {
+      var dest = _cncgPickCheckoutDest();
+      sendBtn.disabled = false;
+      _cncgCelebrateAndGo(dest);
+      return;
+    }
+    if (intent === 'add_to_cart') {
+      var target = _cncgPickAddToCartTarget();
+      sendBtn.disabled = false;
+      if (!target) {
+        _cncgAddBot(msgs, "Tell me which one and I'll add it — or open a product first. 🛍️");
+        return;
+      }
+      _cncgAddBot(msgs, 'Adding ' + target.name + ' to your cart…');
+      addToCart(target.variantId, function (ok) {
+        if (ok) {
+          fireConfetti();
+          _cncgAddBot(msgs, '✓ Added! Want to keep shopping or head to checkout?');
+          _cncgAddChips(msgs, _buildChips(msgs, [
+            { label: '⚡ Go to checkout', fn: function () { window.location.href = '/checkout'; }},
+            { label: '🛍️ Keep shopping', fn: function (m) { _cncgMainMenu(m); }}
+          ]));
+        } else {
+          _cncgAddBot(msgs, "Hmm, couldn't add it. Try opening the product page and tapping Add to cart.");
+        }
+      });
+      return;
+    }
+
     var typing = _cncgTyping(msgs);
 
     // Collect video-tagged products
@@ -2902,7 +3645,7 @@
     fetch(API_BASE + '/api/widget/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ k: API_KEY, message: text, history: _cncgHistory.slice(-6), catalog: catalog.slice(0, 12), personality: BOT_PERSONALITY, page_context: pageCtx })
+      body: JSON.stringify({ k: API_KEY, message: text, history: _cncgHistory, catalog: catalog.slice(0, 30), personality: BOT_PERSONALITY, page_context: pageCtx, customer_profile: _cncgProfileSummary() })
     })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
@@ -2911,10 +3654,10 @@
           // LLM unavailable — fall back to local keyword search
           var local = _cncgLocalSearch(text);
           if (local.length) {
-            _cncgAddBot(msgs, "Here's what I found for you 🛍️");
+            _cncgAddBot(msgs, "Found some great options — I think these will suit you perfectly! 🛍️");
             _cncgRenderProducts(msgs, local);
           } else {
-            _cncgAddBot(msgs, "I couldn't find a match. Try browsing our collections or watching videos!");
+            _cncgAddBot(msgs, "Hmm, I didn't find an exact match, but let me suggest a few ways to explore — sometimes the best finds are just around the corner! 🔍");
             _cncgBackChip(msgs);
           }
           msgs.scrollTop = msgs.scrollHeight;
@@ -2925,18 +3668,30 @@
         _cncgHistory.push({ role: 'assistant', content: reply });
         if (d.product_ids && d.product_ids.length) {
           var matched = catalog.filter(function (p) { return d.product_ids.indexOf(p.id) >= 0; });
-          if (matched.length) _cncgRenderProducts(msgs, matched);
+          if (_cncgEl && _cncgEl._shopifyProducts) {
+            matched = matched.map(function (p) {
+              if (p.handle) return p;
+              var resolved = _resolveProductHandle(p);
+              return resolved ? Object.assign({}, p, { handle: resolved }) : p;
+            });
+          }
+          // Exclude current product + cart items so "similar items" shows actual alternatives
+          _btgvFilterShown(matched, function (filtered) {
+            if (filtered.length) _cncgRenderProducts(msgs, filtered);
+            msgs.scrollTop = msgs.scrollHeight;
+          });
+        } else {
+          msgs.scrollTop = msgs.scrollHeight;
         }
-        msgs.scrollTop = msgs.scrollHeight;
       })
       .catch(function () {
         typing.remove();
         var local = _cncgLocalSearch(text);
         if (local.length) {
-          _cncgAddBot(msgs, "Here's what I found 🛍️");
+          _cncgAddBot(msgs, "I found some lovely options — take a look! 🛍️");
           _cncgRenderProducts(msgs, local);
         } else {
-          _cncgAddBot(msgs, "I couldn't find a match. Try browsing collections or watching videos!");
+          _cncgAddBot(msgs, "I'm having a moment, but I'm back! Try asking about a specific style, price range, or occasion — I know this store inside out. 😊");
           _cncgBackChip(msgs);
         }
         msgs.scrollTop = msgs.scrollHeight;
@@ -2951,7 +3706,7 @@
     injectStyles();
     rtGetConfig(null); // fetch bot config (bot_name, bot_greeting) from API eagerly
 
-    // Auto-open negotiation modal if landing from a product card click
+    // Auto-open concierge with product-specific deal intro when landing from a card click
     (function () {
       try {
         var params = new URL(window.location.href).searchParams;
@@ -2965,18 +3720,15 @@
               var p = data.product;
               var v = p.variants && p.variants[0];
               if (!v) return;
-              // Small delay so page paint finishes before modal appears
-              setTimeout(function () {
-                openNegotiateModal({
-                  shopify_product_id: String(p.id),
-                  product_name: p.title,
-                  price: v.price,
-                  compare_at_price: v.compare_at_price || '0',
-                  handle: p.handle,
-                  image_url: (p.images && p.images[0] && p.images[0].src) || '',
-                  variant_id: v.id,
-                });
-              }, 600);
+              _btgNegProduct = {
+                shopify_product_id: String(p.id),
+                product_name: p.title,
+                price: v.price,
+                compare_at_price: v.compare_at_price || '0',
+                handle: p.handle,
+                image_url: (p.images && p.images[0] && p.images[0].src) || '',
+                variant_id: v.id,
+              };
             }).catch(function () {});
         }
       } catch (e) {}

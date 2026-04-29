@@ -17,16 +17,16 @@
   const API_HEADERS = { 'ngrok-skip-browser-warning': '1' };
 
   // ── SESSION ──────────────────────────────────────────────────────────────────
-  // Clear stale session state on every page load
+  // localStorage so deals + session id persist across tabs — multi-item Draft Orders
+  // need one shared session_token.
   const SESSION_KEY = '_botiga_session';
   function getSession() {
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
+      const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return {};
       const s = JSON.parse(raw);
-      // Expire sessions older than 2 hours
       if (s.ts && Date.now() - s.ts > 2 * 60 * 60 * 1000) {
-        sessionStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(SESSION_KEY);
         return {};
       }
       return s;
@@ -34,10 +34,10 @@
   }
   function saveSession(patch) {
     const current = getSession();
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch, ts: Date.now() }));
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch, ts: Date.now() })); } catch (_) {}
   }
   function clearSession() {
-    sessionStorage.removeItem(SESSION_KEY);
+    try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
   }
 
   function getSessionId() {
@@ -242,8 +242,15 @@
     const inp = shadow.querySelector('#inp');
     const sendBtn = shadow.querySelector('#send-btn');
 
-    shadow.querySelector('#close-btn').addEventListener('click', () => host.remove());
-    overlay.addEventListener('click', e => { if (e.target === overlay) host.remove(); });
+    // Close → remove modal and let the concierge pick up the conversation
+    function closeAndResume() {
+      host.remove();
+      if (!dealShown) {
+        try { document.dispatchEvent(new CustomEvent('botiga:show-recommendations')); } catch {}
+      }
+    }
+    shadow.querySelector('#close-btn').addEventListener('click', closeAndResume);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeAndResume(); });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !sendBtn.disabled) send(); });
     sendBtn.addEventListener('click', send);
 
@@ -316,6 +323,27 @@
       const saved = Math.round(listPrice - dealPrice);
       const savedPct = Math.round((saved / listPrice) * 100);
 
+      // Resolve final destination once — Draft Order URL preferred. /cart fallback
+      // is for cart-bundles or merchants without Shopify creds.
+      const isDraftOrderUrl = checkoutUrl && /\/(invoices|checkouts)\//.test(checkoutUrl);
+      const dest = isDraftOrderUrl
+        ? checkoutUrl
+        : (discountCode ? `/cart?discount=${encodeURIComponent(discountCode)}` : '/cart');
+
+      // Persist deal into concierge chat history (shared key with video.js) so
+      // the conversation resumes naturally when the user reopens the concierge.
+      try {
+        const ck = '_btgv_chat_v2_' + apiKey;
+        const raw = localStorage.getItem(ck);
+        const data = raw ? JSON.parse(raw) : { ts: Date.now(), msgs: [] };
+        data.ts = Date.now();
+        data.msgs.push({
+          r: 'b',
+          t: '🎁 Locked in ' + (productInfo.name || 'this item') + ' at $' + Math.round(dealPrice) + (saved > 0 ? ' (saved $' + saved + ')' : '')
+        });
+        localStorage.setItem(ck, JSON.stringify(data));
+      } catch (_) {}
+
       const ds = document.createElement('div');
       ds.className = 'deal-screen';
       ds.innerHTML = `
@@ -333,19 +361,41 @@
         </div>
         <div class="deal-savings show" id="_ds">${saved > 0 ? 'You saved $' + saved + ' &middot; ' + savedPct + '% off' : 'Deal locked in'}</div>
         ${discountCode ? `<div class="deal-code-line">${escHtml(discountCode)} applied automatically</div>` : ''}
-        <div style="font-size:13px;color:#888;margin-top:18px">Taking you to cart...</div>
+        <div id="_btg_post" style="display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:280px">
+          <button id="_btg_keep" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.3);padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px">🛍️ Keep shopping</button>
+          <button id="_btg_chk" style="background:#16a34a;color:#fff;border:none;padding:11px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">⚡ Checkout</button>
+        </div>
       `;
       panel.appendChild(ds);
       requestAnimationFrame(() => { ds.classList.add('visible'); });
 
-      // AJAX add to cart, then redirect to /cart?discount=CODE — no button needed
-      const cartPath = discountCode ? `/cart?discount=${encodeURIComponent(discountCode)}` : '/cart';
+      // No-Draft-Order fallback: ensure the variant is in cart so /cart?discount works.
       const vid = detectVariantId();
-      const addPromise = vid
-        ? fetch('/cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(vid), quantity: 1 }) }).catch(() => {})
-        : Promise.resolve();
+      if (!isDraftOrderUrl && vid) {
+        fetch('/cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(vid), quantity: 1 }) }).catch(() => {});
+      }
 
-      addPromise.then(() => { setTimeout(() => { window.location.href = cartPath; }, 2200); });
+      shadow.querySelector('#_btg_keep')?.addEventListener('click', () => {
+        // Close this modal and ask the concierge (video.js) to take over with picks
+        const overlay = shadow.host;
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        try { document.dispatchEvent(new CustomEvent('botiga:show-recommendations')); } catch {}
+      });
+
+      shadow.querySelector('#_btg_chk')?.addEventListener('click', () => {
+        // Now do the big celebration → redirect
+        const post = shadow.querySelector('#_btg_post');
+        if (post) post.style.display = 'none';
+        const headline = document.createElement('div');
+        headline.style.cssText = 'font-size:22px;font-weight:700;color:#fff;margin-top:18px;letter-spacing:0.2px;text-align:center';
+        headline.textContent = 'Deal Done, Darling! 🎉';
+        ds.appendChild(headline);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:13px;color:#888;margin-top:8px;text-align:center';
+        sub.textContent = 'Taking you to checkout…';
+        ds.appendChild(sub);
+        setTimeout(() => { window.location.href = dest; }, 1100);
+      });
     }
 
     // Lead capture is now handled inline by the bot's message — no form widget needed

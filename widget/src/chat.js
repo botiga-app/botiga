@@ -137,17 +137,29 @@ export function createChatWidget({ settings, buttonStyles, apiKey, productInfo, 
 }
 
 function getSessionId() {
+  // localStorage so multiple negotiations across tabs share one session,
+  // letting Draft Orders accumulate line items in a single checkout.
+  // 2-hour TTL keeps it close to the previous sessionStorage semantics.
   const key = '_botiga_sid';
-  let sid = sessionStorage.getItem(key);
+  const tsKey = '_botiga_sid_ts';
+  const TTL = 2 * 60 * 60 * 1000;
+  let sid = null;
+  try {
+    sid = localStorage.getItem(key);
+    const ts = parseInt(localStorage.getItem(tsKey) || '0', 10);
+    if (sid && (Date.now() - ts) > TTL) { sid = null; }
+  } catch (_) {}
   if (!sid) {
-    // Simple fingerprint: randomness + screen + UA hash
     sid = btoa([
       Math.random().toString(36).slice(2),
       screen.width,
       screen.height,
       navigator.userAgent.length
     ].join('|')).replace(/=/g, '');
-    sessionStorage.setItem(key, sid);
+    try {
+      localStorage.setItem(key, sid);
+      localStorage.setItem(tsKey, String(Date.now()));
+    } catch (_) {}
   }
   return sid;
 }
