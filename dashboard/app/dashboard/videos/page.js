@@ -4,6 +4,49 @@ import { createClient } from '../../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
 
+// ─── Shop URL hero — surfaces the public link merchants share ───────────────
+function ShopHero({ shopHandle }) {
+  const MARKETPLACE = process.env.NEXT_PUBLIC_MARKETPLACE_URL || 'https://botigamarketplace.vercel.app';
+  const shopUrl = `${MARKETPLACE}/shop/${shopHandle}`;
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard?.writeText(shopUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <section className="mb-8">
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">Your shop video page</p>
+            <button
+              onClick={copy}
+              title="Click to copy"
+              className="text-base font-mono font-semibold text-gray-900 hover:text-indigo-700 transition-colors text-left break-all"
+            >
+              {shopUrl} {copied ? '✓ copied' : '📋'}
+            </button>
+            <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+              Share this on Instagram bio, TikTok, anywhere — every customer lands in your video feed.
+            </p>
+          </div>
+          <a
+            href={shopUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap"
+          >
+            Preview as customer →
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Instagram importer ───────────────────────────────────────────────────────
 function InstagramImporter({ merchantId, onImported }) {
   const [handle, setHandle] = useState('');
@@ -310,6 +353,250 @@ function UploadZone({ merchantId, onUploaded }) {
   );
 }
 
+// ─── Frame extractor ─────────────────────────────────────────────────────────
+async function extractFrames(videoSrc, count = 4) {
+  return new Promise(resolve => {
+    const video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.muted = true;
+    video.preload = 'metadata';
+    video.onerror = () => resolve([]);
+    video.onloadedmetadata = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512; canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      const frames = [];
+      const times = Array.from({ length: count }, (_, i) => (video.duration / (count + 1)) * (i + 1));
+      let idx = 0;
+      function next() {
+        if (idx >= times.length) { resolve(frames); return; }
+        video.currentTime = times[idx];
+      }
+      video.onseeked = () => {
+        try { ctx.drawImage(video, 0, 0, 512, 512); frames.push(canvas.toDataURL('image/jpeg', 0.75)); } catch (_) {}
+        idx++; next();
+      };
+      next();
+    };
+    video.src = videoSrc;
+  });
+}
+
+// ─── AI Tagger ────────────────────────────────────────────────────────────────
+function AiTagger({ video, merchantId, onTagsUpdated, onClose }) {
+  const [step, setStep] = useState('idle'); // idle | extracting | analysing | result | creating | done
+  const [result, setResult] = useState(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [tags, setTags] = useState([]);
+  const [error, setError] = useState(null);
+  const [created, setCreated] = useState(null);
+
+  async function run() {
+    setStep('extracting'); setError(null);
+    let frames = [];
+
+    if (video.s3_url) {
+      frames = await extractFrames(video.s3_url);
+    }
+
+    const body = frames.length
+      ? { frames }
+      : video.thumbnail_url
+        ? { thumbnail_url: video.thumbnail_url }
+        : null;
+
+    if (!body) { setError('No video frames or thumbnail available to analyse.'); setStep('idle'); return; }
+
+    setStep('analysing');
+    try {
+      const res = await fetch(`${API}/api/videos/${video.id}/analyze`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      setResult(data);
+      setTitle(data.title || '');
+      setDescription(data.description || '');
+      setTags(data.tags || []);
+      setStep('result');
+    } catch (err) {
+      setError(err.message); setStep('idle');
+    }
+  }
+
+  async function createProduct() {
+    setStep('creating');
+    try {
+      const res = await fetch(`${API}/api/videos/${video.id}/create-product`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description, tags, merchant_id: merchantId, image_url: video.thumbnail_url || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create product');
+      setCreated(data.product);
+      if (data.tag) onTagsUpdated(video.id, [data.tag]);
+      setStep('done');
+    } catch (err) {
+      setError(err.message); setStep('result');
+    }
+  }
+
+  function removeTag(t) { setTags(prev => prev.filter(x => x !== t)); }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+        style={{ maxHeight: '90dvh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">✨ AI Product Tag</h3>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[260px]">{video.title || 'Untitled video'}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+
+          {/* Idle */}
+          {step === 'idle' && !error && (
+            <div className="text-center py-6">
+              <div className="text-5xl mb-4">🎬</div>
+              <p className="text-sm font-semibold text-gray-800 mb-2">AI will analyse your video</p>
+              <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+                We'll extract frames, identify what's in the video, write a product title and description, and optionally create a Shopify product draft — all in seconds.
+              </p>
+              <button
+                onClick={run}
+                className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold text-sm px-8 py-3 rounded-xl hover:opacity-90 transition-opacity"
+              >
+                ✨ Analyse Video
+              </button>
+            </div>
+          )}
+
+          {/* Loading states */}
+          {(step === 'extracting' || step === 'analysing') && (
+            <div className="text-center py-10">
+              <div className="w-10 h-10 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-sm font-medium text-gray-700">
+                {step === 'extracting' ? 'Extracting video frames...' : 'AI is analysing your product...'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">This takes 5–10 seconds</p>
+            </div>
+          )}
+
+          {/* Creating */}
+          {step === 'creating' && (
+            <div className="text-center py-10">
+              <div className="w-10 h-10 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-sm font-medium text-gray-700">Creating Shopify product draft...</p>
+            </div>
+          )}
+
+          {/* Done */}
+          {step === 'done' && created && (
+            <div className="text-center py-6">
+              <div className="text-5xl mb-4">🎉</div>
+              <p className="text-sm font-bold text-gray-900 mb-1">Product created!</p>
+              <p className="text-xs text-gray-500 mb-4">
+                <span className="font-semibold">{created.title}</span> was created as a draft in your Shopify store and tagged to this video.
+              </p>
+              <a
+                href={`https://${created.handle ? '' : ''}admin.shopify.com/store/botiga-6380/products/${created.id}`}
+                target="_blank" rel="noreferrer"
+                className="inline-block text-xs font-semibold text-indigo-600 underline mb-4"
+              >
+                View in Shopify →
+              </a>
+              <p className="text-xs text-gray-400">Add a price in Shopify to make it live. The video is already tagged.</p>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="bg-red-50 text-red-700 text-sm rounded-xl p-4 mb-4">
+              {error}
+              <button onClick={() => { setError(null); setStep('idle'); }} className="block mt-2 text-xs text-red-500 underline">Try again</button>
+            </div>
+          )}
+
+          {/* Result */}
+          {step === 'result' && result && (
+            <div className="space-y-5">
+              <div className="bg-indigo-50 rounded-xl p-3 text-xs text-indigo-700 font-medium">
+                ✨ AI analysed your video. Review and edit before creating the product.
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Product Title</label>
+                <input
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Description</label>
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Tags</label>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map(t => (
+                    <span key={t} className="flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-3 py-1 rounded-full">
+                      {t}
+                      <button onClick={() => removeTag(t)} className="text-gray-400 hover:text-gray-600 text-sm leading-none">×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {result.category && (
+                <p className="text-xs text-gray-400">Category detected: <span className="font-medium text-gray-600">{result.category}</span></p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        {step === 'result' && (
+          <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl py-2.5 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={createProduct}
+              disabled={!title.trim()}
+              className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-sm font-semibold rounded-xl py-2.5 hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              Create Shopify Product
+            </button>
+          </div>
+        )}
+        {step === 'done' && (
+          <div className="px-6 py-4 border-t border-gray-100">
+            <button onClick={onClose} className="w-full bg-gray-900 text-white text-sm font-semibold rounded-xl py-2.5 hover:bg-gray-800 transition-colors">
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Product tagger ───────────────────────────────────────────────────────────
 function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdated }) {
   const [query, setQuery] = useState('');
@@ -536,6 +823,7 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
 // ─── Video card ───────────────────────────────────────────────────────────────
 function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, onToggleStatus }) {
   const [taggerOpen, setTaggerOpen] = useState(false);
+  const [aiTaggerOpen, setAiTaggerOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(video.title || '');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -645,10 +933,17 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
           {/* Actions */}
           <div className="flex gap-2">
             <button
+              onClick={() => setAiTaggerOpen(true)}
+              className="text-xs font-medium bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg px-3 py-2 hover:opacity-90 transition-opacity"
+              title="AI: auto-detect product and create Shopify listing"
+            >
+              ✨ AI Tag
+            </button>
+            <button
               onClick={() => setTaggerOpen(true)}
               className="flex-1 text-xs font-medium bg-indigo-600 text-white rounded-lg py-2 hover:bg-indigo-700 transition-colors"
             >
-              🏷 Tag Products
+              🏷 Tag
             </button>
             <button
               onClick={() => onToggleStatus(video.id, isActive ? 'inactive' : 'active')}
@@ -698,6 +993,14 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
           shopifyDomain={shopifyDomain}
           onClose={() => setTaggerOpen(false)}
           onTagsUpdated={onTagsUpdated}
+        />
+      )}
+      {aiTaggerOpen && (
+        <AiTagger
+          video={video}
+          merchantId={merchantId}
+          onTagsUpdated={onTagsUpdated}
+          onClose={() => setAiTaggerOpen(false)}
         />
       )}
     </>
@@ -1005,6 +1308,7 @@ export default function VideosPage() {
   const [merchantId, setMerchantId] = useState(null);
   const [shopifyDomain, setShopifyDomain] = useState(null);
   const [apiKey, setApiKey] = useState(null);
+  const [shopHandle, setShopHandle] = useState(null);
   const [editingWidget, setEditingWidget] = useState(null);
   const supabase = createClient();
 
@@ -1024,6 +1328,7 @@ export default function VideosPage() {
         const m = await merchantRes.json();
         setShopifyDomain(m.shopify_domain || null);
         setApiKey(m.api_key || null);
+        setShopHandle(m.shop_handle || null);
       }
       setLoading(false);
     }
@@ -1137,6 +1442,9 @@ export default function VideosPage() {
           </div>
         )}
       </section>
+
+      {/* ── Shop URL hero — the link merchants share ────────────────────── */}
+      {shopHandle && <ShopHero shopHandle={shopHandle} />}
 
       {/* ── Video Library ───────────────────────────────────────────────── */}
       <section>
