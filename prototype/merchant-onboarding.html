@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M1 · Onboarding · Botiga</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f6f6f7;color:#111;-webkit-font-smoothing:antialiased}
+  .topbar{background:#fff;border-bottom:1px solid #e5e5e7;padding:14px 24px;display:flex;align-items:center;gap:12px;font-size:14px}
+  .topbar a{color:#666;text-decoration:none}
+  .topbar a:hover{color:#111}
+  .topbar .crumb{color:#999}
+  .wrap{max-width:720px;margin:32px auto;padding:0 24px}
+  h1{font-size:24px;margin:0 0 8px;letter-spacing:-0.01em}
+  .lead{color:#666;font-size:14px;line-height:1.5;margin:0 0 32px}
+  .card{background:#fff;border:1px solid #e5e5e7;border-radius:12px;padding:24px;margin-bottom:16px}
+  .step-num{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;background:#111;color:#fff;border-radius:50%;font-size:12px;font-weight:700;margin-right:10px;vertical-align:middle}
+  .step-h{font-weight:600;font-size:15px;display:inline-block;vertical-align:middle}
+  .phone-num{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:22px;background:#f6f6f7;border:1px dashed #c5c5c7;padding:14px 18px;border-radius:8px;margin:14px 0;display:flex;align-items:center;justify-content:space-between}
+  .phone-num .num{font-weight:600;color:#111}
+  .actions{display:flex;gap:8px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #d5d5d7;background:#fff;color:#111;cursor:pointer;text-decoration:none}
+  .btn:hover{background:#f6f6f7}
+  .btn-primary{background:#111;color:#fff;border-color:#111}
+  .btn-primary:hover{background:#222}
+  .btn-success{background:#16a34a;color:#fff;border-color:#16a34a}
+  .input-row{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .otp{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:18px;letter-spacing:0.4em;text-align:center;padding:12px;border:1px solid #d5d5d7;border-radius:8px;width:160px}
+  .channel{margin-top:24px}
+  .channel label{display:block;padding:12px 14px;border:1px solid #d5d5d7;border-radius:8px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px}
+  .channel label:has(input:checked){border-color:#111;background:#fafafa;font-weight:600}
+  .channel input{accent-color:#111}
+  .save-bar{display:flex;justify-content:flex-end;margin-top:24px;padding-top:24px;border-top:1px solid #e5e5e7}
+  .verified{display:none;color:#16a34a;font-size:13px;font-weight:600;margin-left:10px}
+  .verified.show{display:inline-flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html">← Prototype</a>
+  <span class="crumb">/</span>
+  <a href="#">Dashboard</a>
+  <span class="crumb">/</span>
+  <a href="#">Settings</a>
+  <span class="crumb">/</span>
+  <strong>Send videos via message</strong>
+</div>
+
+<div class="wrap">
+  <h1>📱 Send your videos straight to Botiga</h1>
+  <p class="lead">Text or WhatsApp a video to our number. We'll auto-tag products to your shoppable feed and create drafts in your Shopify store. If we need anything, we'll message you back.</p>
+
+  <div class="card">
+    <span class="step-num">1</span><span class="step-h">Save this number in your phone</span>
+    <div class="phone-num">
+      <span class="num">+1 (555) BOT-IGA</span>
+      <span class="actions">
+        <button class="btn" onclick="navigator.clipboard?.writeText('+15552684421');this.textContent='Copied'">📋 Copy</button>
+        <a class="btn" href="https://wa.me/15552684421" target="_blank">📲 Open WhatsApp</a>
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="step-num">2</span><span class="step-h">Verify your number</span><span class="verified" id="vmark">✓ Verified</span>
+    <p style="color:#666;font-size:13px;margin:10px 0 0">Send any message to the number above. We'll reply with a 6-digit code. Enter it below.</p>
+    <div class="input-row">
+      <input class="otp" placeholder="• • • • • •" maxlength="6" id="otp">
+      <button class="btn btn-primary" onclick="document.getElementById('vmark').classList.add('show');this.textContent='Verified ✓';this.disabled=true">Verify</button>
+    </div>
+  </div>
+
+  <div class="card channel">
+    <span class="step-h">Preferred channel</span>
+    <p style="color:#666;font-size:13px;margin:6px 0 14px">We'll reach out on this when we have questions about a video.</p>
+    <label><input type="radio" name="ch"> WhatsApp <span style="margin-left:auto;color:#888;font-size:12px">+1 (555) ••• 8821</span></label>
+    <label><input type="radio" name="ch"> SMS <span style="margin-left:auto;color:#888;font-size:12px">same number</span></label>
+    <label><input type="radio" name="ch" checked> Either — mirror to whatever I reply on</label>
+  </div>
+
+  <div class="save-bar">
+    <button class="btn btn-success">Save settings</button>
+  </div>
+
+  <p style="color:#888;font-size:12px;margin-top:32px;line-height:1.5">
+    Tip: most merchants film a quick reel, type "$189, sizes XS-L" as the caption, and send. We do the rest.
+  </p>
+</div>
+
+</body>
+</html>

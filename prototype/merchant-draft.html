@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M6 · Draft Edit · Botiga</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f6f6f7;color:#111}
+  .topbar{background:#fff;border-bottom:1px solid #e5e5e7;padding:14px 24px;display:flex;align-items:center;gap:12px;font-size:14px}
+  .topbar a{color:#666;text-decoration:none}
+  .crumb{color:#999}
+  .wrap{max-width:980px;margin:24px auto;padding:0 24px 60px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}
+  h1{font-size:22px;margin:0 0 4px}
+  .badge{display:inline-block;font-size:11px;background:#fef3c7;color:#92400e;padding:3px 9px;border-radius:99px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
+  .header .actions{display:flex;gap:8px}
+  .btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #d5d5d7;background:#fff;color:#111;cursor:pointer;text-decoration:none}
+  .btn:hover{background:#f6f6f7}
+  .btn-danger{color:#dc2626;border-color:#fecaca}
+  .btn-danger:hover{background:#fef2f2}
+  .btn-primary{background:#111;color:#fff;border-color:#111}
+  .btn-success{background:#16a34a;color:#fff;border-color:#16a34a}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+  .panel{background:#fff;border:1px solid #e5e5e7;border-radius:12px;padding:18px}
+  .panel h3{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:0.08em;color:#666;font-weight:600}
+  .vid-thumb,.img-thumb{aspect-ratio:9/16;background:linear-gradient(135deg,#374151,#1f2937);border-radius:8px;position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px;max-height:280px}
+  .img-thumb{aspect-ratio:1;background:linear-gradient(135deg,#fce7f3,#fbcfe8);color:#9d174d;max-height:240px}
+  .panel .url{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#666;background:#f6f6f7;padding:6px 8px;border-radius:5px;margin-top:10px;word-break:break-all}
+  .panel .replace-btn{margin-top:10px}
+
+  .form{background:#fff;border:1px solid #e5e5e7;border-radius:12px;padding:24px}
+  label{display:block;font-size:13px;font-weight:600;margin:18px 0 6px;color:#111}
+  label:first-child{margin-top:0}
+  .ai-hint{font-size:11px;font-weight:500;color:#0f766e;background:#ccfbf1;padding:2px 8px;border-radius:4px;margin-left:6px;display:inline-block;text-transform:uppercase;letter-spacing:0.04em}
+  input[type=text],input[type=number],textarea{width:100%;padding:10px 12px;border:1px solid #d5d5d7;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff}
+  input[type=text]:focus,input[type=number]:focus,textarea:focus{border-color:#111}
+  textarea{min-height:80px;resize:vertical}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:99px;background:#f0f9ff;color:#0369a1;font-size:13px;font-weight:500;border:1px solid #bae6fd}
+  .chip-remove{font-size:14px;cursor:pointer;color:#0369a1;opacity:0.6}
+  .chip-remove:hover{opacity:1}
+  .chip-add{padding:5px 10px;border-radius:99px;background:#fafafa;color:#666;font-size:13px;border:1px dashed #d5d5d7;cursor:pointer}
+  .video-link{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e5e5e7;border-radius:8px;font-size:13px;margin-bottom:6px}
+  .video-link.suggested{background:#fffbeb;border-color:#fde68a}
+  .video-link .vt{width:32px;height:32px;background:linear-gradient(135deg,#374151,#1f2937);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+  .video-link input{margin:0}
+  .save-bar{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding:18px 0 0;border-top:1px solid #e5e5e7}
+  .save-bar .left{font-size:13px;color:#666}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html">← Prototype</a>
+  <span class="crumb">/</span>
+  <a href="#">Dashboard</a>
+  <span class="crumb">/</span>
+  <a href="merchant-inbox.html">Inbox</a>
+  <span class="crumb">/</span>
+  <strong>Bridal Lace Gown (draft)</strong>
+</div>
+
+<div class="wrap">
+
+  <div class="header">
+    <div>
+      <h1>Bridal Lace Gown</h1>
+      <span class="badge">⚠ Needs review</span>
+      <span style="color:#666;font-size:13px;margin-left:8px">Auto-created from video · 5 min ago</span>
+    </div>
+    <div class="actions">
+      <button class="btn btn-danger">Discard</button>
+      <button class="btn">⋯</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h3>Source video</h3>
+      <div class="vid-thumb">▶</div>
+      <div class="url">botiga.ai/shop/yourstore?btgv=abc123</div>
+      <button class="btn replace-btn" style="margin-top:8px">📎 Re-upload to a different video</button>
+    </div>
+
+    <div class="panel">
+      <h3>Product image</h3>
+      <div class="img-thumb">👰</div>
+      <button class="btn replace-btn" style="margin-top:8px">📎 Replace image</button>
+      <p style="font-size:11px;color:#666;margin:6px 0 0">Auto-extracted from frame at 4.2s</p>
+    </div>
+  </div>
+
+  <div class="form">
+    <label>Title <span class="ai-hint">AI suggested</span></label>
+    <input type="text" value="Bridal Lace Gown">
+
+    <label>Description <span class="ai-hint">From audio + vision</span></label>
+    <textarea>Off-shoulder gown with hand-stitched lace details and a long flowing train. Perfect for ceremony — soft ivory tone, fitted bodice, ethereal silhouette.</textarea>
+
+    <div class="row">
+      <div>
+        <label>Price <span class="ai-hint">Heard "$189"</span></label>
+        <input type="number" value="189">
+      </div>
+      <div>
+        <label>Compare-at price</label>
+        <input type="number" value="249" placeholder="optional">
+      </div>
+    </div>
+
+    <label>Sizes <span class="ai-hint">From your reply</span></label>
+    <div class="chips">
+      <span class="chip">XS <span class="chip-remove">×</span></span>
+      <span class="chip">S <span class="chip-remove">×</span></span>
+      <span class="chip">M <span class="chip-remove">×</span></span>
+      <span class="chip">L <span class="chip-remove">×</span></span>
+      <span class="chip-add">+ add</span>
+    </div>
+
+    <label>Color</label>
+    <div class="chips">
+      <span class="chip">Ivory <span class="chip-remove">×</span></span>
+      <span class="chip-add">+ add</span>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Quantity per variant</label>
+        <input type="number" value="5">
+      </div>
+      <div>
+        <label>SKU prefix</label>
+        <input type="text" value="BLG" placeholder="optional">
+      </div>
+    </div>
+
+    <label>Tags</label>
+    <div class="chips">
+      <span class="chip">bridal <span class="chip-remove">×</span></span>
+      <span class="chip">lace <span class="chip-remove">×</span></span>
+      <span class="chip">evening <span class="chip-remove">×</span></span>
+      <span class="chip-add">+ add</span>
+    </div>
+
+    <label>Auto-tagged to videos</label>
+    <div class="video-link"><div class="vt">▶</div><input type="checkbox" checked> video_2026-04-29-1430.mp4</div>
+    <div class="video-link suggested"><div class="vt" style="background:linear-gradient(135deg,#7c2d12,#dc2626)">▶</div><input type="checkbox"> ceremony_reel.mp4 <span style="color:#92400e;font-size:11px;margin-left:auto">suggested · 87% match</span></div>
+
+    <div class="save-bar">
+      <div class="left">Saves as a Shopify <strong>draft</strong> product. You can publish it live at any time.</div>
+      <div class="actions" style="display:flex;gap:8px">
+        <button class="btn">Save as draft</button>
+        <button class="btn btn-success">Publish to Shopify (live)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

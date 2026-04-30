@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M4 · Inbox · Botiga</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f6f6f7;color:#111}
+  .topbar{background:#fff;border-bottom:1px solid #e5e5e7;padding:14px 24px;display:flex;align-items:center;gap:12px;font-size:14px}
+  .topbar a{color:#666;text-decoration:none}
+  .crumb{color:#999}
+  .layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 51px)}
+  .list{background:#fff;border-right:1px solid #e5e5e7;overflow-y:auto}
+  .list-h{padding:18px 20px;border-bottom:1px solid #f0f0f2;display:flex;align-items:center;justify-content:space-between}
+  .list-h h1{font-size:17px;margin:0;font-weight:600}
+  .badge-pill{font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:99px;font-weight:600}
+  .filter{display:flex;gap:6px;padding:12px 20px;border-bottom:1px solid #f0f0f2;background:#fafafa}
+  .filter button{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid transparent;background:transparent;color:#666;cursor:pointer;font-weight:500}
+  .filter button.active{background:#fff;border-color:#d5d5d7;color:#111;font-weight:600}
+  .thread{padding:14px 20px;border-bottom:1px solid #f0f0f2;cursor:pointer;display:flex;gap:12px}
+  .thread:hover{background:#fafafa}
+  .thread.active{background:#fef3c7;border-left:3px solid #f59e0b;padding-left:17px}
+  .thread .thumb{width:48px;height:64px;background:#222;border-radius:6px;flex-shrink:0;background-image:linear-gradient(135deg,#374151,#1f2937);position:relative;overflow:hidden}
+  .thread .thumb::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+  .thread .thumb.t2{background:linear-gradient(135deg,#7c2d12,#dc2626)}
+  .thread .thumb.t3{background:linear-gradient(135deg,#1e3a8a,#3b82f6)}
+  .thread .thumb.t4{background:linear-gradient(135deg,#581c87,#a855f7)}
+  .meta{flex:1;min-width:0}
+  .meta .ttl{font-size:14px;font-weight:600;margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .preview{font-size:12px;color:#666;margin:0 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status{font-size:11px;font-weight:600}
+  .status.pending{color:#92400e}
+  .status.done{color:#16a34a}
+  .status.warn{color:#dc2626}
+  .ts{font-size:11px;color:#999;flex-shrink:0;margin-left:auto}
+
+  .pane{display:flex;flex-direction:column;background:#fafafa;overflow:hidden}
+  .pane-h{padding:16px 24px;background:#fff;border-bottom:1px solid #e5e5e7;display:flex;align-items:center;justify-content:space-between}
+  .pane-h h2{font-size:16px;margin:0;font-weight:600}
+  .pane-h .actions{display:flex;gap:8px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:7px;font-size:13px;font-weight:600;border:1px solid #d5d5d7;background:#fff;color:#111;cursor:pointer;text-decoration:none}
+  .btn:hover{background:#f6f6f7}
+  .btn-primary{background:#111;color:#fff;border-color:#111}
+  .messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:14px}
+  .vid-card{background:#fff;border:1px solid #e5e5e7;border-radius:12px;padding:16px;display:flex;gap:14px;align-items:center;align-self:center;width:100%;max-width:420px}
+  .vid-card .vid-thumb{width:90px;height:120px;background:linear-gradient(135deg,#374151,#1f2937);border-radius:8px;position:relative;flex-shrink:0}
+  .vid-card .vid-thumb::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
+  .vid-card .info{flex:1;font-size:12px;color:#666}
+  .vid-card .info strong{color:#111;font-size:13px;display:block;margin-bottom:4px}
+  .msg{max-width:520px;padding:12px 16px;border-radius:18px;font-size:14px;line-height:1.45}
+  .msg.bot{background:#fff;border:1px solid #e5e5e7;align-self:flex-start;border-bottom-left-radius:6px}
+  .msg.merchant{background:#16a34a;color:#fff;align-self:flex-end;border-bottom-right-radius:6px}
+  .msg .hdr{font-size:11px;color:#999;margin-bottom:4px;font-weight:600}
+  .msg.merchant .hdr{color:rgba(255,255,255,0.7)}
+  .msg ul{margin:6px 0 0;padding-left:20px}
+  .msg li{margin:2px 0}
+  .compose{background:#fff;border-top:1px solid #e5e5e7;padding:14px 20px;display:flex;gap:10px;align-items:center}
+  .compose input{flex:1;border:1px solid #d5d5d7;border-radius:24px;padding:11px 18px;font-size:14px;outline:none}
+  .compose input:focus{border-color:#111}
+  .compose button{background:transparent;border:none;font-size:18px;cursor:pointer;color:#666;padding:6px}
+  .compose button:hover{color:#111}
+  .compose .send{background:#111;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center}
+  .channel-tag{font-size:10px;background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
+  .quick-edit{padding:14px 20px;background:#fff;border-top:1px solid #e5e5e7;font-size:13px;color:#666;display:flex;justify-content:space-between;align-items:center}
+  .quick-edit a{color:#111;font-weight:600;text-decoration:none}
+  .quick-edit a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html">← Prototype</a>
+  <span class="crumb">/</span>
+  <a href="#">Dashboard</a>
+  <span class="crumb">/</span>
+  <strong>Inbox</strong>
+</div>
+
+<div class="layout">
+
+  <aside class="list">
+    <div class="list-h">
+      <h1>Inbox</h1>
+      <span class="badge-pill">3 awaiting</span>
+    </div>
+    <div class="filter">
+      <button class="active">All</button>
+      <button>Awaiting reply</button>
+      <button>Resolved</button>
+    </div>
+
+    <div class="thread active">
+      <div class="thumb"></div>
+      <div class="meta">
+        <p class="ttl">Bridal Lace Gown</p>
+        <p class="preview">Bot: What sizes are available?</p>
+        <span class="status pending">⚠ Needs sizes</span>
+      </div>
+      <span class="ts">2m</span>
+    </div>
+
+    <div class="thread">
+      <div class="thumb t2"></div>
+      <div class="meta">
+        <p class="ttl">Satin Wrap Skirt</p>
+        <p class="preview">Bot: I couldn't catch the price…</p>
+        <span class="status pending">⚠ Needs price</span>
+      </div>
+      <span class="ts">1h</span>
+    </div>
+
+    <div class="thread">
+      <div class="thumb t3"></div>
+      <div class="meta">
+        <p class="ttl">Pearl Drop Earrings</p>
+        <p class="preview">Bot: 3 candidate matches in your store…</p>
+        <span class="status pending">⚠ Pick a match</span>
+      </div>
+      <span class="ts">3h</span>
+    </div>
+
+    <div class="thread">
+      <div class="thumb t4"></div>
+      <div class="meta">
+        <p class="ttl">Wide Lace Corset Belt</p>
+        <p class="preview">✓ Published as draft</p>
+        <span class="status done">● Resolved</span>
+      </div>
+      <span class="ts">y'day</span>
+    </div>
+  </aside>
+
+  <section class="pane">
+    <div class="pane-h">
+      <div>
+        <h2>Bridal Lace Gown <span class="channel-tag">WhatsApp</span></h2>
+      </div>
+      <div class="actions">
+        <a class="btn" href="merchant-draft.html">Edit fields directly →</a>
+      </div>
+    </div>
+
+    <div class="messages">
+
+      <div class="vid-card">
+        <div class="vid-thumb"></div>
+        <div class="info">
+          <strong>video_2026-04-29-1430.mp4</strong>
+          Sent via WhatsApp · 22 sec · 12.1 MB<br>
+          Caption: "new bridal piece, $189"
+        </div>
+      </div>
+
+      <div class="msg bot">
+        <div class="hdr">Botiga · 2m ago</div>
+        Got the video — gorgeous dress 🌹<br><br>
+        Vision picked up:
+        <ul>
+          <li>Off-shoulder Lace Dress</li>
+          <li>Ivory color</li>
+          <li>Long train</li>
+        </ul>
+        Heard <strong>"$189"</strong> in the audio ✓<br><br>
+        Need from you: <strong>What sizes are available?</strong>
+      </div>
+
+      <div class="msg merchant">
+        <div class="hdr">You · just now</div>
+        XS to L
+      </div>
+
+      <div class="msg bot">
+        <div class="hdr">Botiga · just now</div>
+        Perfect. Ready to add:
+        <ul>
+          <li><strong>Off-shoulder Lace Dress</strong>, Ivory</li>
+          <li><strong>$189</strong> · Sizes XS, S, M, L</li>
+          <li>Image: frame from your video</li>
+        </ul>
+        Reply <strong>YES</strong> to publish as a draft, or edit anything (e.g. "make it $199" or "rename to Bridal Lace Gown").
+      </div>
+
+    </div>
+
+    <div class="compose">
+      <button title="Attach">📎</button>
+      <input type="text" placeholder="Type a reply…">
+      <button class="send">➤</button>
+    </div>
+
+    <div class="quick-edit">
+      Prefer a form? <a href="merchant-draft.html">Edit fields directly →</a>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>

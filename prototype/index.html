@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Botiga — Shoppable Video Pipeline · Prototype</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#0a0a0a;color:#fff;-webkit-font-smoothing:antialiased}
+  header{padding:48px 32px 24px;max-width:1200px;margin:0 auto}
+  h1{font-size:32px;margin:0 0 8px;letter-spacing:-0.02em}
+  .sub{color:#888;font-size:15px;line-height:1.5;max-width:640px}
+  main{max-width:1200px;margin:0 auto;padding:24px 32px 80px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:0.12em;color:#888;margin:48px 0 16px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .card{display:block;background:#141414;border:1px solid #222;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all .15s ease}
+  .card:hover{border-color:#444;background:#1a1a1a;transform:translateY(-2px)}
+  .card .id{display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.1em;color:#888;background:#222;padding:3px 8px;border-radius:4px;margin-bottom:12px}
+  .card h3{margin:0 0 6px;font-size:16px;font-weight:600}
+  .card p{margin:0;color:#888;font-size:13px;line-height:1.45}
+  .row{display:flex;gap:12px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid #222}
+  .badge{font-size:11px;background:#1a472a;color:#86efac;padding:2px 7px;border-radius:99px;font-weight:600}
+  .badge.cust{background:#1e1b4b;color:#a5b4fc}
+  footer{margin-top:80px;padding-top:24px;border-top:1px solid #222;color:#555;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Shoppable Video Pipeline</h1>
+  <p class="sub">Click-through prototype of the merchant-side ingestion (WhatsApp + dashboard) and the customer-side shoppable feed. Static HTML — no backend wired up. For UX review before code.</p>
+</header>
+<main>
+
+<h2>Merchant flow</h2>
+<div class="grid">
+  <a class="card" href="merchant-onboarding.html">
+    <span class="id">M1</span>
+    <h3>Onboarding</h3>
+    <p>Connect a WhatsApp / SMS number so videos can be sent in by message.</p>
+    <div class="row"><span class="badge">Merchant</span></div>
+  </a>
+  <a class="card" href="merchant-inbox.html">
+    <span class="id">M4</span>
+    <h3>Inbox</h3>
+    <p>Bot conversation threads — pending product questions, drafts in progress.</p>
+    <div class="row"><span class="badge">Merchant</span></div>
+  </a>
+  <a class="card" href="merchant-draft.html">
+    <span class="id">M6</span>
+    <h3>Draft edit</h3>
+    <p>Auto-created product → review and edit every field before publishing.</p>
+    <div class="row"><span class="badge">Merchant</span></div>
+  </a>
+</div>
+
+<h2>Customer flow</h2>
+<div class="grid">
+  <a class="card" href="customer-feed.html">
+    <span class="id">C2 · C3</span>
+    <h3>Shoppable feed</h3>
+    <p>Vertical scroll videos with product shelf. The link merchants share.</p>
+    <div class="row"><span class="badge cust">Customer</span></div>
+  </a>
+  <a class="card" href="customer-negotiate.html">
+    <span class="id">C4 · C5 · C6</span>
+    <h3>Negotiate + Deal Done</h3>
+    <p>Chat negotiation with screenshot attachment. Keep shopping or checkout.</p>
+    <div class="row"><span class="badge cust">Customer</span></div>
+  </a>
+</div>
+
+<footer>
+  Static prototype · April 2026 · No real data, no live API
+</footer>
+</main>
+</body>
+</html>
