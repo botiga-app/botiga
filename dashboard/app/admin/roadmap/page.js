@@ -2,6 +2,20 @@
 import { useState } from 'react';
 
 const ITEMS = [
+  // ─── Proactive Agent (Next, decided 2026-04-30) ───────────────────────────
+  { product: 'Proactive Agent', feature: 'Instagram auto-poll + silent auto-import — merchant uploads to IG, video lands on their store within 30min', status: 'Next', size: 'M', impact: 'Retention', origin: 'Discussed', notes: 'Cron polls @handle every 30min, diffs against videos.source_url, runs full transcribe + extract + match + tag pipeline. Self-running content loop — merchant changes nothing about how they create.' },
+  { product: 'Proactive Agent', feature: 'UNDO window after auto-import — single message + 60min revert', status: 'Next', size: 'S', impact: 'Trust', origin: 'Discussed', notes: 'After import: "Added your latest reel — live at <url>. Reply UNDO to skip it." Within 60min → soft-delete video, ack. After → permanent. Trust > friction; most reels are shoppable.' },
+  { product: 'Proactive Agent', feature: 'Anti-spam batching + STOP keyword', status: 'Next', size: 'S', impact: 'Trust', origin: 'Discussed', notes: 'Max 1 outbound per merchant per 6h. If 3+ reels in a row → one batched message instead of N. STOP disables auto-prompts (inbound still works).' },
+  { product: 'Proactive Agent', feature: 'Catalog gap nudge — product added without a video', status: 'Backlog', size: 'S', impact: 'Engagement', origin: 'Discussed', notes: 'Shopify webhook products/create → if no video tagged after 3 days → "You added X. Got a video? Send it here."' },
+  { product: 'Proactive Agent', feature: 'Performance ping — 24h post-upload views/likes/deals summary', status: 'Backlog', size: 'S', impact: 'Engagement', origin: 'Discussed', notes: 'Reinforces upload habit by surfacing payoff.' },
+  { product: 'Proactive Agent', feature: 'TikTok auto-poll', status: 'Later', size: 'M', impact: 'Retention', origin: 'Discussed', notes: 'Same pattern as Instagram, different RapidAPI endpoint.' },
+  { product: 'Proactive Agent', feature: '"Send to Botiga" browser extension on instagram.com', status: 'Later', size: 'L', impact: 'Retention', origin: 'Discussed', notes: 'Real-time capture vs polling. Bypasses IG rate limits + scraper costs once we scale past current merchant count.' },
+
+  // ─── Shipped Apr 28–30, 2026 ──────────────────────────────────────────────
+  { product: 'Shopify Widget', feature: 'WhatsApp inbound video pipeline — text a video, get a tagged shop video back', status: 'Shipped', size: 'L', impact: 'Onboarding', origin: 'Discussed', notes: 'Twilio webhook → S3 upload → Groq Whisper transcribe → Llama 3.3 70b extract product fields → match against merchant Shopify catalog → INSERT video_product_tags → reply with storefront URL + deeplink. Custom domain support via merchants.primary_domain.' },
+  { product: 'Shopify Widget', feature: '/api/shop/:handle endpoint + marketplace /shop/[handle] page', status: 'Shipped', size: 'M', impact: 'Distribution', origin: 'Discussed', notes: 'Merchants get a shareable Botiga marketplace URL (botigamarketplace.vercel.app/shop/<handle>) as a fallback to their Shopify storefront. Same widget, same data.' },
+  { product: 'Shopify Widget', feature: 'Shop URL hero on /dashboard/videos', status: 'Shipped', size: 'S', impact: 'UX', origin: 'Discussed', notes: 'Merchant sees their public shop URL with copy-to-clipboard + "Preview as customer" right above the video library.' },
+
   // ─── Shipped Apr 28–29, 2026 ──────────────────────────────────────────────
   { product: 'Shopify App', feature: 'Managed install via OAuth — write_draft_orders scope, token exchange', status: 'Shipped', size: 'L', impact: 'Distribution', origin: 'Discussed', notes: 'Shopify Dev Dashboard install: OAuth code-grant flow, scope approval, token persisted to merchants table; resolves 403 errors for draft order creation' },
   { product: 'Negotiation API', feature: 'Multi-item Draft Orders — one checkout, per-line-item negotiated prices', status: 'Shipped', size: 'L', impact: 'Conversion', origin: 'Discussed', notes: 'upsertNegotiatedItem rebuilds line_items from negotiations table per session_token; uses applied_discount (Shopify ignores price field on variant-backed lines); session_token shared across tabs via localStorage' },
@@ -178,7 +192,7 @@ const ITEMS = [
 ];
 
 const STATUSES = ['Shipped', 'Next', 'Backlog', 'Later', 'Icebox'];
-const PRODUCTS = ['All', 'Shoppable Video', 'Shopify Widget', 'Botiga Marketplace', 'Merchant Dashboard', 'Negotiation API', 'Loyalty & Retention', 'Social Proof', 'Share & Negotiate', 'Email & Notifications', 'Admin Dashboard', 'Shopify App', 'Infrastructure'];
+const PRODUCTS = ['All', 'Proactive Agent', 'Shoppable Video', 'Shopify Widget', 'Botiga Marketplace', 'Merchant Dashboard', 'Negotiation API', 'Loyalty & Retention', 'Social Proof', 'Share & Negotiate', 'Email & Notifications', 'Admin Dashboard', 'Shopify App', 'Infrastructure'];
 const ORIGINS = ['All', 'Discussed', 'Suggested'];
 
 const STATUS_STYLE = {
@@ -190,6 +204,7 @@ const STATUS_STYLE = {
 };
 
 const PRODUCT_COLORS = {
+  'Proactive Agent':     'bg-emerald-100 text-emerald-700',
   'Shoppable Video':     'bg-rose-100 text-rose-700',
   'Shopify Widget':      'bg-violet-100 text-violet-700',
   'Botiga Marketplace':  'bg-cyan-100 text-cyan-700',
@@ -327,7 +342,7 @@ export default function RoadmapPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">Last updated Apr 29, 2026</span>
+            <span className="text-xs text-gray-400">Last updated Apr 30, 2026</span>
           </div>
         </div>
 
