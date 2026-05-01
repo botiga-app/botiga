@@ -6,6 +6,7 @@ const { negotiationLimiter, settingsLimiter } = require('../middleware/rateLimit
 const { widgetCors } = require('../middleware/cors');
 const { processNegotiation } = require('../services/negotiation');
 const { resolveProductRules } = require('../services/rules');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 
 // Widget settings — called on page load
 router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => {
@@ -135,12 +136,13 @@ router.post('/negotiate', widgetCors, negotiationLimiter, validateApiKey, async 
 
   const [{ data: settings }, { data: merchant }] = await Promise.all([
     supabase.from('merchant_settings').select('*').eq('merchant_id', merchantId).single(),
-    supabase.from('merchants').select('shopify_access_token, shopify_domain, plan').eq('id', merchantId).single()
+    supabase.from('merchants').select('id, shopify_access_token, shopify_refresh_token, shopify_token_expires_at, shopify_domain, plan').eq('id', merchantId).single()
   ]);
 
   // Fall back to env vars if merchant record doesn't have Shopify creds
   const shopifyDomain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN || null;
-  const shopifyAccessToken = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN || null;
+  const merchantToken = merchant?.shopify_access_token ? await getValidShopifyToken(merchant) : null;
+  const shopifyAccessToken = merchantToken || process.env.SHOPIFY_ACCESS_TOKEN || null;
 
   const merchantSettings = settings || {
     tone: 'friendly',

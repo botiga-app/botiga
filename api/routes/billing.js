@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../lib/supabase');
 const { widgetCors } = require('../middleware/cors');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 
 router.use(widgetCors);
 
@@ -61,7 +62,7 @@ router.post('/merchants/:merchantId/billing/subscribe', async (req, res) => {
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('shopify_domain, shopify_access_token')
+    .select('id, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at')
     .eq('id', merchantId)
     .single();
 
@@ -74,12 +75,13 @@ router.post('/merchants/:merchantId/billing/subscribe', async (req, res) => {
   const isTest = process.env.NODE_ENV !== 'production';
 
   try {
+    const accessToken = await getValidShopifyToken(merchant);
     const shopRes = await fetch(
       `https://${merchant.shopify_domain}/admin/api/2024-01/recurring_application_charges.json`,
       {
         method: 'POST',
         headers: {
-          'X-Shopify-Access-Token': merchant.shopify_access_token,
+          'X-Shopify-Access-Token': accessToken,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -119,7 +121,7 @@ router.get('/merchants/:merchantId/billing/activate', async (req, res) => {
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('shopify_domain, shopify_access_token')
+    .select('id, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at')
     .eq('id', merchantId)
     .single();
 
@@ -128,13 +130,14 @@ router.get('/merchants/:merchantId/billing/activate', async (req, res) => {
   }
 
   try {
+    const accessToken = await getValidShopifyToken(merchant);
     // Activate the charge on Shopify
     const activateRes = await fetch(
       `https://${merchant.shopify_domain}/admin/api/2024-01/recurring_application_charges/${charge_id}/activate.json`,
       {
         method: 'POST',
         headers: {
-          'X-Shopify-Access-Token': merchant.shopify_access_token,
+          'X-Shopify-Access-Token': accessToken,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ recurring_application_charge: { id: charge_id } })

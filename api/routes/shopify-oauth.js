@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const supabase = require('../lib/supabase');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
@@ -54,14 +55,15 @@ router.get('/shopify/callback', async (req, res) => {
 
   if (!shop || !code) return res.status(400).send('Missing parameters');
 
-  // Exchange code for access token
+  // Exchange code for expiring access token (Shopify rejects non-expiring tokens as of 2026)
   const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       client_id: SHOPIFY_CLIENT_ID,
       client_secret: SHOPIFY_CLIENT_SECRET,
-      code
+      code,
+      expiring: '1'
     })
   });
 
@@ -71,10 +73,15 @@ router.get('/shopify/callback', async (req, res) => {
     return res.status(500).send('Token exchange failed: ' + err);
   }
 
-  const { access_token } = await tokenRes.json();
+  const tokenData = await tokenRes.json();
+  const { access_token, refresh_token, expires_in, refresh_token_expires_in } = tokenData;
   const storeDomain = shop;
+  const tokenExpiresAt = expires_in ? new Date(Date.now() + expires_in * 1000).toISOString() : null;
+  const refreshExpiresAt = refresh_token_expires_in
+    ? new Date(Date.now() + refresh_token_expires_in * 1000).toISOString()
+    : null;
 
-  console.log(`\n✅ Shopify access token for ${storeDomain}:\n${access_token}\n`);
+  console.log(`\n✅ Shopify access token for ${storeDomain} (expires_in=${expires_in}s)\n`);
 
   // Extract merchant_id from state payload (format: "nonce.merchant_id" or just "nonce")
   const stateParts = (state || '').split('.');
@@ -116,6 +123,9 @@ router.get('/shopify/callback', async (req, res) => {
   if (merchant) {
     const { error: updateError } = await supabase.from('merchants').update({
       shopify_access_token: access_token,
+      shopify_refresh_token: refresh_token || null,
+      shopify_token_expires_at: tokenExpiresAt,
+      shopify_refresh_token_expires_at: refreshExpiresAt,
       shopify_domain: storeDomain
     }).eq('id', merchant.id);
 
@@ -170,7 +180,10 @@ router.get('/shopify/callback', async (req, res) => {
                 email: ownerEmail,
                 name: ownerName,
                 shopify_domain: storeDomain,
-                shopify_access_token: access_token
+                shopify_access_token: access_token,
+                shopify_refresh_token: refresh_token || null,
+                shopify_token_expires_at: tokenExpiresAt,
+                shopify_refresh_token_expires_at: refreshExpiresAt
               }, { onConflict: 'id' });
               console.log('[Shopify OAuth] New merchant invited:', ownerEmail);
             }
@@ -208,14 +221,15 @@ router.get('/shopify/status', async (req, res) => {
 
   const { data: merchant, error } = await supabase
     .from('merchants')
-    .select('id, email, shopify_domain, shopify_access_token')
+    .select('id, email, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at, shopify_refresh_token_expires_at')
     .eq('id', merchantId)
     .single();
 
   if (error) return res.status(404).json({ error: 'Merchant not found', detail: error.message });
 
   const domain = merchant.shopify_domain || process.env.SHOPIFY_DOMAIN;
-  const token = merchant.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+  const liveToken = merchant.shopify_access_token ? await getValidShopifyToken(merchant) : null;
+  const token = liveToken || process.env.SHOPIFY_ACCESS_TOKEN;
 
   const status = {
     merchant_id: merchant.id,
@@ -224,6 +238,9 @@ router.get('/shopify/status', async (req, res) => {
     token_in_db: merchant.shopify_access_token ? `${merchant.shopify_access_token.slice(0, 10)}...` : null,
     token_from_env: process.env.SHOPIFY_ACCESS_TOKEN ? `${process.env.SHOPIFY_ACCESS_TOKEN.slice(0, 10)}...` : null,
     token_effective: token ? `${token.slice(0, 10)}...` : null,
+    token_expires_at: merchant.shopify_token_expires_at,
+    refresh_token_expires_at: merchant.shopify_refresh_token_expires_at,
+    has_refresh_token: !!merchant.shopify_refresh_token,
     ready: !!(domain && token),
     shopify_api_test: null
   };

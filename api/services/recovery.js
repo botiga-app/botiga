@@ -1,6 +1,7 @@
 const twilio = require('twilio');
 const { Resend } = require('resend');
 const supabase = require('../lib/supabase');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 
 async function sendWhatsApp(to, message) {
   if (!process.env.TWILIO_ACCOUNT_SID) return;
@@ -190,12 +191,13 @@ async function processRecoveryQueue() {
       try {
         const { data: merchant } = await supabase
           .from('merchants')
-          .select('shopify_domain, shopify_access_token')
+          .select('id, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at')
           .eq('id', neg.merchant_id)
           .single();
         if (merchant?.shopify_domain && merchant?.shopify_access_token) {
+          const accessToken = await getValidShopifyToken(merchant);
           const r = await fetch(`https://${merchant.shopify_domain}/admin/api/2024-01/draft_orders/${neg.draft_order_id}.json`, {
-            headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token }
+            headers: { 'X-Shopify-Access-Token': accessToken }
           });
           if (r.ok) {
             const j = await r.json();

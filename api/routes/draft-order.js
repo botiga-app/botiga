@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../lib/supabase');
 const { widgetCors } = require('../middleware/cors');
 const { removeLineItemFromDraftOrder } = require('../services/draftOrder');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 
 // Remove a single negotiated line item from the session's draft order.
 // Widget calls this when the shopper removes an item from their negotiated cart.
@@ -25,7 +26,7 @@ router.delete('/draft-order/line-item', widgetCors, async (req, res) => {
   // Get merchant Shopify credentials
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('shopify_domain, shopify_access_token')
+    .select('id, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at')
     .eq('id', neg.merchant_id)
     .single();
 
@@ -34,9 +35,10 @@ router.delete('/draft-order/line-item', widgetCors, async (req, res) => {
   }
 
   try {
+    const accessToken = await getValidShopifyToken(merchant);
     const updated = await removeLineItemFromDraftOrder({
       shop: merchant.shopify_domain,
-      accessToken: merchant.shopify_access_token,
+      accessToken,
       draftOrderId: neg.draft_order_id,
       variantId: neg.variant_id
     });

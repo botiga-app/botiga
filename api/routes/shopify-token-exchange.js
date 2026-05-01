@@ -23,7 +23,7 @@ router.get('/shopify/auth', async (req, res) => {
     return res.redirect(authorizeUrl);
   }
 
-  // Exchange id_token for offline access token
+  // Exchange id_token for expiring offline access token (Shopify rejects non-expiring tokens)
   try {
     const exchangeRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST',
@@ -34,7 +34,8 @@ router.get('/shopify/auth', async (req, res) => {
         grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
         subject_token: id_token,
         subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-        requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token'
+        requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+        expiring: '1'
       })
     });
 
@@ -44,34 +45,44 @@ router.get('/shopify/auth', async (req, res) => {
       return res.status(500).send(`Token exchange failed: ${JSON.stringify(data)}`);
     }
 
+    const tokenFields = {
+      shopify_domain: shop,
+      shopify_access_token: data.access_token,
+      shopify_refresh_token: data.refresh_token || null,
+      shopify_token_expires_at: data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+        : null,
+      shopify_refresh_token_expires_at: data.refresh_token_expires_in
+        ? new Date(Date.now() + data.refresh_token_expires_in * 1000).toISOString()
+        : null
+    };
+
     // Update merchant record — match by old jxavr1-ur first, fall back to first merchant
     let updated = await supabase
       .from('merchants')
-      .update({ shopify_domain: shop, shopify_access_token: data.access_token })
+      .update(tokenFields)
       .eq('shopify_domain', 'jxavr1-ur.myshopify.com')
       .select('id, shopify_domain');
 
     if (!updated.data || !updated.data.length) {
-      // Try matching by current shop domain
       updated = await supabase
         .from('merchants')
-        .update({ shopify_domain: shop, shopify_access_token: data.access_token })
+        .update(tokenFields)
         .eq('shopify_domain', shop)
         .select('id, shopify_domain');
     }
 
     if (!updated.data || !updated.data.length) {
-      // Fallback: update the first merchant
       const { data: first } = await supabase.from('merchants').select('id').limit(1).single();
       if (first) {
         await supabase
           .from('merchants')
-          .update({ shopify_domain: shop, shopify_access_token: data.access_token })
+          .update(tokenFields)
           .eq('id', first.id);
       }
     }
 
-    console.log('[TokenExchange] Stored offline token for', shop);
+    console.log('[TokenExchange] Stored expiring offline token for', shop, '(expires_in=' + data.expires_in + 's)');
 
     return res.send(`
 <!DOCTYPE html>

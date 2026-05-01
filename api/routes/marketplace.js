@@ -18,6 +18,7 @@ const { runIndexer } = require('../services/marketplace-indexer');
 const { sendMerchantDealAlert, sendCustomerDealConfirmation } = require('../services/marketplace-email');
 const { PricingEngine, isAcceptance, parseCustomerOffer, lowballResponse } = require('../services/PricingEngine');
 const { callLLM, buildSystemPrompt } = require('../services/llm');
+const { getValidShopifyToken } = require('../lib/shopifyToken');
 const { createShopifyDiscountCode } = require('../services/shopify');
 
 const JWT_SECRET = process.env.MARKETPLACE_JWT_SECRET || process.env.JWT_SECRET || 'botiga-marketplace-secret';
@@ -130,7 +131,7 @@ router.post('/marketplace/negotiate/start', requireAuth, async (req, res) => {
 
   const { data: product, error: pErr } = await supabase
     .from('marketplace_products')
-    .select('*, merchants!marketplace_products_merchant_id_fkey(id, email, marketplace_commission_pct, marketplace_max_discount_pct, shopify_domain, shopify_access_token, marketplace_store_name)')
+    .select('*, merchants!marketplace_products_merchant_id_fkey(id, email, marketplace_commission_pct, marketplace_max_discount_pct, shopify_domain, shopify_access_token, shopify_refresh_token, shopify_token_expires_at, marketplace_store_name)')
     .eq('id', product_id)
     .single();
 
@@ -336,9 +337,10 @@ router.post('/marketplace/negotiate/:id/message', requireAuth, async (req, res) 
     if (merchant?.shopify_domain && merchant?.shopify_access_token) {
       try {
         const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+        const accessToken = await getValidShopifyToken(merchant);
         discountCode = await createShopifyDiscountCode({
           shop: merchant.shopify_domain,
-          accessToken: merchant.shopify_access_token,
+          accessToken,
           listPrice, dealPrice,
           negotiationId: id, expiresAt,
         });
