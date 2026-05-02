@@ -6,6 +6,7 @@ const navItems = [
   { href: '/admin/live-feed', label: 'Live Feed', icon: '📡' },
   { href: '/admin/merchants', label: 'Merchants', icon: '🏪' },
   { href: '/admin/alerts', label: 'Alerts', icon: '🔔' },
+  { href: '/admin/clone', label: 'Clone Store', icon: '🪞' },
   { href: '/admin/roadmap', label: 'Roadmap', icon: '🗺️' }
 ];
 
