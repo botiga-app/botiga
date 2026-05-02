@@ -1,32 +1,23 @@
 // Admin endpoints for the AI video → product auto-tag pipeline.
 //
-// Chunked execution: each video analysis takes ~5s; running 20 in a single
-// HTTP request blows past Vercel's 60s function ceiling. Endpoints are split
-// so each call stays well under that limit.
-//
 //  POST /admin/videos/:id/analyze
-//     Analyze a single video (vision + caption) and auto-tag.
-//
-//  POST /admin/videos/import-ig
-//     { merchant_id, ig_handle, limit }
-//     Imports the latest N IG videos. NO analysis. Fast (~3-8s).
-//     Returns { imported, video_ids[] }.
-//
-//  POST /admin/videos/analyze-tick
-//     { merchant_id, chunk_size? }
-//     Processes up to chunk_size (default 5) un-analyzed videos.
-//     Returns { processed, has_more, remaining, summary }.
-//     Caller loops until has_more=false. Stays under 45s per tick.
+//     Analyze a single video (vision + caption) and auto-tag based on
+//     confidence thresholds (>=0.5 auto / 0.3-0.5 pending / <0.3 skip).
 //
 //  POST /admin/videos/batch-analyze
-//     { merchant_id }
-//     Convenience: same as analyze-tick but no chunk cap. Use only with
-//     <10 unanalyzed videos.
+//     { merchant_id }  — Analyze all un-analyzed videos for this merchant.
+//                       Sequential, rate-limited (~1 video/sec).
+//
+//  POST /admin/videos/import-ig-and-tag
+//     { merchant_id, ig_handle, limit }
+//     One-shot for the demo: import the latest N (default 20) IG videos
+//     for the given handle into the merchant, then analyze + auto-tag each.
+//     Returns a summary { imported, auto_tagged, pending_review, skipped }.
 //
 // All routes require x-admin-secret. Auto-tag rule (per project memory):
-//   combined_confidence >= 0.5  → match_status='auto_tagged' (applied, reviewable)
-//   0.3 <= combined < 0.5       → match_status='pending_review' (suggestion)
-//   combined < 0.3              → no row inserted, video stays untagged
+//   score >= 0.5      → insert video_product_tags row, status=auto_tagged
+//   0.3 <= score <0.5 → insert row, status=pending_review (awaits approval)
+//   score < 0.3       → no row inserted, video stays untagged
 
 const express = require('express');
 const router = express.Router();
@@ -157,48 +148,6 @@ router.post('/admin/videos/:id/analyze', async (req, res) => {
   }
 });
 
-// Process up to chunk_size (default 5) unanalyzed videos. Caller loops
-// until has_more is false. Each tick stays under 45s on a 5-chunk default.
-router.post('/admin/videos/analyze-tick', async (req, res) => {
-  const { merchant_id, chunk_size = 5 } = req.body || {};
-  if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
-
-  const { data: videos, error } = await supabase
-    .from('videos')
-    .select('id')
-    .eq('merchant_id', merchant_id)
-    .is('analyzed_at', null)
-    .order('created_at', { ascending: false })
-    .limit(Math.min(chunk_size, 10));
-  if (error) return res.status(500).json({ error: error.message });
-
-  const summary = { processed: 0, auto_tagged: 0, pending_review: 0, skipped: 0, errors: 0, results: [] };
-  for (const v of videos) {
-    try {
-      const r = await analyzeAndTag(v.id);
-      summary.results.push(r);
-      summary.processed++;
-      if (r.status === 'auto_tagged') summary.auto_tagged++;
-      else if (r.status === 'pending_review') summary.pending_review++;
-      else if (r.status === 'skipped' || r.status === 'no_analysis') summary.skipped++;
-      else if (r.status === 'analyzer_error') summary.errors++;
-    } catch (err) {
-      summary.errors++;
-      summary.results.push({ video_id: v.id, status: 'fatal_error', error: err.message });
-    }
-    await sleep(ANALYSIS_GAP_MS);
-  }
-
-  // Check if more remain
-  const { count: remaining } = await supabase
-    .from('videos')
-    .select('id', { count: 'exact', head: true })
-    .eq('merchant_id', merchant_id)
-    .is('analyzed_at', null);
-
-  res.json({ ...summary, has_more: (remaining ?? 0) > 0, remaining: remaining ?? 0 });
-});
-
 router.post('/admin/videos/batch-analyze', async (req, res) => {
   const { merchant_id } = req.body || {};
   if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
@@ -229,10 +178,9 @@ router.post('/admin/videos/batch-analyze', async (req, res) => {
   res.json(summary);
 });
 
-// ─── Import-only: IG handle → import latest N videos (no analysis) ──────────
-// Fast path; caller follows up with /admin/videos/analyze-tick to process.
+// ─── One-shot: IG handle → import 20 → analyze + tag each ───────────────────
 
-router.post('/admin/videos/import-ig', async (req, res) => {
+router.post('/admin/videos/import-ig-and-tag', async (req, res) => {
   const { merchant_id, ig_handle, limit = 20 } = req.body || {};
   if (!merchant_id || !ig_handle) {
     return res.status(400).json({ error: 'merchant_id and ig_handle required' });
@@ -318,13 +266,24 @@ router.post('/admin/videos/import-ig', async (req, res) => {
     if (!error && data) inserted.push(data.id);
   }
 
-  res.json({
-    handle: cleanHandle,
-    fetched: top.length,
-    imported: inserted.length,
-    video_ids: inserted,
-    next_step: `POST /admin/videos/analyze-tick { merchant_id: "${merchant_id}" } in a loop until has_more is false`,
-  });
+  // 3) Analyze + tag each new one
+  const summary = { handle: cleanHandle, fetched: top.length, imported: inserted.length, auto_tagged: 0, pending_review: 0, skipped: 0, errors: 0, results: [] };
+  for (const id of inserted) {
+    try {
+      const r = await analyzeAndTag(id);
+      summary.results.push(r);
+      if (r.status === 'auto_tagged') summary.auto_tagged++;
+      else if (r.status === 'pending_review') summary.pending_review++;
+      else if (r.status === 'skipped' || r.status === 'no_analysis') summary.skipped++;
+      else if (r.status === 'analyzer_error') summary.errors++;
+    } catch (err) {
+      summary.errors++;
+      summary.results.push({ video_id: id, status: 'fatal_error', error: err.message });
+    }
+    await sleep(ANALYSIS_GAP_MS);
+  }
+
+  res.json(summary);
 });
 
 module.exports = router;
