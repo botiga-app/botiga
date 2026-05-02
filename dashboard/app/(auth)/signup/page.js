@@ -9,9 +9,6 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [website, setWebsite] = useState('');
-  const [igHandle, setIgHandle] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -25,17 +22,12 @@ export default function SignupPage() {
     const { data, error: signupError } = await supabase.auth.signUp({ email, password });
     if (signupError) { setError(signupError.message); setLoading(false); return; }
 
-    // Create merchant record in API
+    // Create a stub merchant row — name / website / IG / etc are filled in
+    // later from /dashboard/settings (or the post-signup onboarding step).
     const res = await fetch(`${API}/api/merchants`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        name,
-        website_url: website,
-        ig_handle: igHandle,
-        auth_uid: data.user?.id,
-      })
+      body: JSON.stringify({ email, auth_uid: data.user?.id })
     });
 
     if (!res.ok) {
@@ -60,29 +52,6 @@ export default function SignupPage() {
             <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{error}</div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Your name</label>
-            <input type="text" required value={name} onChange={e => setName(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-              placeholder="Jane Smith" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Store URL</label>
-            <input type="url" value={website} onChange={e => setWebsite(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-              placeholder="https://yourstore.com" />
-            <p className="text-xs text-gray-400 mt-1">Botiga reads your collections, promos, policies live from here.</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Instagram handle <span className="text-gray-400 font-normal">(optional)</span></label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">@</span>
-              <input type="text" value={igHandle} onChange={e => setIgHandle(e.target.value.replace(/^@/, ''))}
-                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                placeholder="willow_house" />
-            </div>
-            <p className="text-xs text-gray-400 mt-1">For auto-importing reels into your shoppable video feed.</p>
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
@@ -96,9 +65,12 @@ export default function SignupPage() {
           </div>
           <button type="submit" disabled={loading}
             className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-medium text-sm hover:bg-indigo-700 disabled:opacity-60">
-            {loading ? 'Creating account...' : 'Start free trial'}
+            {loading ? 'Creating account…' : 'Create account'}
           </button>
-          <p className="text-center text-sm text-gray-500">
+          <p className="text-center text-xs text-gray-400">
+            You'll add your store URL and Instagram handle in settings after signup.
+          </p>
+          <p className="text-center text-sm text-gray-500 pt-2 border-t border-gray-100">
             Already have an account?{' '}
             <Link href="/login" className="text-indigo-600 font-medium hover:underline">Sign in</Link>
           </p>
