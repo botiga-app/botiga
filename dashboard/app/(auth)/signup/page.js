@@ -11,6 +11,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
+  const [igHandle, setIgHandle] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -28,7 +29,13 @@ export default function SignupPage() {
     const res = await fetch(`${API}/api/merchants`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name, website_url: website, auth_uid: data.user?.id })
+      body: JSON.stringify({
+        email,
+        name,
+        website_url: website,
+        ig_handle: igHandle,
+        auth_uid: data.user?.id,
+      })
     });
 
     if (!res.ok) {
@@ -63,6 +70,17 @@ export default function SignupPage() {
             <input type="url" value={website} onChange={e => setWebsite(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
               placeholder="https://yourstore.com" />
+            <p className="text-xs text-gray-400 mt-1">Botiga reads your collections, promos, policies live from here.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Instagram handle <span className="text-gray-400 font-normal">(optional)</span></label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">@</span>
+              <input type="text" value={igHandle} onChange={e => setIgHandle(e.target.value.replace(/^@/, ''))}
+                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                placeholder="willow_house" />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">For auto-importing reels into your shoppable video feed.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>

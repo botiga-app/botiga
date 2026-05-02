@@ -10,15 +10,27 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 router.use(widgetCors);
 
 // Create merchant (called after Supabase auth signup)
+// Sets website_url as both the public store URL AND source_url so storeContext
+// (collections / promos / about / policies / products) can read live from it.
 router.post('/merchants', async (req, res) => {
-  const { email, name, website_url, auth_uid } = req.body;
+  const { email, name, website_url, ig_handle, auth_uid } = req.body;
   if (!email || !auth_uid) return res.status(400).json({ error: 'email and auth_uid required' });
 
   const apiKey = uuidv4();
+  const cleanHandle = ig_handle ? String(ig_handle).replace(/^@/, '').trim() || null : null;
+  const cleanWebsite = website_url ? String(website_url).trim() || null : null;
 
   const { data: merchant, error } = await supabase
     .from('merchants')
-    .insert({ id: auth_uid, email, name, website_url, api_key: apiKey })
+    .insert({
+      id: auth_uid,
+      email,
+      name,
+      website_url: cleanWebsite,
+      source_url: cleanWebsite,           // mirror so storeContext can read from it
+      ig_handle: cleanHandle,
+      api_key: apiKey,
+    })
     .select()
     .single();
 
