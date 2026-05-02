@@ -17,6 +17,7 @@ const TTL = {
   collections: 60 * 60 * 1000,       // 1h
   promos: 15 * 60 * 1000,            // 15m
   about: 24 * 60 * 60 * 1000,        // 24h
+  products: 60 * 60 * 1000,          // 1h
 };
 
 const FETCH_TIMEOUT_MS = 5000;
@@ -133,6 +134,26 @@ async function fetchPromos(sourceUrl) {
   return [...new Set(promos)].slice(0, 5);
 }
 
+async function fetchProducts(sourceUrl) {
+  // Public /products.json paginates 250/page; walk until empty.
+  // Returns the raw product objects so callers can score against title,
+  // body_html, tags, variants, etc.
+  const all = [];
+  for (let page = 1; page <= 20; page++) {
+    const res = await fetchWithTimeout(`${sourceUrl}/products.json?page=${page}&limit=250`, 10000);
+    if (!res.ok) {
+      if (page === 1) throw new Error(`Products HTTP ${res.status}`);
+      break;
+    }
+    const data = await res.json();
+    const batch = data.products || [];
+    if (!batch.length) break;
+    all.push(...batch);
+    if (batch.length < 250) break;
+  }
+  return all;
+}
+
 async function fetchAbout(sourceUrl) {
   const candidates = ['/pages/about', '/pages/about-us', '/pages/our-story', '/pages/story'];
   for (const path of candidates) {
@@ -162,6 +183,10 @@ async function getActivePromos(merchant) {
 
 async function getAboutContent(merchant) {
   return await getOrFetch(merchant, 'about', TTL.about, fetchAbout);
+}
+
+async function getProducts(merchant) {
+  return (await getOrFetch(merchant, 'products', TTL.products, fetchProducts)) ?? [];
 }
 
 // Convenience: assemble a compact context string for the LLM system prompt.
@@ -197,5 +222,6 @@ module.exports = {
   getCollections,
   getActivePromos,
   getAboutContent,
+  getProducts,
   buildLLMContext,
 };

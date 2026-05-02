@@ -17,6 +17,11 @@ if (process.env.SENTRY_DSN) {
 // Webhooks must be mounted BEFORE express.json() — they need the raw body for HMAC verification
 app.use('/', require('./routes/webhooks'));
 
+// Twilio inbound webhook — Twilio posts application/x-www-form-urlencoded
+// so it needs urlencoded() before json(), and signature validation happens inside the route
+app.use('/api/inbound', express.urlencoded({ extended: false }));
+app.use('/api', require('./routes/whatsapp-inbound'));
+
 app.use(express.json());
 
 // Handle CORS preflight for all routes — must be before route definitions
@@ -39,6 +44,7 @@ app.use('/api', require('./routes/videos'));
 app.use('/api', require('./routes/marketplace'));
 app.use('/api', require('./routes/shop'));
 app.use('/api', require('./routes/clone'));
+app.use('/api', require('./routes/admin-video-tagging'));
 app.use('/api', require('./routes/script-tags').router);
 
 // Serve public assets (confetti.js etc) — CORS open for Shopify Script Tags
