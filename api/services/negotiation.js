@@ -1,5 +1,6 @@
 const supabase = require('../lib/supabase');
 const { callLLM, buildSystemPrompt } = require('./llm');
+const storeContext = require('./storeContext');
 const { PricingEngine, isAcceptance, parseCustomerOffer } = require('./PricingEngine');
 const { extractCustomerInsight } = require('./insights');
 const { calculateBrokerFee } = require('./broker-fee');
@@ -205,6 +206,25 @@ async function processNegotiation({
   listPrice, customerMessage, isOpening, isCartBundle, customerEmail, productContext
 }) {
   let negotiation;
+
+  // Best-effort: enrich productContext with live store context (collections,
+  // active site-wide promos, brand voice) from merchant.source_url. Failure
+  // here must never block a negotiation, so we swallow errors.
+  try {
+    const { data: merchantRow } = await supabase
+      .from('merchants')
+      .select('id, source_url, shopify_domain')
+      .eq('id', merchantId)
+      .maybeSingle();
+    if (merchantRow) {
+      const storeCtx = await storeContext.buildLLMContext(merchantRow);
+      if (storeCtx) {
+        productContext = (productContext ? productContext + '\n\n' : '') + storeCtx;
+      }
+    }
+  } catch (e) {
+    console.warn('[negotiation] storeContext enrichment failed:', e.message);
+  }
 
   // ── CREATE NEW NEGOTIATION ──────────────────────────────────────────────────
   if (!negotiationId) {
