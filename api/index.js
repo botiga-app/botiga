@@ -2,50 +2,97 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const { CronJob } = require('cron');
-const { processRecoveryQueue } = require('./services/recovery');
-const { generateAdminAlerts } = require('./services/alerts');
 
 const app = express();
 
+// Track which modules failed to load so /debug can report them.
+const moduleLoadErrors = [];
+
+function safeRequire(label, requireFn) {
+  try {
+    return requireFn();
+  } catch (err) {
+    const msg = `[BOOT-ERR] failed to load ${label}: ${err.message}`;
+    console.error(msg);
+    console.error(err.stack);
+    moduleLoadErrors.push({ label, error: err.message, stack: err.stack });
+    return null;
+  }
+}
+
+function safeMount(mountPath, label, requireFn) {
+  const mod = safeRequire(label, requireFn);
+  if (mod) app.use(mountPath, mod);
+}
+
+// Defer service requires that may fail at module load
+const recoverySvc = safeRequire('services/recovery', () => require('./services/recovery'));
+const alertsSvc = safeRequire('services/alerts', () => require('./services/alerts'));
+
 // Sentry v8 uses setupExpressErrorHandler, only if DSN is configured
 if (process.env.SENTRY_DSN) {
-  const Sentry = require('@sentry/node');
-  Sentry.init({ dsn: process.env.SENTRY_DSN });
-  Sentry.setupExpressErrorHandler(app);
+  try {
+    const Sentry = require('@sentry/node');
+    Sentry.init({ dsn: process.env.SENTRY_DSN });
+    Sentry.setupExpressErrorHandler(app);
+  } catch (err) {
+    console.error('[BOOT-ERR] Sentry init failed:', err.message);
+    moduleLoadErrors.push({ label: 'sentry', error: err.message });
+  }
 }
 
 // Webhooks must be mounted BEFORE express.json() — they need the raw body for HMAC verification
-app.use('/', require('./routes/webhooks'));
+safeMount('/', 'routes/webhooks', () => require('./routes/webhooks'));
 
 // Twilio inbound webhook — Twilio posts application/x-www-form-urlencoded
 // so it needs urlencoded() before json(), and signature validation happens inside the route
 app.use('/api/inbound', express.urlencoded({ extended: false }));
-app.use('/api', require('./routes/whatsapp-inbound'));
+safeMount('/api', 'routes/whatsapp-inbound', () => require('./routes/whatsapp-inbound'));
 
 app.use(express.json());
 
 // Handle CORS preflight for all routes — must be before route definitions
-const { widgetCors } = require('./middleware/cors');
-app.options('*', widgetCors);
+const corsMod = safeRequire('middleware/cors', () => require('./middleware/cors'));
+if (corsMod) app.options('*', corsMod.widgetCors);
 
-// Routes
-app.use('/api', require('./routes/negotiate'));
-app.use('/api', require('./routes/draft-order'));
-app.use('/api', require('./routes/merchants'));
-app.use('/api', require('./routes/deals'));
-app.use('/api', require('./routes/recovery'));
-app.use('/api', require('./routes/shopify-oauth'));
-app.use('/api', require('./routes/shopify-token-exchange'));
-app.use('/api', require('./routes/rules'));
-app.use('/api', require('./routes/billing'));
-app.use('/api', require('./routes/cron'));
-app.use('/api', require('./routes/admin'));
-app.use('/api', require('./routes/videos'));
-app.use('/api', require('./routes/marketplace'));
-app.use('/api', require('./routes/shop'));
-app.use('/api', require('./routes/clone'));
-app.use('/api', require('./routes/admin-video-tagging'));
-app.use('/api', require('./routes/script-tags').router);
+// Routes — wrap each so a single failing require() doesn't kill the whole API
+safeMount('/api', 'routes/negotiate', () => require('./routes/negotiate'));
+safeMount('/api', 'routes/draft-order', () => require('./routes/draft-order'));
+safeMount('/api', 'routes/merchants', () => require('./routes/merchants'));
+safeMount('/api', 'routes/deals', () => require('./routes/deals'));
+safeMount('/api', 'routes/recovery', () => require('./routes/recovery'));
+safeMount('/api', 'routes/shopify-oauth', () => require('./routes/shopify-oauth'));
+safeMount('/api', 'routes/shopify-token-exchange', () => require('./routes/shopify-token-exchange'));
+safeMount('/api', 'routes/rules', () => require('./routes/rules'));
+safeMount('/api', 'routes/billing', () => require('./routes/billing'));
+safeMount('/api', 'routes/cron', () => require('./routes/cron'));
+safeMount('/api', 'routes/admin', () => require('./routes/admin'));
+safeMount('/api', 'routes/videos', () => require('./routes/videos'));
+safeMount('/api', 'routes/marketplace', () => require('./routes/marketplace'));
+safeMount('/api', 'routes/shop', () => require('./routes/shop'));
+safeMount('/api', 'routes/clone', () => require('./routes/clone'));
+safeMount('/api', 'routes/admin-video-tagging', () => require('./routes/admin-video-tagging'));
+const scriptTagsMod = safeRequire('routes/script-tags', () => require('./routes/script-tags'));
+if (scriptTagsMod?.router) app.use('/api', scriptTagsMod.router);
+
+// Diagnostic endpoint — surfaces module-load errors so we can debug
+// from outside even when individual routes are broken.
+app.get('/debug/boot', (req, res) => {
+  res.json({
+    healthy: moduleLoadErrors.length === 0,
+    error_count: moduleLoadErrors.length,
+    errors: moduleLoadErrors,
+    env_present: {
+      SUPABASE_URL: !!process.env.SUPABASE_URL,
+      SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
+      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+      SHOPIFY_CLIENT_ID: !!process.env.SHOPIFY_CLIENT_ID,
+      SHOPIFY_CLIENT_SECRET: !!process.env.SHOPIFY_CLIENT_SECRET,
+      ADMIN_SECRET: !!process.env.ADMIN_SECRET,
+      RAPIDAPI_KEY: !!process.env.RAPIDAPI_KEY,
+    },
+  });
+});
 
 // Serve public assets (confetti.js etc) — CORS open for Shopify Script Tags
 app.use('/public', (req, res, next) => {
@@ -83,15 +130,18 @@ app.use((err, req, res, next) => {
 
 // In-process crons only for local dev — on Vercel, crons are triggered via HTTP by vercel.json
 if (!process.env.VERCEL) {
-  new CronJob('*/15 * * * *', async () => {
-    console.log('[Cron] Running recovery queue...');
-    await processRecoveryQueue();
-  }, null, true);
-
-  new CronJob('0 * * * *', async () => {
-    console.log('[Cron] Generating admin alerts...');
-    await generateAdminAlerts();
-  }, null, true);
+  if (recoverySvc?.processRecoveryQueue) {
+    new CronJob('*/15 * * * *', async () => {
+      console.log('[Cron] Running recovery queue...');
+      await recoverySvc.processRecoveryQueue();
+    }, null, true);
+  }
+  if (alertsSvc?.generateAdminAlerts) {
+    new CronJob('0 * * * *', async () => {
+      console.log('[Cron] Generating admin alerts...');
+      await alertsSvc.generateAdminAlerts();
+    }, null, true);
+  }
 }
 
 const PORT = process.env.PORT || 3001;
