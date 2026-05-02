@@ -7,7 +7,7 @@ const { getValidShopifyToken } = require('../lib/shopifyToken');
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const APP_URL = process.env.APP_URL || 'https://botiga-api-two.vercel.app';
-const SCOPES = 'write_price_rules,write_discounts,read_products,write_draft_orders';
+const SCOPES = 'write_products,write_content,write_price_rules,write_discounts,write_draft_orders';
 
 // Register all mandatory webhooks for a store
 async function registerWebhooks(domain, token) {

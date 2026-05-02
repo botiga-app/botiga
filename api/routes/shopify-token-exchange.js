@@ -17,7 +17,7 @@ router.get('/shopify/auth', async (req, res) => {
 
   // No id_token → app is non-embedded, fall through to standard OAuth code grant.
   if (!id_token) {
-    const SCOPES = 'write_price_rules,write_discounts,read_products,write_draft_orders';
+    const SCOPES = 'write_products,write_content,write_price_rules,write_discounts,write_draft_orders';
     const redirectUri = 'https://botiga-api-two.vercel.app/api/shopify/callback';
     const authorizeUrl = `https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     return res.redirect(authorizeUrl);
