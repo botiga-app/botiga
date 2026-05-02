@@ -18,6 +18,7 @@ const TTL = {
   promos: 15 * 60 * 1000,            // 15m
   about: 24 * 60 * 60 * 1000,        // 24h
   products: 60 * 60 * 1000,          // 1h
+  policies: 24 * 60 * 60 * 1000,     // 24h — refund/shipping/privacy/TOS rarely change
 };
 
 const FETCH_TIMEOUT_MS = 5000;
@@ -154,6 +155,33 @@ async function fetchProducts(sourceUrl) {
   return all;
 }
 
+// Standard Shopify policies — these slugs are stable across all stores.
+// We fetch each, strip HTML, and condense so the bot can answer questions
+// like "what's your return policy?" without re-reading at request time.
+const POLICY_SLUGS = [
+  { key: 'refund', slug: 'refund-policy' },
+  { key: 'shipping', slug: 'shipping-policy' },
+  { key: 'privacy', slug: 'privacy-policy' },
+  { key: 'terms', slug: 'terms-of-service' },
+];
+
+async function fetchPolicies(sourceUrl) {
+  const out = {};
+  for (const { key, slug } of POLICY_SLUGS) {
+    try {
+      const res = await fetchWithTimeout(`${sourceUrl}/policies/${slug}`, 8000);
+      if (!res.ok) continue;
+      const html = await res.text();
+      const main = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)
+        || html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
+        || html.match(/<div[^>]*class=["'][^"']*policy[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+      const text = stripHtml(main ? main[1] : html);
+      if (text.length >= 50) out[key] = text.slice(0, 1500);
+    } catch { /* skip this policy */ }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 async function fetchAbout(sourceUrl) {
   const candidates = ['/pages/about', '/pages/about-us', '/pages/our-story', '/pages/story'];
   for (const path of candidates) {
@@ -189,15 +217,20 @@ async function getProducts(merchant) {
   return (await getOrFetch(merchant, 'products', TTL.products, fetchProducts)) ?? [];
 }
 
+async function getPolicies(merchant) {
+  return await getOrFetch(merchant, 'policies', TTL.policies, fetchPolicies);
+}
+
 // Convenience: assemble a compact context string for the LLM system prompt.
 // Returns null if there's nothing useful to add (no source_url, all fetches empty).
 async function buildLLMContext(merchant) {
   if (!resolveSourceUrl(merchant)) return null;
 
-  const [collections, promos, about] = await Promise.all([
+  const [collections, promos, about, policies] = await Promise.all([
     getCollections(merchant),
     getActivePromos(merchant),
     getAboutContent(merchant),
+    getPolicies(merchant),
   ]);
 
   const parts = [];
@@ -215,6 +248,14 @@ async function buildLLMContext(merchant) {
     parts.push(`Brand voice / about content: ${about.text.slice(0, 400)}.`);
   }
 
+  if (policies && Object.keys(policies).length) {
+    const labels = { refund: 'Refund', shipping: 'Shipping', privacy: 'Privacy', terms: 'Terms' };
+    const lines = Object.entries(policies)
+      .map(([key, text]) => `${labels[key] || key} policy: ${text.slice(0, 700)}`)
+      .join('\n\n');
+    parts.push(`Store policies (use these verbatim when shoppers ask about returns / shipping / etc — never invent details):\n\n${lines}`);
+  }
+
   return parts.length ? parts.join('\n') : null;
 }
 
@@ -223,5 +264,6 @@ module.exports = {
   getActivePromos,
   getAboutContent,
   getProducts,
+  getPolicies,
   buildLLMContext,
 };
