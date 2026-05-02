@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const supabase = require('../lib/supabase');
 const { validateApiKey } = require('../middleware/auth');
 const { widgetCors, dashboardCors } = require('../middleware/cors');
+const { analyzeAndTag } = require('../services/videoAutoTag');
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -343,6 +344,49 @@ router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async 
 
   if (error) return res.status(400).json({ error: error.message });
   res.json({ imported: data.length, videos: data });
+});
+
+// Auto-tag tick for a specific merchant — processes up to chunk_size unanalyzed
+// videos and returns has_more so the dashboard can poll until done. Merchant-
+// scoped (no admin secret) so it can be called directly from the merchant UI.
+router.post('/merchants/:merchantId/videos/auto-tag-tick', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const chunkSize = Math.min(parseInt(req.body?.chunk_size, 10) || 5, 10);
+
+  const { data: videos, error } = await supabase
+    .from('videos')
+    .select('id')
+    .eq('merchant_id', merchantId)
+    .is('analyzed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(chunkSize);
+  if (error) return res.status(500).json({ error: error.message });
+
+  const summary = { processed: 0, auto_tagged: 0, pending_review: 0, skipped: 0, errors: 0, results: [] };
+  for (const v of videos) {
+    try {
+      const r = await analyzeAndTag(v.id);
+      summary.results.push(r);
+      summary.processed++;
+      if (r.status === 'auto_tagged') summary.auto_tagged++;
+      else if (r.status === 'pending_review') summary.pending_review++;
+      else if (r.status === 'skipped' || r.status === 'no_analysis') summary.skipped++;
+      else if (r.status === 'analyzer_error') summary.errors++;
+    } catch (err) {
+      summary.errors++;
+      summary.results.push({ video_id: v.id, status: 'fatal_error', error: err.message });
+    }
+    // Small gap between videos to avoid Groq rate limits
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  const { count: remaining } = await supabase
+    .from('videos')
+    .select('id', { count: 'exact', head: true })
+    .eq('merchant_id', merchantId)
+    .is('analyzed_at', null);
+
+  res.json({ ...summary, has_more: (remaining ?? 0) > 0, remaining: remaining ?? 0 });
 });
 
 // ─── Widget: public collections list (one entry per named widget) ────────────

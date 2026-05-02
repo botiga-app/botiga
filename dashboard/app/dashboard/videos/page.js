@@ -56,6 +56,8 @@ function InstagramImporter({ merchantId, onImported }) {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState(null);
   const [open, setOpen] = useState(false);
+  const [autotagging, setAutotagging] = useState(false);
+  const [autotagProgress, setAutotagProgress] = useState({ tagged: 0, total: 0, remaining: 0 });
 
   async function fetchPosts() {
     const h = handle.replace('@', '').trim();
@@ -85,6 +87,31 @@ function InstagramImporter({ merchantId, onImported }) {
     });
   }
 
+  // Polls /auto-tag-tick until all imported videos are analyzed.
+  // Progress UI updates inline; failures don't block — videos stay
+  // un-tagged but importable so the merchant can manually tag them.
+  async function runAutoTagLoop(totalImported) {
+    setAutotagging(true);
+    setAutotagProgress({ tagged: 0, total: totalImported, remaining: totalImported });
+    let taggedSoFar = 0;
+    try {
+      while (true) {
+        const res = await fetch(`${API}/api/merchants/${merchantId}/videos/auto-tag-tick`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chunk_size: 5 }),
+        });
+        if (!res.ok) break; // tick failed — stop quietly, videos remain importable
+        const data = await res.json();
+        taggedSoFar += (data.auto_tagged || 0) + (data.pending_review || 0);
+        setAutotagProgress({ tagged: taggedSoFar, total: totalImported, remaining: data.remaining ?? 0 });
+        if (!data.has_more) break;
+      }
+    } finally {
+      setAutotagging(false);
+    }
+  }
+
   async function doImport() {
     const toImport = posts.filter(p => selected.has(p.id));
     if (!toImport.length) return;
@@ -97,7 +124,15 @@ function InstagramImporter({ merchantId, onImported }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
-      onImported(data.videos || []);
+      const importedVideos = data.videos || [];
+      onImported(importedVideos);
+      // Kick off auto-tagging in the background — keep the modal open with
+      // a progress indicator so the merchant sees their videos getting tagged.
+      // Doesn't block import success: if autotag fails, videos still appear.
+      if (importedVideos.length > 0) {
+        await runAutoTagLoop(importedVideos.length);
+      }
+      onImported([]); // trigger parent refetch so newly tagged products show
       setOpen(false);
       setPosts(null);
       setSelected(new Set());
@@ -217,17 +252,47 @@ function InstagramImporter({ merchantId, onImported }) {
 
             {/* Footer */}
             {posts && posts.length > 0 && (
-              <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-                <button onClick={() => setOpen(false)} className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl py-2.5 hover:bg-gray-50 transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={doImport}
-                  disabled={selected.size === 0 || importing}
-                  className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold rounded-xl py-2.5 hover:opacity-90 disabled:opacity-40 transition-opacity"
-                >
-                  {importing ? 'Importing...' : `Import ${selected.size} video${selected.size !== 1 ? 's' : ''}`}
-                </button>
+              <div className="px-6 py-4 border-t border-gray-100">
+                {autotagging && (
+                  <div className="mb-3 p-3 bg-purple-50 border border-purple-100 rounded-xl text-sm text-purple-800">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-medium">✨ Tagging videos to your products…</span>
+                      <span className="font-mono">
+                        {autotagProgress.tagged}/{autotagProgress.total}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500 transition-all"
+                        style={{
+                          width: autotagProgress.total > 0
+                            ? `${Math.round((autotagProgress.tagged / autotagProgress.total) * 100)}%`
+                            : '0%',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setOpen(false)}
+                    disabled={importing || autotagging}
+                    className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl py-2.5 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={doImport}
+                    disabled={selected.size === 0 || importing || autotagging}
+                    className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold rounded-xl py-2.5 hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    {importing && !autotagging
+                      ? 'Importing…'
+                      : autotagging
+                      ? 'Auto-tagging…'
+                      : `Import ${selected.size} video${selected.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
               </div>
             )}
           </div>
