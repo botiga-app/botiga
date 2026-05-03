@@ -219,6 +219,9 @@ router.put('/video-widgets/:id/items', dashboardCors, async (req, res) => {
 });
 
 // ─── Instagram: preview posts by handle ──────────────────────────────────────
+// Walks up to 5 pages of the IG account so we get 30+ video posts even if
+// most recent posts are static images. Without pagination we'd see only
+// 1-2 reels for accounts where photos dominate the feed.
 router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, async (req, res) => {
   const { handle } = req.query;
   if (!handle) return res.status(400).json({ error: 'handle required' });
@@ -227,28 +230,57 @@ router.get('/merchants/:merchantId/videos/instagram-preview', dashboardCors, asy
   const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
   if (!RAPIDAPI_KEY) return res.status(500).json({ error: 'RAPIDAPI_KEY not configured' });
 
+  const targetVideoCount = Math.min(parseInt(req.query.target, 10) || 30, 100);
+  const allVideos = [];
+  let maxId = '';
+  let pages = 0;
+  const MAX_PAGES = 5;
+
   try {
-    const response = await fetch(
-      'https://instagram120.p.rapidapi.com/api/instagram/posts',
-      {
-        method: 'POST',
-        headers: {
-          'x-rapidapi-key': RAPIDAPI_KEY,
-          'x-rapidapi-host': 'instagram120.p.rapidapi.com',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username: cleanHandle, maxId: '' }),
-        signal: AbortSignal.timeout(20000),
+    while (pages < MAX_PAGES && allVideos.length < targetVideoCount) {
+      const response = await fetch(
+        'https://instagram120.p.rapidapi.com/api/instagram/posts',
+        {
+          method: 'POST',
+          headers: {
+            'x-rapidapi-key': RAPIDAPI_KEY,
+            'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username: cleanHandle, maxId }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      if (!response.ok) {
+        if (pages === 0) return res.status(response.status).json({ error: `Instagram API returned ${response.status}` });
+        break;
       }
-    );
+      const raw = await response.json();
+      const pageVideos = normalizeInstagramPosts(raw);
+      if (!pageVideos.length) break;
+      allVideos.push(...pageVideos);
 
-    if (!response.ok) return res.status(response.status).json({ error: `Instagram API returned ${response.status}` });
+      // Try to extract next-page cursor — varies by API shape
+      const nextMaxId =
+        raw?.result?.page_info?.end_cursor ||
+        raw?.data?.page_info?.end_cursor ||
+        raw?.next_max_id ||
+        raw?.max_id ||
+        null;
+      if (!nextMaxId || nextMaxId === maxId) break;
+      maxId = nextMaxId;
+      pages++;
+    }
 
-    const raw = await response.json();
+    // Dedupe by id in case pages overlap
+    const seen = new Set();
+    const posts = allVideos.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
 
-    // Normalize the response — handle multiple common response shapes
-    const posts = normalizeInstagramPosts(raw);
-    res.json({ posts, handle: cleanHandle });
+    res.json({ posts, handle: cleanHandle, pages_walked: pages + 1 });
   } catch (err) {
     console.error('[instagram-preview]', err.message);
     res.status(500).json({ error: err.message });
@@ -583,35 +615,52 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
 
   const cleanHandle = String(merchant.ig_handle).replace(/^@/, '').trim();
 
-  // Preview from IG
-  const previewRes = await fetch('https://instagram120.p.rapidapi.com/api/instagram/posts', {
-    method: 'POST',
-    headers: {
-      'x-rapidapi-key': process.env.RAPIDAPI_KEY,
-      'x-rapidapi-host': 'instagram120.p.rapidapi.com',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ username: cleanHandle, maxId: '' }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!previewRes.ok) return res.status(previewRes.status).json({ error: `IG preview ${previewRes.status}` });
-  const raw = await previewRes.json();
+  // Walk multiple pages so we get enough VIDEOS even if the first page is mostly photos.
+  const allVideos = [];
+  let maxId = '';
+  for (let page = 0; page < 5 && allVideos.length < limit; page++) {
+    const previewRes = await fetch('https://instagram120.p.rapidapi.com/api/instagram/posts', {
+      method: 'POST',
+      headers: {
+        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username: cleanHandle, maxId }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!previewRes.ok) {
+      if (page === 0) return res.status(previewRes.status).json({ error: `IG preview ${previewRes.status}` });
+      break;
+    }
+    const raw = await previewRes.json();
+    let items = [];
+    if (raw?.result?.edges) items = raw.result.edges.map(e => e.node || e);
+    else if (raw?.data?.items) items = raw.data.items;
+    else if (Array.isArray(raw?.items)) items = raw.items;
+    if (!items.length) break;
 
-  let items = [];
-  if (raw?.result?.edges) items = raw.result.edges.map(e => e.node || e);
-  else if (raw?.data?.items) items = raw.data.items;
-  else if (Array.isArray(raw?.items)) items = raw.items;
+    const pageVideos = items
+      .filter(i => i.is_video || i.media_type === 2 || i.video_url || (Array.isArray(i.video_versions) && i.video_versions.length))
+      .map(i => ({
+        video_url: i.video_url || i.video_versions?.[0]?.url || null,
+        thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
+        caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
+        post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
+      }))
+      .filter(p => p.video_url || p.thumbnail_url);
+    allVideos.push(...pageVideos);
 
-  const posts = items
-    .filter(i => i.is_video || i.media_type === 2 || i.video_url || (Array.isArray(i.video_versions) && i.video_versions.length))
-    .map(i => ({
-      video_url: i.video_url || i.video_versions?.[0]?.url || null,
-      thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
-      caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
-      post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
-    }))
-    .filter(p => p.video_url || p.thumbnail_url)
-    .slice(0, limit);
+    const nextMaxId =
+      raw?.result?.page_info?.end_cursor ||
+      raw?.data?.page_info?.end_cursor ||
+      raw?.next_max_id ||
+      raw?.max_id ||
+      null;
+    if (!nextMaxId || nextMaxId === maxId) break;
+    maxId = nextMaxId;
+  }
+  const posts = allVideos.slice(0, limit);
 
   if (!posts.length) return res.json({ imported: 0, video_ids: [], message: 'No reels found for this handle.' });
 

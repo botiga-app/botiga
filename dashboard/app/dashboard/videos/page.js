@@ -119,8 +119,6 @@ function OneClickAutoImport({ merchantId, onImported }) {
     }
   }
 
-  if (hasIg === false) return null; // hide button if no IG handle
-
   return (
     <div className="flex items-center gap-3">
       {status && (
@@ -133,13 +131,19 @@ function OneClickAutoImport({ merchantId, onImported }) {
       )}
       {error && <span className="text-xs text-red-600">{error}</span>}
       <button
-        onClick={go}
+        onClick={hasIg === true ? go : undefined}
         disabled={running || hasIg !== true}
         className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-pink-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity whitespace-nowrap"
-        title={hasIg === null ? 'Loading…' : 'Auto-import latest 20 reels from your Instagram'}
+        title={
+          hasIg === null
+            ? 'Loading…'
+            : hasIg === false
+            ? 'Add your Instagram handle in Settings → Brand profile to enable this'
+            : 'Auto-import latest 20 reels from your Instagram'
+        }
       >
         <span>✨</span>
-        {running ? 'Working…' : 'Auto-import latest reels'}
+        {running ? 'Working…' : hasIg === false ? 'Auto-import (add IG in Settings)' : 'Auto-import latest reels'}
       </button>
     </div>
   );

@@ -207,6 +207,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Brand profile — captured during onboarding, editable here */}
+      {merchantId && <BrandProfileSection merchantId={merchantId} />}
+
       {/* AI Shopping Assistant */}
       <Section title="AI Shopping Assistant">
         <div className="space-y-4">
@@ -528,5 +531,150 @@ export default function SettingsPage() {
         </div>
       </Section>
     </div>
+  );
+}
+
+// ─── Brand profile (merchant table fields, captured during onboarding) ──────
+function BrandProfileSection({ merchantId }) {
+  const [profile, setProfile] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`${API}/api/merchants/${merchantId}`);
+      if (!r.ok || cancelled) return;
+      const m = await r.json();
+      const p = {
+        name: m.name || '',
+        website_url: m.website_url || '',
+        ig_handle: m.ig_handle || '',
+        shopify_domain: m.shopify_domain || '',
+        shopify_connected: !!m.shopify_access_token,
+      };
+      setProfile(p);
+      setDraft(p);
+    })();
+    return () => { cancelled = true; };
+  }, [merchantId]);
+
+  const isDirty = profile && draft && (
+    profile.name !== draft.name ||
+    profile.website_url !== draft.website_url ||
+    profile.ig_handle !== draft.ig_handle
+  );
+
+  async function save() {
+    if (!isDirty || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/onboarding/save-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchant_id: merchantId,
+          data: {
+            name: draft.name,
+            website_url: draft.website_url,
+            source_url: draft.website_url, // mirror for storeContext
+            ig_handle: draft.ig_handle.replace(/^@/, ''),
+          },
+        }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${r.status}`);
+      }
+      setProfile(draft);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1800);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!profile) {
+    return (
+      <Section title="Brand profile">
+        <div className="text-sm text-gray-400">Loading…</div>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Brand profile">
+      <p className="text-xs text-gray-500 -mt-2 mb-2">
+        Captured during onboarding. The bot uses your store URL to read collections, promos, and policies live.
+      </p>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Brand name</label>
+          <input
+            type="text"
+            value={draft.name}
+            onChange={e => setDraft({ ...draft, name: e.target.value })}
+            placeholder="Willow House"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Store URL</label>
+          <input
+            type="url"
+            value={draft.website_url}
+            onChange={e => setDraft({ ...draft, website_url: e.target.value })}
+            placeholder="https://yourstore.com"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Instagram handle</label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">@</span>
+            <input
+              type="text"
+              value={draft.ig_handle.replace(/^@/, '')}
+              onChange={e => setDraft({ ...draft, ig_handle: e.target.value })}
+              placeholder="willow_house"
+              className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Powers the one-click Auto-import latest reels button on the Videos page.</p>
+        </div>
+        <div className="pt-3 border-t border-gray-100">
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Shopify connection</label>
+          {profile.shopify_connected ? (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-gray-700 font-medium">{profile.shopify_domain}</span>
+              <span className="text-xs text-gray-400">— connected</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className="text-gray-500">Not connected</span>
+              <a href="/onboarding" className="text-xs text-indigo-600 hover:underline ml-2">Connect now →</a>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            onClick={save}
+            disabled={!isDirty || saving}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40"
+          >
+            {saving ? 'Saving…' : 'Save brand profile'}
+          </button>
+          {savedFlash && <span className="text-xs text-emerald-600 font-medium">✓ Saved</span>}
+          {error && <span className="text-xs text-red-600">{error}</span>}
+        </div>
+      </div>
+    </Section>
   );
 }
