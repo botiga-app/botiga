@@ -47,6 +47,49 @@ function ShopHero({ shopHandle }) {
   );
 }
 
+// ─── Preview + Share buttons (top of videos page) ───────────────────────────
+// Preview opens the public /preview/[merchantId] page in a new tab so the
+// merchant sees their shoppable feed exactly as customers will. Share copies
+// the same URL to the clipboard so they can send it to anyone.
+function PreviewWithShareButtons({ merchantId }) {
+  const [copied, setCopied] = useState(false);
+  const previewUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/preview/${merchantId}`
+    : `/preview/${merchantId}`;
+
+  function share() {
+    if (typeof navigator === 'undefined') return;
+    navigator.clipboard.writeText(previewUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <a
+        href={previewUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
+        title="Open the customer-facing preview in a new tab"
+      >
+        <span>👁</span>
+        Preview
+      </a>
+      <button
+        onClick={share}
+        className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl text-white transition-opacity whitespace-nowrap hover:opacity-90"
+        style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}
+        title="Copy a public preview link you can share with customers"
+      >
+        <span>🔗</span>
+        {copied ? 'Copied!' : 'Share'}
+      </button>
+    </div>
+  );
+}
+
 // ─── One-click auto-import — uses merchant.ig_handle, no selection step ────
 function OneClickAutoImport({ merchantId, onImported }) {
   const [running, setRunning] = useState(false);
@@ -1294,15 +1337,15 @@ function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUp
                   </span>
                   <span className="text-xs text-gray-500">{isActive ? 'Currently live' : 'Currently hidden'}</span>
                 </button>
-                {shopifyDomain && (
+                {merchantId && (
                   <a
-                    href={`https://${shopifyDomain}/?btgv=${video.id}`}
+                    href={`/preview/${merchantId}?btgv=${video.id}`}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full flex items-center justify-between text-sm py-2.5 px-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                   >
-                    <span className="text-gray-900 font-medium">Preview on storefront</span>
-                    <span className="text-xs text-gray-500">Opens with deep link ↗</span>
+                    <span className="text-gray-900 font-medium">Preview this video</span>
+                    <span className="text-xs text-gray-500">Customer view ↗</span>
                   </a>
                 )}
 
@@ -2029,17 +2072,8 @@ export default function VideosPage() {
         <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
           <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
           <div className="flex gap-2 flex-wrap">
-            {shopifyDomain && (
-              <a
-                href={`https://${shopifyDomain}/`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
-                title="Open your storefront in a new tab to see Botiga running as your customers will"
-              >
-                <span>👁</span>
-                Preview as customer
-              </a>
+            {merchantId && (
+              <PreviewWithShareButtons merchantId={merchantId} />
             )}
             {merchantId && (
               <OneClickAutoImport

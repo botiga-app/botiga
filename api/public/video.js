@@ -377,9 +377,9 @@
       '._btgv_gc_prod_btn:active{opacity:.7}',
       '._btgv_gc_prod_btn span:first-child{font-size:13px;line-height:1}',
       '._btgv_gc_prod_btn span:last-child{font-size:7px;font-weight:700;line-height:1;white-space:nowrap}',
-      '._btgv_gc_pb_cart{background:rgba(255,255,255,.18)}',
-      '._btgv_gc_pb_buy{background:rgba(99,102,241,.8)}',
-      '._btgv_gc_pb_neg{background:rgba(236,72,153,.8)}',
+      '._btgv_gc_pb_cart{background:rgba(255,255,255,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22)}',
+      '._btgv_gc_pb_buy{background:linear-gradient(135deg,#FF6B35 0%,#F72585 100%);box-shadow:0 4px 14px rgba(247,37,133,.32)}',
+      '._btgv_gc_pb_neg{background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);box-shadow:0 4px 14px rgba(247,37,133,.36)}',
 
       // TikTok feed overlay
       '#_btgv_feed{position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s}',
@@ -415,9 +415,9 @@
       '._btgv_icon_btn{flex:1;border:none;border-radius:9px;padding:7px 3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:opacity .15s;-webkit-tap-highlight-color:transparent}',
       '._btgv_icon_btn:active{opacity:.65}',
       '._btgv_icon_lbl{font-size:8px;font-weight:700;line-height:1;white-space:nowrap}',
-      '._btgv_ib_cart{background:rgba(255,255,255,.15);color:#fff}',
-      '._btgv_ib_buy{background:rgba(99,102,241,.85);color:#fff}',
-      '._btgv_ib_neg{background:rgba(236,72,153,.85);color:#fff}',
+      '._btgv_ib_cart{background:rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22)}',
+      '._btgv_ib_buy{background:linear-gradient(135deg,#FF6B35 0%,#F72585 100%);color:#fff;box-shadow:0 4px 14px rgba(247,37,133,.32)}',
+      '._btgv_ib_neg{background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);color:#fff;box-shadow:0 4px 14px rgba(247,37,133,.36)}',
       // Comments drawer — Instagram/TikTok style, fixed to viewport bottom
       '._btgv_cmt_drawer{position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;z-index:2147483647!important;background:#1c1c1e!important;border-radius:16px 16px 0 0!important;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);max-height:75vh;display:flex;flex-direction:column;box-shadow:0 -2px 24px rgba(0,0,0,.6)!important}',
       '@media(min-width:640px){._btgv_cmt_drawer{max-width:420px!important;left:50%!important;right:auto!important;margin-left:-210px!important}}',
@@ -493,9 +493,9 @@
       '._btgv_pacts{display:flex;gap:8px}',
       '._btgv_pbtn{flex:1;padding:13px 6px;border:none;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;-webkit-tap-highlight-color:transparent;transition:opacity .15s}',
       '._btgv_pbtn:active{opacity:.7}',
-      '._btgv_pbtn_cart{background:rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25)}',
-      '._btgv_pbtn_buy{background:rgba(99,102,241,.9);color:#fff}',
-      '._btgv_pbtn_neg{background:rgba(236,72,153,.9);color:#fff}',
+      '._btgv_pbtn_cart{background:rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.25)}',
+      '._btgv_pbtn_buy{background:linear-gradient(135deg,#FF6B35 0%,#F72585 100%);color:#fff;box-shadow:0 4px 14px rgba(247,37,133,.36)}',
+      '._btgv_pbtn_neg{background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);color:#fff;box-shadow:0 4px 14px rgba(247,37,133,.4)}',
 
       // ─── Concierge chat ───────────────────────────────────────────────────────
       // Widget window — portrait ratio (taller than wide) on all screen sizes
