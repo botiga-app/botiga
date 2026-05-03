@@ -91,25 +91,46 @@ export default function OnboardingPage() {
     }
   }
 
+  const [step1Error, setStep1Error] = useState(null);
+
   async function saveStep1AndContinue() {
     if (!user || !detected?.reachable) return;
-    await fetch(`${API}/api/onboarding/save-step`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        merchant_id: user.id,
-        step: 'install',
-        data: {
-          name: detected.brand_name,
-          website_url: detected.url,
-          source_url: detected.url,
-          ig_handle: detected.ig_handle,
-          logo_url: detected.logo_url,
-          theme_color: detected.theme_color,
-        },
-      }),
-    });
-    setStep(2);
+    setStep1Error(null);
+    try {
+      const r = await fetch(`${API}/api/onboarding/save-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchant_id: user.id,
+          step: 'install',
+          data: {
+            name: detected.brand_name,
+            website_url: detected.url,
+            source_url: detected.url,
+            ig_handle: detected.ig_handle,
+            logo_url: detected.logo_url,
+            theme_color: detected.theme_color,
+          },
+        }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const msg = data?.error || `Save failed (HTTP ${r.status})`;
+        // Common case: missing column from a not-run migration
+        if (msg.toLowerCase().includes('column') || msg.toLowerCase().includes('does not exist')) {
+          setStep1Error(`Database setup incomplete: ${msg}. Ask your admin to run the latest migrations (likely 027 ig_handle).`);
+        } else {
+          setStep1Error(msg);
+        }
+        return;
+      }
+      // Refetch merchant so Step 3 sees the saved values
+      const r2 = await fetch(`${API}/api/merchants/${user.id}`);
+      if (r2.ok) setMerchant(await r2.json());
+      setStep(2);
+    } catch (err) {
+      setStep1Error(err.message);
+    }
   }
 
   function startRealStoreInstall() {
@@ -222,6 +243,7 @@ export default function OnboardingPage() {
               setEditIg={setEditIg}
               editName={editName}
               setEditName={setEditName}
+              step1Error={step1Error}
             />
           )}
           {step === 2 && (
@@ -296,7 +318,7 @@ function ProgressDots({ current, total }) {
   );
 }
 
-function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, editIg, setEditIg, editName, setEditName }) {
+function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, editIg, setEditIg, editName, setEditName, step1Error }) {
   return (
     <div className="p-10">
       <h2 className="text-3xl font-bold text-gray-900">Tell us about your store</h2>
@@ -392,6 +414,12 @@ function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, ed
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {step1Error && (
+        <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+          <strong>Couldn't save:</strong> {step1Error}
         </div>
       )}
 
