@@ -99,16 +99,21 @@ function OnboardingBanner() {
 
   if (!show) return null;
   const pct = Math.round((progress.done / progress.total) * 100);
+  const allDone = progress.done === progress.total;
 
   return (
     <div className="bg-gradient-to-r from-indigo-50 to-pink-50 border-b border-indigo-100 px-6 py-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-xl">✨</span>
+          <span className="text-xl">{allDone ? '🎉' : '✨'}</span>
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-gray-900">Finish setting up Botiga</div>
+            <div className="text-sm font-semibold text-gray-900">
+              {allDone ? "You're almost done — confirm to finish" : 'Finish setting up Botiga'}
+            </div>
             <div className="text-xs text-gray-600 truncate">
-              {progress.done}/{progress.total} steps complete · ~2 min to finish
+              {allDone
+                ? `All ${progress.total} steps connected · click to confirm + tag your first videos`
+                : `${progress.done}/${progress.total} steps complete · ~2 min to finish`}
             </div>
           </div>
         </div>
@@ -123,7 +128,7 @@ function OnboardingBanner() {
             href="/onboarding"
             className="px-4 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold rounded-full transition-colors"
           >
-            Continue setup →
+            {allDone ? 'Confirm setup →' : 'Continue setup →'}
           </Link>
           <button
             onClick={() => setShow(false)}

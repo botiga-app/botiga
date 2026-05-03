@@ -78,7 +78,9 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
       products: merged,
       tag_rules: tagRulesMap,
       collection_rules: collectionRulesMap,
-      has_more: products.length === limit,
+      // Pagination is now done server-side (we walk all pages above), so
+      // there's never any "more" to fetch from the client.
+      has_more: false,
       last_id: products[products.length - 1]?.id
     });
   } catch (err) {

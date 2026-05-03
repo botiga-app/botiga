@@ -17,7 +17,9 @@
 // where confidence is 0..1 — the analyzer's belief that there's a real
 // identifiable product in the video. Caller applies threshold policy.
 
-const GROQ_VISION_MODEL = 'llama-3.2-90b-vision-preview';
+// Groq deprecated llama-3.2-Xb-vision-preview models in May 2026.
+// Replacement: meta-llama/llama-4-scout-17b-16e-instruct (vision-capable).
+const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const GROQ_TEXT_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You analyze a single image (a shoppable video thumbnail) plus the merchant's IG caption to identify the primary product being shown.

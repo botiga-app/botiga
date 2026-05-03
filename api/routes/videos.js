@@ -881,7 +881,9 @@ router.post('/videos/:id/analyze', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({
-        model: 'llama-3.2-11b-vision-preview',
+        // llama-3.2-11b-vision-preview was decommissioned by Groq (May 2026).
+        // Replacement: meta-llama/llama-4-scout-17b-16e-instruct.
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...images] }],
         max_tokens: 500,
         temperature: 0.3,
