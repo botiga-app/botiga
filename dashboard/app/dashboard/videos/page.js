@@ -988,6 +988,52 @@ function ProductTagger({ video, merchantId, shopifyDomain, onClose, onTagsUpdate
 }
 
 // ─── Video card ───────────────────────────────────────────────────────────────
+// Tag pill with hover X — click X to remove the tag from this video.
+// Click pill body to open the manual tagger so the merchant can replace it.
+function RemovableTagPill({ tag, videoId, onRemoved }) {
+  const [removing, setRemoving] = useState(false);
+  async function remove(e) {
+    e.stopPropagation();
+    if (removing) return;
+    setRemoving(true);
+    try {
+      await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, { method: 'DELETE' });
+      onRemoved();
+    } catch (err) {
+      console.warn('[remove tag]', err.message);
+      setRemoving(false);
+    }
+  }
+  // Show match score badge for AI-matched tags so the merchant knows this came from auto-tag
+  const isAuto = tag.match_status === 'auto_tagged' || tag.match_status === 'pending_review';
+  return (
+    <span
+      className={`group/pill inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full truncate max-w-[180px] transition-opacity ${
+        removing ? 'opacity-40' : ''
+      } ${
+        tag.match_status === 'pending_review'
+          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+          : 'bg-indigo-50 text-indigo-700'
+      }`}
+      title={
+        isAuto
+          ? `AI ${tag.match_status === 'pending_review' ? 'suggestion' : 'match'} — score ${tag.match_score ?? '?'}`
+          : tag.product_name
+      }
+    >
+      {isAuto && <span className="text-[10px]">{tag.match_status === 'pending_review' ? '⚠' : '✨'}</span>}
+      <span className="truncate">{tag.product_name}</span>
+      <button
+        onClick={remove}
+        className="ml-0.5 opacity-50 hover:opacity-100 hover:text-red-600 transition-all"
+        aria-label="Remove tag"
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
 function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, onToggleStatus }) {
   const [taggerOpen, setTaggerOpen] = useState(false);
   const [aiTaggerOpen, setAiTaggerOpen] = useState(false);
@@ -1083,13 +1129,16 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
             </p>
           )}
 
-          {/* Tagged products preview */}
+          {/* Tagged products preview — pills are removable */}
           {tags.length > 0 && (
             <div className="flex gap-1.5 flex-wrap">
               {tags.slice(0, 3).map(tag => (
-                <span key={tag.id} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full truncate max-w-[120px]">
-                  {tag.product_name}
-                </span>
+                <RemovableTagPill
+                  key={tag.id}
+                  tag={tag}
+                  videoId={video.id}
+                  onRemoved={() => onTagsUpdated(video.id, tags.filter(t => t.id !== tag.id))}
+                />
               ))}
               {tags.length > 3 && (
                 <span className="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">+{tags.length - 3}</span>
@@ -1119,6 +1168,17 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
             >
               {isActive ? '👁' : '🚫'}
             </button>
+            {shopifyDomain && (
+              <a
+                href={`https://${shopifyDomain}/?btgv=${video.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium bg-gray-100 text-gray-600 rounded-lg px-3 py-2 hover:bg-gray-200 transition-colors"
+                title="Preview this video on your storefront (deep link)"
+              >
+                🔗
+              </a>
+            )}
             {confirmDelete ? (
               <>
                 <button
@@ -1615,9 +1675,21 @@ export default function VideosPage() {
 
       {/* ── Video Library ───────────────────────────────────────────────── */}
       <section>
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
           <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {shopifyDomain && (
+              <a
+                href={`https://${shopifyDomain}/`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
+                title="Open your storefront in a new tab to see Botiga running as your customers will"
+              >
+                <span>👁</span>
+                Preview as customer
+              </a>
+            )}
             {merchantId && (
               <OneClickAutoImport
                 merchantId={merchantId}
