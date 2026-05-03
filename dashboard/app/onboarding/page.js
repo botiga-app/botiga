@@ -27,7 +27,10 @@ export default function OnboardingPage() {
 
   // Step 3 state
   const [completing, setCompleting] = useState(false);
+  const [completePhase, setCompletePhase] = useState(null); // 'saving' | 'pulling' | 'tagging' | 'done'
+  const [completeMsg, setCompleteMsg] = useState('');
   const [igStatus, setIgStatus] = useState(null);
+  const [tagProgress, setTagProgress] = useState({ tagged: 0, total: 0 });
 
   // Bootstrap: ensure logged in, load merchant, jump to right step
   useEffect(() => {
@@ -132,7 +135,13 @@ export default function OnboardingPage() {
   async function complete() {
     if (!user) return;
     setCompleting(true);
+    setCompletePhase('saving');
+    setCompleteMsg('Saving your setup…');
+
     try {
+      // Phase 1: mark onboarding complete + fire first IG pull (synchronous on server)
+      setCompletePhase('pulling');
+      setCompleteMsg(merchant?.ig_handle ? 'Pulling latest reels from Instagram…' : 'Finalizing…');
       const r = await fetch(`${API}/api/onboarding/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -140,10 +149,42 @@ export default function OnboardingPage() {
       });
       const data = await r.json();
       setIgStatus(data.ig_pull_status);
-      // Brief pause so the success state is visible, then ride to dashboard
-      setTimeout(() => router.push('/dashboard'), 1200);
+
+      // Phase 2: poll auto-tag-tick if any reels were imported
+      const importMatch = String(data.ig_pull_status || '').match(/^imported_(\d+)/);
+      const importedCount = importMatch ? parseInt(importMatch[1], 10) : 0;
+      if (importedCount > 0) {
+        setCompletePhase('tagging');
+        setCompleteMsg(`Imported ${importedCount} reels. Tagging products…`);
+        setTagProgress({ tagged: 0, total: importedCount });
+        let tagged = 0;
+        while (true) {
+          const tickRes = await fetch(`${API}/api/merchants/${user.id}/videos/auto-tag-tick`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chunk_size: 5 }),
+          });
+          if (!tickRes.ok) break;
+          const t = await tickRes.json();
+          tagged += (t.auto_tagged || 0) + (t.pending_review || 0);
+          setTagProgress({ tagged, total: importedCount });
+          setCompleteMsg(`Tagging products: ${tagged}/${importedCount}`);
+          if (!t.has_more) break;
+        }
+      }
+
+      // Phase 3: done
+      setCompletePhase('done');
+      setCompleteMsg(importedCount > 0
+        ? `✨ All set — ${importedCount} reels in your shop video feed.`
+        : '✨ All set — your dashboard is ready.');
+
+      // Hold for ~1.5s so the success message is visible
+      setTimeout(() => router.push('/dashboard'), 1500);
     } catch (err) {
-      setCompleting(false);
+      setCompletePhase('done');
+      setCompleteMsg('Setup complete (with a hiccup) — taking you to your dashboard…');
+      setTimeout(() => router.push('/dashboard'), 1500);
     }
   }
 
@@ -203,6 +244,9 @@ export default function OnboardingPage() {
               merchant={merchant}
               detected={detected}
               completing={completing}
+              completePhase={completePhase}
+              completeMsg={completeMsg}
+              tagProgress={tagProgress}
               igStatus={igStatus}
               complete={complete}
             />
@@ -508,13 +552,17 @@ function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl
   );
 }
 
-function Step3({ merchant, detected, completing, igStatus, complete }) {
+function Step3({ merchant, detected, completing, completePhase, completeMsg, tagProgress, igStatus, complete }) {
   const igHandle = merchant?.ig_handle || detected?.ig_handle;
   const installed = !!merchant?.shopify_access_token;
+  const tagPct = tagProgress?.total > 0 ? Math.round((tagProgress.tagged / tagProgress.total) * 100) : 0;
+
   return (
     <div className="p-10 text-center">
-      <div className="text-5xl mb-3">✨</div>
-      <h2 className="text-3xl font-bold text-gray-900">You're all set</h2>
+      <div className="text-5xl mb-3">{completePhase === 'done' ? '🎉' : '✨'}</div>
+      <h2 className="text-3xl font-bold text-gray-900">
+        {completePhase === 'done' ? "You're live" : "You're all set"}
+      </h2>
       <p className="text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
         Botiga is ready to negotiate with shoppers, suggest products from collections, and
         answer questions using your store's real policies.
@@ -543,7 +591,28 @@ function Step3({ merchant, detected, completing, igStatus, complete }) {
         />
       </div>
 
-      {igStatus && (
+      {/* Live status panel — visible while complete() is running */}
+      {completing && completePhase && (
+        <div className="mt-8 max-w-md mx-auto p-4 bg-gradient-to-br from-indigo-50 to-pink-50 border border-indigo-100 rounded-2xl">
+          <div className="flex items-center gap-3 text-sm text-gray-800">
+            {completePhase !== 'done' && (
+              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            )}
+            {completePhase === 'done' && <span className="text-emerald-600">✓</span>}
+            <span className="font-medium">{completeMsg}</span>
+          </div>
+          {completePhase === 'tagging' && tagProgress.total > 0 && (
+            <div className="mt-3 h-1.5 bg-white rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all"
+                style={{ width: `${tagPct}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!completing && igStatus && (
         <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-full text-xs text-indigo-700">
           <span>📸</span>
           <span>{prettyIgStatus(igStatus)}</span>
@@ -555,7 +624,11 @@ function Step3({ merchant, detected, completing, igStatus, complete }) {
         disabled={completing}
         className="mt-10 px-8 py-3 bg-gradient-to-r from-indigo-600 to-pink-500 text-white text-base font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
       >
-        {completing ? 'Setting up your dashboard…' : 'Take me to my dashboard →'}
+        {completing
+          ? completePhase === 'done'
+            ? 'Heading to your dashboard…'
+            : 'Working…'
+          : 'Take me to my dashboard →'}
       </button>
     </div>
   );
