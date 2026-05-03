@@ -72,6 +72,7 @@ safeMount('/api', 'routes/marketplace', () => require('./routes/marketplace'));
 safeMount('/api', 'routes/shop', () => require('./routes/shop'));
 safeMount('/api', 'routes/clone', () => require('./routes/clone'));
 safeMount('/api', 'routes/admin-video-tagging', () => require('./routes/admin-video-tagging'));
+safeMount('/api', 'routes/onboarding', () => require('./routes/onboarding'));
 const scriptTagsMod = safeRequire('routes/script-tags', () => require('./routes/script-tags'));
 if (scriptTagsMod?.router) app.use('/api', scriptTagsMod.router);
 

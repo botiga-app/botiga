@@ -38,40 +38,55 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setMerchantId(user.id);
-      const res = await fetch(`${API}/api/merchants/${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const s = data.merchant_settings || {
-          tone: 'friendly',
-          button_label: 'Make an offer',
-          button_color: null,
-          button_text_color: null,
-          button_position: 'below-cart',
-          max_discount_pct: 20,
-          floor_price_pct: null,
-          floor_price_fixed: null,
-          broker_fee_pct: 25,
-          negotiate_on_product: true,
-          negotiate_on_cart: true,
-          recovery_enabled: true,
-          recovery_channel: 'whatsapp',
-          dwell_time_seconds: 30,
-          proactive_delay: 7,
-          proactive_message: '',
-          auto_open_delay: 0,
-          widget_type: 'bubble',
-          show_trigger: 'always',
-          chat_popup_delay: 0,
-          cart_trigger: 'always',
-          brand_value_statements: ['', '', '', '', ''],
-          bot_name: null,
-          bot_greeting: null,
-          bot_avatar_url: null,
-          bot_personality: 'salesy'
-        };
-        setSettings(s);
-        setSavedSettings(s);
+
+      const DEFAULTS = {
+        tone: 'friendly',
+        button_label: 'Make an offer',
+        button_color: null,
+        button_text_color: null,
+        button_position: 'below-cart',
+        max_discount_pct: 20,
+        floor_price_pct: null,
+        floor_price_fixed: null,
+        broker_fee_pct: 25,
+        negotiate_on_product: true,
+        negotiate_on_cart: true,
+        recovery_enabled: true,
+        recovery_channel: 'whatsapp',
+        dwell_time_seconds: 30,
+        proactive_delay: 7,
+        proactive_message: '',
+        auto_open_delay: 0,
+        widget_type: 'bubble',
+        show_trigger: 'always',
+        chat_popup_delay: 0,
+        cart_trigger: 'always',
+        brand_value_statements: ['', '', '', '', ''],
+        bot_name: null,
+        bot_greeting: null,
+        bot_avatar_url: null,
+        bot_personality: 'salesy',
+      };
+
+      try {
+        const res = await fetch(`${API}/api/merchants/${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          // merchant_settings can come back as an object, an array of one, or null/undefined
+          const raw = Array.isArray(data.merchant_settings)
+            ? data.merchant_settings[0]
+            : data.merchant_settings;
+          const s = { ...DEFAULTS, ...(raw || {}) };
+          setSettings(s);
+          setSavedSettings(s);
+          return;
+        }
+      } catch (err) {
+        console.warn('[settings] load failed, using defaults:', err.message);
       }
+      // Fallback: load defaults so the page is interactive even if API is down
+      setSettings(DEFAULTS);
+      setSavedSettings(DEFAULTS);
     }
     load();
   }, []);
