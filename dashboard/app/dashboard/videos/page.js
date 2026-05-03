@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { createClient } from '../../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
@@ -1034,46 +1034,24 @@ function RemovableTagPill({ tag, videoId, onRemoved }) {
   );
 }
 
-function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, onToggleStatus }) {
-  const [taggerOpen, setTaggerOpen] = useState(false);
-  const [aiTaggerOpen, setAiTaggerOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(video.title || '');
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  async function saveTitle() {
-    setEditing(false);
-    if (title === video.title) return;
-    await fetch(`${API}/api/videos/${video.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    });
-  }
-
+// Clean video tile — no inline buttons. Whole tile is clickable; opens
+// the VideoDetailDrawer where all merchant actions live.
+function VideoCard({ video, onOpen }) {
   const tags = video.video_product_tags || [];
   const isActive = video.status === 'active';
+  const productCount = tags.length;
 
   return (
-    <>
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden group">
-        {/* Video preview */}
-        <div className="relative bg-black aspect-[9/16] max-h-64 overflow-hidden">
-          {video.source === 'instagram' || video.source === 'tiktok' ? (
-            <div className="relative w-full h-full">
-              {video.thumbnail_url
-                ? <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-3xl">📸</div>
-              }
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-2xl bg-black/40 rounded-full p-2">▶</span>
-              </div>
-              <div className="absolute top-2 right-2 text-[10px] bg-black/60 text-white px-2 py-0.5 rounded-full">
-                {video.source === 'instagram' ? '📸 IG' : '🎵 TT'}
-              </div>
-            </div>
-          ) : (
+    <button
+      onClick={() => onOpen(video)}
+      className="text-left bg-white rounded-2xl border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all overflow-hidden group focus:outline-none focus:ring-2 focus:ring-indigo-400"
+    >
+      <div className="relative bg-black aspect-[9/16] max-h-72 overflow-hidden">
+        {video.source === 'instagram' || video.source === 'tiktok' ? (
+          video.thumbnail_url
+            ? <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
+            : <div className="w-full h-full flex items-center justify-center text-2xl text-white/60">▶</div>
+        ) : (
           <video
             src={video.s3_url}
             className="w-full h-full object-cover"
@@ -1081,147 +1059,286 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
             onMouseEnter={e => e.target.play()}
             onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }}
           />
+        )}
+
+        {/* Subtle gradient for legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
+
+        {/* Hover hint */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+          <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-medium bg-black/70 backdrop-blur px-3 py-1.5 rounded-full transition-opacity">
+            Open
+          </span>
+        </div>
+
+        {/* Top badges */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
+          <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${
+            isActive ? 'bg-white/95 text-gray-900' : 'bg-black/60 text-white'
+          }`}>
+            {isActive ? 'Live' : 'Hidden'}
+          </span>
+          {(video.source === 'instagram' || video.source === 'tiktok') && (
+            <span className="text-[10px] bg-black/60 text-white px-2 py-0.5 rounded">
+              {video.source === 'instagram' ? 'IG' : 'TT'}
+            </span>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+        </div>
 
-          {/* Status badge */}
-          <div className="absolute top-2 left-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              isActive ? 'bg-emerald-500 text-white' : 'bg-gray-500 text-white'
-            }`}>
-              {isActive ? 'Active' : 'Hidden'}
-            </span>
+        {/* Bottom stats */}
+        <div className="absolute bottom-2.5 left-3 right-3 flex items-end justify-between text-white text-[11px]">
+          <div className="flex gap-3">
+            <span>{video.views_count || 0} views</span>
+            <span>{video.likes_count || 0} likes</span>
           </div>
-
-          {/* Stats */}
-          <div className="absolute bottom-2 left-3 flex gap-3 text-white text-xs">
-            <span>👁 {video.views_count || 0}</span>
-            <span>❤️ {video.likes_count || 0}</span>
-          </div>
-
-          {/* Tag count */}
-          <div className="absolute bottom-2 right-3">
-            <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full">
-              {tags.length} product{tags.length !== 1 ? 's' : ''}
+          {productCount > 0 && (
+            <span className="bg-white/95 text-gray-900 px-2 py-0.5 rounded text-[10px] font-semibold">
+              {productCount} tagged
             </span>
+          )}
+        </div>
+      </div>
+
+      {/* Card body — minimal */}
+      <div className="p-3.5 space-y-2">
+        <p className="text-sm font-medium text-gray-900 line-clamp-1">
+          {video.title || <span className="text-gray-400 italic">Untitled</span>}
+        </p>
+        {tags.length > 0 ? (
+          <div className="flex gap-1 flex-wrap">
+            {tags.slice(0, 2).map(tag => (
+              <span
+                key={tag.id}
+                className={`text-[11px] px-2 py-0.5 rounded truncate max-w-[120px] ${
+                  tag.match_status === 'pending_review'
+                    ? 'bg-amber-50 text-amber-800'
+                    : tag.match_status === 'auto_tagged'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {tag.product_name}
+              </span>
+            ))}
+            {tags.length > 2 && (
+              <span className="text-[11px] text-gray-400">+{tags.length - 2}</span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">No products tagged yet</p>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ─── Detail drawer — opens when a video tile is clicked ────────────────────
+function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUpdated, onDelete, onToggleStatus }) {
+  const [aiTaggerOpen, setAiTaggerOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(video.title || '');
+  const [titleSaving, setTitleSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [muted, setMuted] = useState(true);
+
+  // ESC closes
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  async function saveTitle() {
+    if (titleDraft === video.title) return;
+    setTitleSaving(true);
+    await fetch(`${API}/api/videos/${video.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: titleDraft }),
+    });
+    setTitleSaving(false);
+  }
+
+  const tags = video.video_product_tags || [];
+  const isActive = video.status === 'active';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/40 backdrop-blur-sm animate-[fadein_.15s_ease]"
+      onClick={onClose}
+    >
+      <style>{`@keyframes fadein { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      <div
+        className="bg-white w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col sm:flex-row"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Left: video player on loop */}
+        <div className="bg-black flex-shrink-0 w-full sm:w-[360px] md:w-[420px] flex items-center justify-center relative">
+          {video.s3_url ? (
+            <video
+              key={video.id}
+              src={video.s3_url}
+              autoPlay
+              loop
+              muted={muted}
+              playsInline
+              className="w-full h-full object-contain"
+              style={{ maxHeight: '100vh' }}
+            />
+          ) : video.thumbnail_url ? (
+            <img src={video.thumbnail_url} alt="" className="w-full h-full object-contain" />
+          ) : (
+            <div className="text-white/40 text-sm">No preview</div>
+          )}
+
+          {/* Mute toggle */}
+          {video.s3_url && (
+            <button
+              onClick={() => setMuted(m => !m)}
+              className="absolute top-4 left-4 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center text-sm transition-colors"
+              title={muted ? 'Unmute' : 'Mute'}
+            >
+              {muted ? '🔇' : '🔊'}
+            </button>
+          )}
+
+          {/* Stats overlay */}
+          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white text-xs">
+            <div className="flex gap-4">
+              <span>{video.views_count || 0} views</span>
+              <span>{video.likes_count || 0} likes</span>
+              <span>{video.add_to_cart_count || 0} carts</span>
+            </div>
+            {(video.source === 'instagram' || video.source === 'tiktok') && (
+              <span className="bg-white/20 backdrop-blur px-2 py-0.5 rounded">
+                {video.source === 'instagram' ? 'IG' : 'TT'}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Card body */}
-        <div className="p-4 space-y-3">
-          {/* Title */}
-          {editing ? (
-            <input
-              autoFocus
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={e => e.key === 'Enter' && saveTitle()}
-              className="w-full text-sm font-medium border-b border-indigo-400 outline-none pb-0.5"
-            />
-          ) : (
-            <p
-              className="text-sm font-medium text-gray-900 truncate cursor-text"
-              onClick={() => setEditing(true)}
-              title="Click to rename"
-            >
-              {title || <span className="text-gray-400 italic">Untitled — click to name</span>}
-            </p>
-          )}
-
-          {/* Tagged products preview — pills are removable */}
-          {tags.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {tags.slice(0, 3).map(tag => (
-                <RemovableTagPill
-                  key={tag.id}
-                  tag={tag}
-                  videoId={video.id}
-                  onRemoved={() => onTagsUpdated(video.id, tags.filter(t => t.id !== tag.id))}
-                />
-              ))}
-              {tags.length > 3 && (
-                <span className="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">+{tags.length - 3}</span>
-              )}
+        {/* Right: actions panel */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-gray-100">
+            <div className="flex-1 min-w-0">
+              <input
+                value={titleDraft}
+                onChange={e => setTitleDraft(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                placeholder="Untitled video"
+                className="w-full text-base font-semibold text-gray-900 bg-transparent border-0 focus:outline-none focus:bg-indigo-50/40 rounded px-1 -mx-1"
+              />
+              <p className="text-xs text-gray-500 mt-0.5">
+                {titleSaving ? 'Saving…' : isActive ? 'Live on storefront' : 'Hidden from storefront'}
+              </p>
             </div>
-          )}
+            <button
+              onClick={onClose}
+              className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl flex-shrink-0"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setAiTaggerOpen(true)}
-              className="text-xs font-medium bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg px-3 py-2 hover:opacity-90 transition-opacity"
-              title="AI: auto-detect product and create Shopify listing"
-            >
-              ✨ AI Tag
-            </button>
-            <button
-              onClick={() => setTaggerOpen(true)}
-              className="flex-1 text-xs font-medium bg-indigo-600 text-white rounded-lg py-2 hover:bg-indigo-700 transition-colors"
-            >
-              🏷 Tag
-            </button>
-            <button
-              onClick={() => onToggleStatus(video.id, isActive ? 'inactive' : 'active')}
-              className="text-xs font-medium bg-gray-100 text-gray-600 rounded-lg px-3 py-2 hover:bg-gray-200 transition-colors"
-              title={isActive ? 'Hide video' : 'Show video'}
-            >
-              {isActive ? '👁' : '🚫'}
-            </button>
-            {shopifyDomain && (
-              <a
-                href={`https://${shopifyDomain}/?btgv=${video.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-medium bg-gray-100 text-gray-600 rounded-lg px-3 py-2 hover:bg-gray-200 transition-colors"
-                title="Preview this video on your storefront (deep link)"
-              >
-                🔗
-              </a>
-            )}
-            {confirmDelete ? (
-              <>
+          {/* Body — scrollable */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+            {/* Tagged products */}
+            <Section title="Tagged products" count={tags.length}>
+              {tags.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-2">No products tagged. Add one below.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tags.map(tag => (
+                    <TagRow
+                      key={tag.id}
+                      tag={tag}
+                      videoId={video.id}
+                      onRemoved={() => onTagsUpdated(video.id, tags.filter(t => t.id !== tag.id))}
+                    />
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            {/* Add product — search with collection / tag filters */}
+            <Section title="Add product">
+              <ProductPicker
+                video={video}
+                merchantId={merchantId}
+                existingTagIds={new Set(tags.map(t => t.shopify_product_id))}
+                onTagAdded={newTag => onTagsUpdated(video.id, [...tags, newTag])}
+              />
+              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <span className="text-xs text-gray-500">Or generate a new product from this video</span>
                 <button
-                  onClick={async () => {
-                    setDeleting(true);
-                    await onDelete(video.id);
-                    setDeleting(false);
-                    setConfirmDelete(false);
-                  }}
-                  className="text-xs font-semibold bg-red-500 text-white rounded-lg px-3 py-2 hover:bg-red-600 transition-colors"
-                  disabled={deleting}
+                  onClick={() => setAiTaggerOpen(true)}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
                 >
-                  {deleting ? '...' : 'Yes, delete'}
+                  ✨ AI Create →
                 </button>
+              </div>
+            </Section>
+
+            {/* Settings */}
+            <Section title="Video settings">
+              <div className="space-y-3">
                 <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="text-xs font-medium bg-gray-100 text-gray-600 rounded-lg px-2 py-2 hover:bg-gray-200 transition-colors"
+                  onClick={() => onToggleStatus(video.id, isActive ? 'inactive' : 'active')}
+                  className="w-full flex items-center justify-between text-sm py-2.5 px-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                 >
-                  Cancel
+                  <span className="text-gray-900 font-medium">
+                    {isActive ? 'Hide from storefront' : 'Show on storefront'}
+                  </span>
+                  <span className="text-xs text-gray-500">{isActive ? 'Currently live' : 'Currently hidden'}</span>
                 </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="text-xs font-medium bg-red-50 text-red-500 rounded-lg px-3 py-2 hover:bg-red-100 transition-colors"
-                title="Delete video"
-              >
-                🗑
-              </button>
-            )}
+                {shopifyDomain && (
+                  <a
+                    href={`https://${shopifyDomain}/?btgv=${video.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full flex items-center justify-between text-sm py-2.5 px-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="text-gray-900 font-medium">Preview on storefront</span>
+                    <span className="text-xs text-gray-500">Opens with deep link ↗</span>
+                  </a>
+                )}
+
+                {confirmDelete ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        await onDelete(video.id);
+                        onClose();
+                      }}
+                      className="flex-1 text-sm font-semibold bg-red-600 text-white rounded-lg py-2.5 hover:bg-red-700"
+                    >
+                      Yes, delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 text-sm font-medium border border-gray-200 rounded-lg py-2.5 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="w-full text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg py-2.5 transition-colors"
+                  >
+                    Delete video
+                  </button>
+                )}
+              </div>
+            </Section>
           </div>
         </div>
       </div>
 
-      {taggerOpen && (
-        <ProductTagger
-          video={video}
-          merchantId={merchantId}
-          shopifyDomain={shopifyDomain}
-          onClose={() => setTaggerOpen(false)}
-          onTagsUpdated={onTagsUpdated}
-        />
-      )}
+      {/* AI Tagger as nested modal — sits on top of drawer */}
       {aiTaggerOpen && (
         <AiTagger
           video={video}
@@ -1230,7 +1347,240 @@ function VideoCard({ video, merchantId, shopifyDomain, onDelete, onTagsUpdated, 
           onClose={() => setAiTaggerOpen(false)}
         />
       )}
-    </>
+    </div>
+  );
+}
+
+// Section wrapper used inside the drawer
+function Section({ title, count, children }) {
+  return (
+    <div>
+      <h3 className="text-[11px] uppercase tracking-wider font-semibold text-gray-500 mb-2.5 flex items-center gap-2">
+        {title}
+        {typeof count === 'number' && (
+          <span className="text-gray-400 font-normal">{count}</span>
+        )}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+// Single tagged-product row — shown in drawer
+function TagRow({ tag, videoId, onRemoved }) {
+  const [removing, setRemoving] = useState(false);
+  async function remove() {
+    if (removing) return;
+    setRemoving(true);
+    try {
+      await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, { method: 'DELETE' });
+      onRemoved();
+    } catch (err) {
+      setRemoving(false);
+    }
+  }
+  const isPending = tag.match_status === 'pending_review';
+  return (
+    <div className={`flex items-center gap-3 p-2.5 rounded-lg border ${
+      removing ? 'opacity-40' : ''
+    } ${isPending ? 'bg-amber-50/40 border-amber-200' : 'bg-white border-gray-200'}`}>
+      {tag.image_url ? (
+        <img src={tag.image_url} alt="" className="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0" />
+      ) : (
+        <div className="w-10 h-10 rounded bg-gray-100 flex-shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium text-gray-900 truncate">{tag.product_name}</span>
+          {tag.match_status === 'auto_tagged' && (
+            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">AI</span>
+          )}
+          {isPending && (
+            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">Review</span>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 mt-0.5">
+          {tag.price != null && <span>${tag.price}</span>}
+          {tag.match_score != null && <span> · {Math.round(tag.match_score * 100)}% match</span>}
+        </div>
+      </div>
+      <button
+        onClick={remove}
+        disabled={removing}
+        className="text-gray-400 hover:text-red-600 text-sm w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
+        aria-label="Remove tag"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// Product picker with name / collection / tag filters
+function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
+  const [query, setQuery] = useState('');
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'collection' | 'tag'
+  const [filterValue, setFilterValue] = useState('');
+  const [products, setProducts] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [allTags, setAllTags] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [pRes, cRes] = await Promise.all([
+          fetch(`${API}/api/merchants/${merchantId}/shopify-products`),
+          fetch(`${API}/api/merchants/${merchantId}/shopify-collections`),
+        ]);
+        if (cancelled) return;
+        if (pRes.ok) {
+          const { products: ps } = await pRes.json();
+          setProducts(ps || []);
+          // Derive unique tag list from products
+          const tagSet = new Set();
+          (ps || []).forEach(p => (p.tags || []).forEach(t => tagSet.add(t)));
+          setAllTags([...tagSet].sort());
+        }
+        if (cRes.ok) {
+          const { collections: cs } = await cRes.json();
+          setCollections(cs || []);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [merchantId]);
+
+  const filtered = useMemo(() => {
+    let list = products;
+    if (filterMode === 'collection' && filterValue) {
+      list = list.filter(p => (p.collections || []).includes(filterValue));
+    } else if (filterMode === 'tag' && filterValue) {
+      list = list.filter(p => (p.tags || []).includes(filterValue));
+    }
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = list.filter(p => (p.title || '').toLowerCase().includes(q));
+    }
+    return list.slice(0, 30);
+  }, [products, filterMode, filterValue, query]);
+
+  async function addProduct(p) {
+    setAdding(p.id);
+    try {
+      const r = await fetch(`${API}/api/videos/${video.id}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchant_id: merchantId,
+          shopify_product_id: String(p.id),
+          shopify_variant_id: p.variants?.[0]?.id ? String(p.variants[0].id) : null,
+          product_name: p.title,
+          product_handle: p.handle,
+          price: p.variants?.[0]?.price ? parseFloat(p.variants[0].price) : null,
+          image_url: p.images?.[0]?.src || p.image?.src || null,
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        onTagAdded(data);
+        setQuery('');
+      }
+    } finally {
+      setAdding(null);
+    }
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {/* Search row */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search products by name…"
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+        />
+        <select
+          value={filterMode}
+          onChange={e => { setFilterMode(e.target.value); setFilterValue(''); }}
+          className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-indigo-500"
+        >
+          <option value="all">All</option>
+          <option value="collection">By collection</option>
+          <option value="tag">By tag</option>
+        </select>
+      </div>
+
+      {/* Filter value selector */}
+      {filterMode === 'collection' && (
+        <select
+          value={filterValue}
+          onChange={e => setFilterValue(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+        >
+          <option value="">Pick a collection…</option>
+          {collections.map(c => (
+            <option key={c.id || c.handle} value={c.handle}>{c.title || c.handle}</option>
+          ))}
+        </select>
+      )}
+      {filterMode === 'tag' && (
+        <select
+          value={filterValue}
+          onChange={e => setFilterValue(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+        >
+          <option value="">Pick a tag…</option>
+          {allTags.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      )}
+
+      {/* Results */}
+      {loading ? (
+        <div className="text-xs text-gray-400 py-3">Loading products…</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-xs text-gray-400 py-3">No matching products. Try a different filter.</div>
+      ) : (
+        <div className="border border-gray-200 rounded-lg max-h-72 overflow-y-auto divide-y divide-gray-100">
+          {filtered.map(p => {
+            const already = existingTagIds.has(String(p.id));
+            return (
+              <button
+                key={p.id}
+                onClick={() => !already && addProduct(p)}
+                disabled={already || adding === p.id}
+                className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {(p.images?.[0]?.src || p.image?.src) ? (
+                  <img src={p.images?.[0]?.src || p.image?.src} alt="" className="w-9 h-9 rounded object-cover bg-gray-100 flex-shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded bg-gray-100 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-900 truncate">{p.title}</div>
+                  <div className="text-xs text-gray-500">
+                    {p.variants?.[0]?.price && <span>${p.variants[0].price}</span>}
+                    {p.product_type && <span> · {p.product_type}</span>}
+                  </div>
+                </div>
+                <span className="text-xs text-gray-400 flex-shrink-0">
+                  {already ? 'Tagged' : adding === p.id ? '…' : 'Add'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1533,6 +1883,7 @@ export default function VideosPage() {
   const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [merchantId, setMerchantId] = useState(null);
+  const [openVideoId, setOpenVideoId] = useState(null);
   const [shopifyDomain, setShopifyDomain] = useState(null);
   const [apiKey, setApiKey] = useState(null);
   const [shopHandle, setShopHandle] = useState(null);
@@ -1722,17 +2073,30 @@ export default function VideosPage() {
                 <VideoCard
                   key={video.id}
                   video={video}
-                  merchantId={merchantId}
-                  shopifyDomain={shopifyDomain}
-                  onDelete={handleDelete}
-                  onToggleStatus={handleToggleStatus}
-                  onTagsUpdated={handleTagsUpdated}
+                  onOpen={v => setOpenVideoId(v.id)}
                 />
               ))}
             </div>
           </>
         )}
       </section>
+
+      {/* Video detail drawer — opens on tile click */}
+      {openVideoId && (() => {
+        const v = videos.find(x => x.id === openVideoId);
+        if (!v) return null;
+        return (
+          <VideoDetailDrawer
+            video={v}
+            merchantId={merchantId}
+            shopifyDomain={shopifyDomain}
+            onClose={() => setOpenVideoId(null)}
+            onTagsUpdated={handleTagsUpdated}
+            onDelete={handleDelete}
+            onToggleStatus={handleToggleStatus}
+          />
+        );
+      })()}
 
       {/* Widget editor modal */}
       {editingWidget && (
