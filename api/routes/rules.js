@@ -24,18 +24,25 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
   }
 
   try {
-    // Fetch one page of products from Shopify (250 max per request)
-    const limit = 20;
-    const sinceId = req.query.since_id || null;
-    const url = `https://${domain}/admin/api/2024-01/products.json?limit=${limit}${sinceId ? `&since_id=${sinceId}` : ''}`;
-    console.log(`[shopify-products] fetching from domain=${domain} token=${token.slice(0,10)}...`);
-    const shopRes = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
-    if (!shopRes.ok) {
-      const body = await shopRes.text();
-      console.error(`[shopify-products] ${shopRes.status} from domain=${domain}: ${body}`);
-      throw new Error(`Shopify ${shopRes.status} (domain: ${domain}, token: ${token.slice(0,10)}...): ${body}`);
+    // Walk all pages of products from Shopify (250 max per page)
+    // For a 1000-product catalog this is ~4 sequential calls, ~3-4s total.
+    const products = [];
+    let sinceId = req.query.since_id || null;
+    for (let page = 0; page < 20; page++) {
+      const url = `https://${domain}/admin/api/2024-01/products.json?limit=250${sinceId ? `&since_id=${sinceId}` : ''}`;
+      const shopRes = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+      if (!shopRes.ok) {
+        const body = await shopRes.text();
+        console.error(`[shopify-products] ${shopRes.status} from domain=${domain}: ${body}`);
+        throw new Error(`Shopify ${shopRes.status} (domain: ${domain}, token: ${token.slice(0,10)}...): ${body}`);
+      }
+      const { products: batch } = await shopRes.json();
+      if (!Array.isArray(batch) || !batch.length) break;
+      products.push(...batch);
+      if (batch.length < 250) break;
+      sinceId = batch[batch.length - 1].id;
     }
-    const { products } = await shopRes.json();
+    console.log(`[shopify-products] fetched ${products.length} from domain=${domain}`);
 
     // Fetch all rules (product + tag + collection) for this merchant
     const { data: rules } = await supabase

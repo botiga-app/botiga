@@ -276,9 +276,9 @@ function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, ed
           <button
             onClick={detect}
             disabled={detecting || !url.trim()}
-            className="px-5 py-3 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-40"
+            className="px-5 py-3 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-40 whitespace-nowrap"
           >
-            {detecting ? 'Scanning…' : 'Scan'}
+            {detecting ? 'Looking…' : 'Find my store'}
           </button>
         </div>
       </div>

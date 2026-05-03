@@ -47,6 +47,104 @@ function ShopHero({ shopHandle }) {
   );
 }
 
+// ─── One-click auto-import — uses merchant.ig_handle, no selection step ────
+function OneClickAutoImport({ merchantId, onImported }) {
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState(null); // { phase, msg, progress }
+  const [error, setError] = useState(null);
+  const [hasIg, setHasIg] = useState(null); // null=unknown, true/false
+
+  // Check on mount whether merchant has an IG handle
+  useEffect(() => {
+    if (!merchantId) return;
+    (async () => {
+      const r = await fetch(`${API}/api/merchants/${merchantId}`);
+      if (!r.ok) return;
+      const m = await r.json();
+      setHasIg(!!m.ig_handle);
+    })();
+  }, [merchantId]);
+
+  async function go() {
+    setRunning(true);
+    setError(null);
+    setStatus({ phase: 'importing', msg: 'Pulling latest reels…', progress: 0 });
+
+    try {
+      const r = await fetch(`${API}/api/merchants/${merchantId}/videos/auto-import-latest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 20 }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Import failed');
+
+      const importedCount = data.imported || 0;
+      if (importedCount === 0) {
+        setStatus({ phase: 'done', msg: data.message || 'Nothing new to import.' });
+        setRunning(false);
+        return;
+      }
+
+      // Refresh the parent grid with fresh fetch — the import endpoint
+      // doesn't return full video objects, so trigger a refetch via onImported([])
+      onImported([]);
+
+      // Now poll auto-tag-tick until done
+      setStatus({ phase: 'tagging', msg: `Imported ${importedCount} reels. Tagging…`, progress: 0 });
+      let tagged = 0;
+      while (true) {
+        const tickRes = await fetch(`${API}/api/merchants/${merchantId}/videos/auto-tag-tick`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chunk_size: 5 }),
+        });
+        if (!tickRes.ok) break;
+        const t = await tickRes.json();
+        tagged += (t.auto_tagged || 0) + (t.pending_review || 0);
+        setStatus({
+          phase: 'tagging',
+          msg: `Tagging videos: ${tagged}/${importedCount}`,
+          progress: Math.round((tagged / importedCount) * 100),
+        });
+        if (!t.has_more) break;
+      }
+
+      setStatus({ phase: 'done', msg: `✨ ${importedCount} reels imported and tagged.` });
+      onImported([]); // refetch grid one more time so tags appear
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (hasIg === false) return null; // hide button if no IG handle
+
+  return (
+    <div className="flex items-center gap-3">
+      {status && (
+        <div className="hidden md:flex items-center gap-2 text-xs">
+          {running && <div className="w-3 h-3 border-2 border-pink-500 border-t-transparent rounded-full animate-spin" />}
+          <span className={status.phase === 'done' ? 'text-emerald-600 font-medium' : 'text-gray-600'}>
+            {status.msg}
+          </span>
+        </div>
+      )}
+      {error && <span className="text-xs text-red-600">{error}</span>}
+      <button
+        onClick={go}
+        disabled={running || hasIg !== true}
+        className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-pink-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity whitespace-nowrap"
+        title={hasIg === null ? 'Loading…' : 'Auto-import latest 20 reels from your Instagram'}
+      >
+        <span>✨</span>
+        {running ? 'Working…' : 'Auto-import latest reels'}
+      </button>
+    </div>
+  );
+}
+
 // ─── Instagram importer ───────────────────────────────────────────────────────
 function InstagramImporter({ merchantId, onImported }) {
   const [handle, setHandle] = useState('');
@@ -1515,14 +1613,22 @@ export default function VideosPage() {
       <section>
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
-          {merchantId && (
-            <InstagramImporter
-              merchantId={merchantId}
-              onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
-            />
-          )}
+          <div className="flex gap-2">
+            {merchantId && (
+              <OneClickAutoImport
+                merchantId={merchantId}
+                onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
+              />
+            )}
+            {merchantId && (
+              <InstagramImporter
+                merchantId={merchantId}
+                onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
+              />
+            )}
+          </div>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Upload videos or import from Instagram. Tag products to make them shoppable.</p>
+        <p className="text-sm text-gray-500 mb-4">One-click auto-import from your saved Instagram, or pick specific reels manually.</p>
 
         {merchantId && (
           <div className="mb-6">

@@ -528,6 +528,130 @@ router.get('/widget/videos/:id/stats', widgetCors, async (req, res) => {
   res.json({ ...data, comments_count: count || 0 });
 });
 
+// ─── Dashboard: list all comments across a merchant's videos ────────────────
+router.get('/merchants/:merchantId/comments', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+
+  // Get all comments for videos owned by this merchant
+  const { data: videos } = await supabase
+    .from('videos')
+    .select('id, title, thumbnail_url')
+    .eq('merchant_id', merchantId);
+
+  if (!videos?.length) return res.json({ comments: [] });
+
+  const videoIds = videos.map(v => v.id);
+  const videoMap = Object.fromEntries(videos.map(v => [v.id, v]));
+
+  const { data: comments, error } = await supabase
+    .from('video_comments')
+    .select('*')
+    .in('video_id', videoIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const enriched = (comments || []).map(c => ({
+    ...c,
+    video: videoMap[c.video_id] || null,
+  }));
+
+  res.json({ comments: enriched });
+});
+
+// ─── One-click: auto-import latest N reels from merchant.ig_handle ──────────
+// No selection step. Pulls IG handle from the merchant row, fetches the
+// latest N reels, imports them all, returns the imported video_ids so the
+// dashboard can immediately start polling /auto-tag-tick.
+router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const limit = Math.min(parseInt(req.body?.limit, 10) || 20, 100);
+
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('ig_handle')
+    .eq('id', merchantId)
+    .single();
+  if (!merchant?.ig_handle) {
+    return res.status(400).json({ error: 'No Instagram handle on file. Add one in Settings.' });
+  }
+  if (!process.env.RAPIDAPI_KEY) {
+    return res.status(500).json({ error: 'RAPIDAPI_KEY not configured' });
+  }
+
+  const cleanHandle = String(merchant.ig_handle).replace(/^@/, '').trim();
+
+  // Preview from IG
+  const previewRes = await fetch('https://instagram120.p.rapidapi.com/api/instagram/posts', {
+    method: 'POST',
+    headers: {
+      'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+      'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username: cleanHandle, maxId: '' }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!previewRes.ok) return res.status(previewRes.status).json({ error: `IG preview ${previewRes.status}` });
+  const raw = await previewRes.json();
+
+  let items = [];
+  if (raw?.result?.edges) items = raw.result.edges.map(e => e.node || e);
+  else if (raw?.data?.items) items = raw.data.items;
+  else if (Array.isArray(raw?.items)) items = raw.items;
+
+  const posts = items
+    .filter(i => i.is_video || i.media_type === 2 || i.video_url || (Array.isArray(i.video_versions) && i.video_versions.length))
+    .map(i => ({
+      video_url: i.video_url || i.video_versions?.[0]?.url || null,
+      thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
+      caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
+      post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
+    }))
+    .filter(p => p.video_url || p.thumbnail_url)
+    .slice(0, limit);
+
+  if (!posts.length) return res.json({ imported: 0, video_ids: [], message: 'No reels found for this handle.' });
+
+  // Insert (skip dupes by source_url)
+  const inserted = [];
+  for (const post of posts) {
+    const { data: existing } = await supabase
+      .from('videos')
+      .select('id')
+      .eq('merchant_id', merchantId)
+      .eq('source_url', post.post_url || post.video_url)
+      .maybeSingle();
+    if (existing) continue;
+
+    const { data, error } = await supabase
+      .from('videos')
+      .insert({
+        merchant_id: merchantId,
+        title: post.caption || null,
+        s3_key: null,
+        s3_url: post.video_url || post.thumbnail_url,
+        thumbnail_url: post.thumbnail_url,
+        source: 'instagram',
+        source_url: post.post_url || post.video_url,
+        status: 'active',
+      })
+      .select('id')
+      .single();
+    if (!error && data) inserted.push(data.id);
+  }
+
+  res.json({
+    handle: cleanHandle,
+    fetched: posts.length,
+    imported: inserted.length,
+    video_ids: inserted,
+    next_step: 'Poll /merchants/:id/videos/auto-tag-tick until has_more=false',
+  });
+});
+
 // ─── Widget: track event ─────────────────────────────────────────────────────
 router.post('/widget/videos/:id/event', widgetCors, async (req, res) => {
   const { k: apiKey, event_type, session_id, product_id } = req.body;
