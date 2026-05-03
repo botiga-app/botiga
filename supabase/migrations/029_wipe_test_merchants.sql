@@ -30,6 +30,12 @@ WHERE merchant_id IN (
   WHERE email IN ('willowhouse96@gmail.com', 'testerbunny496@gmail.com')
 );
 
+DELETE FROM admin_alerts
+WHERE merchant_id IN (
+  SELECT id FROM merchants
+  WHERE email IN ('willowhouse96@gmail.com', 'testerbunny496@gmail.com')
+);
+
 -- Tables that probably HAVE CASCADE (explicit DELETE is harmless + idempotent)
 DELETE FROM video_product_tags
 WHERE merchant_id IN (
