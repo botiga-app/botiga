@@ -6,16 +6,17 @@ import { createClient } from '../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 
+// Sidebar order: 3 product pillars first (Concierge → Negotiation → Video),
+// then ops (Install, Billing). Concierge bot settings live in /dashboard/settings
+// (bot persona); Negotiation bot settings live in /dashboard/rules (per-product rules).
+// Full pillar-page revamp is deferred — for now the labels point at the canonical pages.
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: '📊' },
-  { href: '/dashboard/videos', label: 'Videos', icon: '🎬' },
-  { href: '/dashboard/comments', label: 'Comments', icon: '💬' },
-  { href: '/dashboard/negotiations', label: 'Negotiations', icon: '🤝' },
-  { href: '/dashboard/recovery', label: 'Recovery', icon: '🔄' },
-  { href: '/dashboard/rules', label: 'Product Rules', icon: '🎯' },
-  { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
-  { href: '/dashboard/billing', label: 'Billing', icon: '💳' },
-  { href: '/dashboard/install', label: 'Install', icon: '🔧' }
+  { href: '/dashboard/settings', label: 'Concierge bot', icon: '💬' },
+  { href: '/dashboard/rules', label: 'Negotiation bot', icon: '🤝' },
+  { href: '/dashboard/videos', label: 'Video bot', icon: '🎬' },
+  { href: '/dashboard/install', label: 'Install', icon: '🔧' },
+  { href: '/dashboard/billing', label: 'Billing', icon: '💳' }
 ];
 
 export default function DashboardLayout({ children, merchantId, apiKey }) {

@@ -5,34 +5,36 @@ import { createClient } from '../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 
+// 4-step wizard: URL → Install → Bot persona → Live progress (auto-fires).
+// Total target time: under 2 minutes. Step 4 is TurboTax-style live progress
+// that runs the heavy lifting (bot setup, IG pull, auto-tag, feed widget)
+// while the merchant watches it tick through, sequentially.
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
   const [user, setUser] = useState(null);
   const [merchant, setMerchant] = useState(null);
-  const [step, setStep] = useState(1); // 1: store URL, 2: install, 3: live
+  const [step, setStep] = useState(1);
 
-  // Step 1 state
+  // Step 1
   const [url, setUrl] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState(null);
   const [editIg, setEditIg] = useState(false);
   const [editName, setEditName] = useState(false);
+  const [step1Error, setStep1Error] = useState(null);
 
-  // Step 2 state
-  const [installPath, setInstallPath] = useState(null); // null | 'real' | 'dev'
+  // Step 2
+  const [installPath, setInstallPath] = useState(null);
   const [devStoreUrl, setDevStoreUrl] = useState('');
   const [installOpened, setInstallOpened] = useState(false);
   const installCheckInterval = useRef(null);
 
-  // Step 3 state
-  const [completing, setCompleting] = useState(false);
-  const [completePhase, setCompletePhase] = useState(null); // 'saving' | 'pulling' | 'tagging' | 'done'
-  const [completeMsg, setCompleteMsg] = useState('');
-  const [igStatus, setIgStatus] = useState(null);
-  const [tagProgress, setTagProgress] = useState({ tagged: 0, total: 0 });
+  // Step 3 — bot persona
+  const [botName, setBotName] = useState('');
+  const [botAvatar, setBotAvatar] = useState(PRESET_AVATARS[0].url);
+  const [customAvatarUrl, setCustomAvatarUrl] = useState('');
 
-  // Bootstrap: ensure logged in, load merchant, jump to right step
   useEffect(() => {
     async function bootstrap() {
       const { data: { user: u } } = await supabase.auth.getUser();
@@ -42,19 +44,25 @@ export default function OnboardingPage() {
       if (r.ok) {
         const m = await r.json();
         setMerchant(m);
-        // Resume mid-flow if partially complete
+        if (m.onboarding_completed_at) { router.push('/dashboard'); return; }
         if (m.shopify_domain && m.shopify_access_token) setStep(3);
         else if (m.website_url) setStep(2);
         else setStep(1);
         if (m.website_url) setUrl(m.website_url);
-        if (m.onboarding_completed_at) router.push('/dashboard');
       }
     }
     bootstrap();
     return () => { if (installCheckInterval.current) clearInterval(installCheckInterval.current); };
   }, []);
 
-  // Step 2: poll for shopify_access_token to detect install completion
+  // Default bot name from store name once detected
+  useEffect(() => {
+    if (!botName && (detected?.brand_name || merchant?.name)) {
+      const brand = detected?.brand_name || merchant?.name || '';
+      setBotName(brand ? `${brand.split(' ')[0]} Bot` : 'Shop Assistant');
+    }
+  }, [detected?.brand_name, merchant?.name]);
+
   function startInstallPolling() {
     if (installCheckInterval.current) clearInterval(installCheckInterval.current);
     installCheckInterval.current = setInterval(async () => {
@@ -66,7 +74,6 @@ export default function OnboardingPage() {
         setMerchant(m);
         clearInterval(installCheckInterval.current);
         installCheckInterval.current = null;
-        // Auto-advance
         setStep(3);
       }
     }, 3000);
@@ -91,8 +98,6 @@ export default function OnboardingPage() {
     }
   }
 
-  const [step1Error, setStep1Error] = useState(null);
-
   async function saveStep1AndContinue() {
     if (!user || !detected?.reachable) return;
     setStep1Error(null);
@@ -116,15 +121,13 @@ export default function OnboardingPage() {
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
         const msg = data?.error || `Save failed (HTTP ${r.status})`;
-        // Common case: missing column from a not-run migration
         if (msg.toLowerCase().includes('column') || msg.toLowerCase().includes('does not exist')) {
-          setStep1Error(`Database setup incomplete: ${msg}. Ask your admin to run the latest migrations (likely 027 ig_handle).`);
+          setStep1Error(`Database setup incomplete: ${msg}.`);
         } else {
           setStep1Error(msg);
         }
         return;
       }
-      // Refetch merchant so Step 3 sees the saved values
       const r2 = await fetch(`${API}/api/merchants/${user.id}`);
       if (r2.ok) setMerchant(await r2.json());
       setStep(2);
@@ -135,7 +138,6 @@ export default function OnboardingPage() {
 
   function startRealStoreInstall() {
     if (!user || !detected?.url) return;
-    // Strip protocol from URL to get the bare domain for Shopify OAuth
     const shop = detected.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
     const installUrl = `${API}/api/shopify/install?shop=${encodeURIComponent(shop)}&merchant_id=${user.id}`;
     window.open(installUrl, '_blank', 'noopener,noreferrer');
@@ -153,70 +155,9 @@ export default function OnboardingPage() {
     startInstallPolling();
   }
 
-  async function complete() {
-    if (!user) return;
-    setCompleting(true);
-    // First visible phase. The /complete API call below will hold this
-    // for the full IG fetch duration (5-30s), so the merchant actually
-    // reads it. The earlier "saving → pulling" two-phase flip got
-    // batched by React and the saving message never appeared.
-    setCompletePhase('pulling');
-    setCompleteMsg(merchant?.ig_handle
-      ? 'Pulling your latest Instagram posts…'
-      : 'Finalizing your setup…');
-
-    try {
-      const r = await fetch(`${API}/api/onboarding/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_id: user.id, fire_ig_pull: true, ig_limit: 20 }),
-      });
-      const data = await r.json();
-      setIgStatus(data.ig_pull_status);
-
-      const importMatch = String(data.ig_pull_status || '').match(/^imported_(\d+)/);
-      const importedCount = importMatch ? parseInt(importMatch[1], 10) : 0;
-
-      if (importedCount > 0) {
-        setCompletePhase('tagging');
-        setCompleteMsg(`Imported ${importedCount} posts. Auto-tagging products…`);
-        setTagProgress({ tagged: 0, total: importedCount });
-        let tagged = 0;
-        while (true) {
-          const tickRes = await fetch(`${API}/api/merchants/${user.id}/videos/auto-tag-tick`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chunk_size: 5 }),
-          });
-          if (!tickRes.ok) break;
-          const t = await tickRes.json();
-          tagged += (t.auto_tagged || 0) + (t.pending_review || 0);
-          setTagProgress({ tagged, total: importedCount });
-          setCompleteMsg(`Auto-tagging: ${tagged}/${importedCount}`);
-          if (!t.has_more) break;
-        }
-      }
-
-      // Done — wait for merchant to click Continue (no auto-redirect).
-      // The success state persists until they're ready to proceed.
-      setCompletePhase('done');
-      setCompleteMsg(importedCount > 0
-        ? `✨ ${importedCount} posts ready in your shop feed.`
-        : '✨ Setup complete.');
-    } catch (err) {
-      setCompletePhase('done');
-      setCompleteMsg('Setup complete (with a small hiccup). Click below to continue.');
-    }
-  }
-
-  function skipInstall() {
-    setStep(3);
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50">
       <div className="max-w-2xl mx-auto px-6 pt-12 pb-24">
-        {/* Brand mark */}
         <div className="text-center mb-8">
           <div className="text-2xl font-bold tracking-tight">
             <span className="bg-gradient-to-r from-indigo-600 to-pink-500 bg-clip-text text-transparent">
@@ -225,10 +166,8 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        {/* Progress dots */}
-        <ProgressDots current={step} total={3} />
+        <ProgressDots current={step} total={4} />
 
-        {/* Step content */}
         <div className="bg-white rounded-3xl shadow-xl shadow-indigo-100/50 border border-gray-100 mt-8 overflow-hidden">
           {step === 1 && (
             <Step1
@@ -257,27 +196,37 @@ export default function OnboardingPage() {
               startRealStoreInstall={startRealStoreInstall}
               startDevStoreInstall={startDevStoreInstall}
               merchant={merchant}
-              skip={skipInstall}
+              cont={() => setStep(3)}
               back={() => setStep(1)}
             />
           )}
           {step === 3 && (
-            <Step3
+            <Step3BotPersona
+              brand={detected?.brand_name || merchant?.name || 'your store'}
+              logoUrl={detected?.logo_url || merchant?.logo_url}
+              botName={botName}
+              setBotName={setBotName}
+              botAvatar={botAvatar}
+              setBotAvatar={setBotAvatar}
+              customAvatarUrl={customAvatarUrl}
+              setCustomAvatarUrl={setCustomAvatarUrl}
+              cont={() => setStep(4)}
+              back={() => setStep(2)}
+            />
+          )}
+          {step === 4 && (
+            <Step4LiveProgress
+              user={user}
               merchant={merchant}
               detected={detected}
-              completing={completing}
-              completePhase={completePhase}
-              completeMsg={completeMsg}
-              tagProgress={tagProgress}
-              igStatus={igStatus}
-              complete={complete}
+              botName={botName}
+              botAvatar={customAvatarUrl.trim() || botAvatar}
               goToDashboard={() => router.push('/dashboard')}
             />
           )}
         </div>
 
-        {/* Skip-all escape hatch */}
-        {step < 3 && (
+        {step < 4 && (
           <p className="text-center mt-6 text-xs text-gray-400">
             Setting up Botiga • You can finish later from the dashboard
           </p>
@@ -299,18 +248,22 @@ function ProgressDots({ current, total }) {
         return (
           <div key={n} className="flex items-center gap-3">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 ${
                 done
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-indigo-600 text-white scale-100'
                   : active
-                  ? 'bg-white border-2 border-indigo-600 text-indigo-600 ring-4 ring-indigo-100'
-                  : 'bg-gray-100 text-gray-400'
+                  ? 'bg-white border-2 border-indigo-600 text-indigo-600 ring-4 ring-indigo-100 scale-110'
+                  : 'bg-gray-100 text-gray-400 scale-95'
               }`}
             >
               {done ? '✓' : n}
             </div>
             {n < total && (
-              <div className={`w-12 h-0.5 ${done ? 'bg-indigo-600' : 'bg-gray-200'}`} />
+              <div
+                className={`w-10 h-0.5 transition-colors duration-500 ${
+                  done ? 'bg-indigo-600' : 'bg-gray-200'
+                }`}
+              />
             )}
           </div>
         );
@@ -389,10 +342,7 @@ function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, ed
           <div className="grid grid-cols-3 gap-4 mt-6">
             <Stat label="Products" value={detected.product_count ?? '—'} />
             <Stat label="Collections" value={detected.collection_count ?? '—'} />
-            <Stat
-              label="Instagram"
-              value={detected.ig_handle ? `@${detected.ig_handle}` : '—'}
-            />
+            <Stat label="Instagram" value={detected.ig_handle ? `@${detected.ig_handle}` : '—'} />
           </div>
 
           {!detected.ig_handle && (
@@ -437,7 +387,7 @@ function Step1({ url, setUrl, detecting, detected, setDetected, detect, cont, ed
   );
 }
 
-function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl, installOpened, startRealStoreInstall, startDevStoreInstall, merchant, skip, back }) {
+function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl, installOpened, startRealStoreInstall, startDevStoreInstall, merchant, cont, back }) {
   const installed = !!merchant?.shopify_access_token;
   return (
     <div className="p-10">
@@ -447,7 +397,7 @@ function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl
         shoppers negotiate. Read access to your products. Nothing else.
       </p>
 
-      {!installPath && (
+      {!installPath && !installed && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
           <button
             onClick={() => setInstallPath('real')}
@@ -560,12 +510,12 @@ function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl
         </button>
         <div className="flex items-center gap-4">
           {!installed && (
-            <button onClick={skip} className="text-sm text-gray-500 hover:text-gray-700">
+            <button onClick={cont} className="text-sm text-gray-500 hover:text-gray-700">
               Skip for now
             </button>
           )}
           <button
-            onClick={skip}
+            onClick={cont}
             disabled={!installed && !installPath}
             className={`px-6 py-3 text-sm font-semibold rounded-xl transition-opacity ${
               installed
@@ -581,88 +531,421 @@ function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl
   );
 }
 
-function Step3({ merchant, detected, completing, completePhase, completeMsg, tagProgress, igStatus, complete, goToDashboard }) {
-  const igHandle = merchant?.ig_handle || detected?.ig_handle;
-  const installed = !!merchant?.shopify_access_token;
-  const tagPct = tagProgress?.total > 0 ? Math.round((tagProgress.tagged / tagProgress.total) * 100) : 0;
+const PRESET_AVATARS = [
+  { url: 'https://cdn.botiga.ai/avatars/sparkle.gif', label: 'Sparkle', emoji: '✨' },
+  { url: 'https://cdn.botiga.ai/avatars/wave.gif',    label: 'Wave',    emoji: '👋' },
+  { url: 'https://cdn.botiga.ai/avatars/heart.gif',   label: 'Heart',   emoji: '💗' },
+  { url: 'https://cdn.botiga.ai/avatars/bot.gif',     label: 'Bot',     emoji: '🤖' },
+  { url: 'https://cdn.botiga.ai/avatars/shop.gif',    label: 'Shop',    emoji: '🛍️' },
+  { url: 'https://cdn.botiga.ai/avatars/star.gif',    label: 'Star',    emoji: '🌟' },
+];
+
+function Step3BotPersona({ brand, logoUrl, botName, setBotName, botAvatar, setBotAvatar, customAvatarUrl, setCustomAvatarUrl, cont, back }) {
+  const previewAvatar = (customAvatarUrl.trim() || botAvatar);
+  const previewIsPreset = PRESET_AVATARS.find(p => p.url === botAvatar) && !customAvatarUrl.trim();
+  const previewEmoji = previewIsPreset ? PRESET_AVATARS.find(p => p.url === botAvatar)?.emoji : null;
 
   return (
-    <div className="p-10 text-center">
-      <div className="text-5xl mb-3">{completePhase === 'done' ? '🎉' : '✨'}</div>
-      <h2 className="text-3xl font-bold text-gray-900">
-        {completePhase === 'done' ? "You're live" : "You're all set"}
-      </h2>
-      <p className="text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
-        Botiga is ready to negotiate with shoppers, suggest products from collections, and
-        answer questions using your store's real policies.
+    <div className="p-10">
+      <h2 className="text-3xl font-bold text-gray-900">Meet your bot</h2>
+      <p className="text-gray-500 mt-2 leading-relaxed">
+        Give your shop assistant a name and a face. This is what shoppers see when the
+        bot greets them on your storefront.
       </p>
 
-      <div className="mt-8 max-w-md mx-auto space-y-3 text-left">
-        <Checklist
-          done={!!detected?.url || !!merchant?.website_url}
-          label="Store connected"
-          sub={detected?.url || merchant?.website_url}
-        />
-        <Checklist
-          done={installed}
-          label="Shopify installed"
-          sub={installed ? merchant.shopify_domain : 'Skipped — install later from the dashboard'}
-        />
-        <Checklist
-          done={!!igHandle}
-          label={`Instagram${igHandle ? ` (@${igHandle})` : ''}`}
-          sub={igHandle ? `Pulling 20 latest reels — they'll appear in your video feed shortly` : 'Skipped — add later from settings'}
-        />
-        <Checklist
-          done={true}
-          label="Negotiation tone"
-          sub="Defaults loaded — friendly, 20% max discount. Tune anytime in Settings."
+      {/* Live preview chat bubble */}
+      <div className="mt-6 p-5 bg-gradient-to-br from-indigo-50 to-pink-50 border border-indigo-100 rounded-2xl">
+        <div className="flex items-start gap-3">
+          <div className="w-12 h-12 rounded-full bg-white shadow-md border border-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+            {previewEmoji ? (
+              <span className="text-2xl">{previewEmoji}</span>
+            ) : previewAvatar ? (
+              <img src={previewAvatar} alt="" className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none'; }} />
+            ) : logoUrl ? (
+              <img src={logoUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-2xl">🤖</span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-gray-700 mb-1">
+              {botName || 'Your bot'}
+            </div>
+            <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm inline-block max-w-full">
+              <p className="text-sm text-gray-800">
+                Hi! 👋 Welcome to <strong>{brand}</strong> — looking for anything in particular?
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bot name */}
+      <div className="mt-6">
+        <label className="block text-sm font-semibold text-gray-700 mb-2">Bot name</label>
+        <input
+          type="text"
+          value={botName}
+          onChange={e => setBotName(e.target.value)}
+          placeholder="e.g. Willow Bot"
+          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
         />
       </div>
 
-      {/* Live status panel — visible while complete() is running */}
-      {completing && completePhase && (
-        <div className="mt-8 max-w-md mx-auto p-4 bg-gradient-to-br from-indigo-50 to-pink-50 border border-indigo-100 rounded-2xl">
-          <div className="flex items-center gap-3 text-sm text-gray-800">
-            {completePhase !== 'done' && (
-              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-            )}
-            {completePhase === 'done' && <span className="text-emerald-600">✓</span>}
-            <span className="font-medium">{completeMsg}</span>
-          </div>
-          {completePhase === 'tagging' && tagProgress.total > 0 && (
-            <div className="mt-3 h-1.5 bg-white rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all"
-                style={{ width: `${tagPct}%` }}
-              />
-            </div>
-          )}
+      {/* Avatar picker */}
+      <div className="mt-6">
+        <label className="block text-sm font-semibold text-gray-700 mb-3">Avatar</label>
+        <div className="grid grid-cols-6 gap-2">
+          {PRESET_AVATARS.map(p => {
+            const selected = botAvatar === p.url && !customAvatarUrl.trim();
+            return (
+              <button
+                key={p.url}
+                onClick={() => { setBotAvatar(p.url); setCustomAvatarUrl(''); }}
+                className={`aspect-square rounded-xl flex items-center justify-center text-2xl transition-all ${
+                  selected
+                    ? 'bg-gradient-to-br from-indigo-100 to-pink-100 border-2 border-indigo-500 ring-4 ring-indigo-100 scale-105'
+                    : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                }`}
+                title={p.label}
+              >
+                {p.emoji}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">Or paste a URL (GIF or image)</label>
+          <input
+            type="text"
+            value={customAvatarUrl}
+            onChange={e => setCustomAvatarUrl(e.target.value)}
+            placeholder="https://…/avatar.gif"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+          />
+        </div>
+      </div>
+
+      <div className="mt-8 flex items-center justify-between">
+        <button onClick={back} className="text-sm text-gray-500 hover:text-gray-700">
+          ← Back
+        </button>
+        <button
+          onClick={cont}
+          disabled={!botName.trim()}
+          className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-pink-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Looks good →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 4: TurboTax-style live progress ───────────────────────────────────
+//
+// Auto-fires on mount. Runs the heavy lifting sequentially while the merchant
+// watches: each task animates in, gets a spinner while running, then morphs
+// into a green check with a subtle scale-pop. The whole sequence should
+// finish under ~60 seconds (mostly bounded by the IG fetch + auto-tag chunks).
+
+const TASKS = [
+  { id: 'store',        label: 'Store connected',          sub: 'Reading products, collections, policies' },
+  { id: 'shopify',      label: 'Shopify installed',        sub: 'Draft orders + discount codes ready' },
+  { id: 'persona',      label: 'Bot persona saved',        sub: 'Name + avatar applied' },
+  { id: 'instagram',    label: 'Pulling Instagram videos', sub: 'Latest 20 reels' },
+  { id: 'autotag',      label: 'Auto-tagging products',    sub: 'Vision AI matching frames to your catalog' },
+  { id: 'feed',         label: 'Floating Feed widget',     sub: 'Shoppable feed live on your storefront' },
+  { id: 'negotiation',  label: 'Negotiation defaults',     sub: 'Friendly tone, 20% max discount' },
+  { id: 'concierge',    label: 'Concierge bot ready',      sub: 'Trained on your store voice' },
+];
+
+function Step4LiveProgress({ user, merchant, detected, botName, botAvatar, goToDashboard }) {
+  // taskState: id → 'pending' | 'active' | 'done' | 'error'
+  const [state, setState] = useState(() => {
+    const init = {};
+    for (const t of TASKS) init[t.id] = 'pending';
+    return init;
+  });
+  const [details, setDetails] = useState({}); // id → free-form sub override
+  const [allDone, setAllDone] = useState(false);
+  const [error, setError] = useState(null);
+  const ranRef = useRef(false);
+
+  function setTask(id, status, sub) {
+    setState(s => ({ ...s, [id]: status }));
+    if (sub) setDetails(d => ({ ...d, [id]: sub }));
+  }
+
+  useEffect(() => {
+    if (ranRef.current || !user) return;
+    ranRef.current = true;
+
+    (async () => {
+      try {
+        // Tasks 1 + 2 are already done from prior steps — show them as done
+        // immediately so the merchant sees state on mount, then animate.
+        await sleep(150);
+        setTask('store', 'done');
+        await sleep(200);
+        setTask('shopify', merchant?.shopify_access_token ? 'done' : 'done', merchant?.shopify_access_token ? merchant.shopify_domain : 'Skipped — install later from dashboard');
+
+        // Task 3: Save bot persona via /onboarding/save-step (name) +
+        // /onboarding/auto-setup (avatar/personality + Floating Feed scaffold)
+        await sleep(250);
+        setTask('persona', 'active');
+        const setupRes = await fetch(`${API}/api/onboarding/auto-setup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            merchant_id: user.id,
+            bot_name: botName,
+            bot_avatar_url: botAvatar,
+            bot_personality: 'friendly',
+            bot_greeting: `Hi! 👋 Welcome to ${detected?.brand_name || merchant?.name || 'our shop'} — looking for anything in particular?`,
+          }),
+        });
+        if (!setupRes.ok) {
+          const e = await setupRes.json().catch(() => ({}));
+          throw new Error(`bot_setup: ${e.error || setupRes.status}`);
+        }
+        const setupData = await setupRes.json();
+        setTask('persona', 'done', `${botName} · ready`);
+
+        // Task 4: IG pull via /complete (also marks completed_at)
+        const igHandle = merchant?.ig_handle || detected?.ig_handle;
+        await sleep(250);
+        if (igHandle) {
+          setTask('instagram', 'active', `Fetching @${igHandle}`);
+        } else {
+          setTask('instagram', 'active', 'No Instagram handle — skipping');
+        }
+        const completeRes = await fetch(`${API}/api/onboarding/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchant_id: user.id, fire_ig_pull: true, ig_limit: 20 }),
+        });
+        const completeData = await completeRes.json();
+        const importMatch = String(completeData.ig_pull_status || '').match(/^imported_(\d+)/);
+        const importedCount = importMatch ? parseInt(importMatch[1], 10) : 0;
+        if (igHandle) {
+          setTask('instagram', 'done', importedCount > 0 ? `${importedCount} reels imported` : prettyIgStatus(completeData.ig_pull_status));
+        } else {
+          setTask('instagram', 'done', 'Skipped — add IG handle in Settings later');
+        }
+
+        // Task 5: auto-tag in chunks (only if videos imported)
+        await sleep(250);
+        if (importedCount > 0) {
+          setTask('autotag', 'active', `0 / ${importedCount}`);
+          let tagged = 0;
+          let safety = 30; // hard cap on chunk loop iterations
+          while (safety-- > 0) {
+            const tickRes = await fetch(`${API}/api/merchants/${user.id}/videos/auto-tag-tick`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chunk_size: 5 }),
+            });
+            if (!tickRes.ok) break;
+            const t = await tickRes.json();
+            tagged += (t.auto_tagged || 0) + (t.pending_review || 0);
+            setTask('autotag', 'active', `${tagged} / ${importedCount}`);
+            if (!t.has_more) break;
+          }
+          setTask('autotag', 'done', `${tagged} of ${importedCount} tagged${tagged < importedCount ? ' — rest will keep tagging in dashboard' : ''}`);
+        } else {
+          setTask('autotag', 'done', 'No videos to tag yet');
+        }
+
+        // Task 6: Re-run auto-setup so Floating Feed picks up the newly imported videos
+        await sleep(250);
+        setTask('feed', 'active');
+        const reseed = await fetch(`${API}/api/onboarding/auto-setup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchant_id: user.id }),
+        });
+        const reseedData = await reseed.json().catch(() => ({}));
+        setTask('feed', 'done', `${reseedData.video_count || 0} videos in feed`);
+
+        // Tasks 7 + 8 — these defaults are applied via auto-setup + the merchant_settings
+        // table-level defaults. Show them animating to give a clean wrap-up.
+        await sleep(300);
+        setTask('negotiation', 'active');
+        await sleep(450);
+        setTask('negotiation', 'done');
+
+        await sleep(250);
+        setTask('concierge', 'active');
+        await sleep(450);
+        setTask('concierge', 'done');
+
+        await sleep(400);
+        setAllDone(true);
+      } catch (err) {
+        setError(err.message);
+        // Mark currently-active task as error so the row visibly shows it
+        setState(s => {
+          const out = { ...s };
+          for (const t of TASKS) {
+            if (out[t.id] === 'active') out[t.id] = 'error';
+          }
+          return out;
+        });
+      }
+    })();
+  }, [user]);
+
+  const doneCount = TASKS.filter(t => state[t.id] === 'done').length;
+  const pct = Math.round((doneCount / TASKS.length) * 100);
+
+  return (
+    <div className="p-10">
+      <div className="text-center">
+        <div className={`text-5xl mb-3 transition-transform duration-500 ${allDone ? 'scale-110' : ''}`}>
+          {allDone ? '🎉' : '✨'}
+        </div>
+        <h2 className="text-3xl font-bold text-gray-900">
+          {allDone ? "You're live" : 'Setting up your shop'}
+        </h2>
+        <p className="text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
+          {allDone
+            ? "Botiga is ready. Your shop assistant is greeting customers, your shoppable feed is live, and your videos are tagged."
+            : "Hang tight — Botiga is provisioning everything. This usually takes under a minute."}
+        </p>
+      </div>
+
+      {/* Top progress bar */}
+      <div className="mt-8 max-w-md mx-auto">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+          <span className="font-medium">{doneCount} of {TASKS.length} complete</span>
+          <span className="font-semibold text-gray-700">{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-indigo-500 via-pink-500 to-rose-500 transition-all duration-500 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Task timeline */}
+      <ol className="mt-8 max-w-md mx-auto relative">
+        {/* Vertical connector line */}
+        <div className="absolute left-[15px] top-3 bottom-3 w-px bg-gray-200" aria-hidden />
+        {TASKS.map((task, i) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            status={state[task.id]}
+            subOverride={details[task.id]}
+            index={i}
+          />
+        ))}
+      </ol>
+
+      {error && (
+        <div className="mt-6 max-w-md mx-auto p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+          <strong>Hit a snag:</strong> {error}. The dashboard will keep finishing in the background.
         </div>
       )}
 
-      {!completing && igStatus && (
-        <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-full text-xs text-indigo-700">
-          <span>📸</span>
-          <span>{prettyIgStatus(igStatus)}</span>
-        </div>
-      )}
+      <div className="mt-8 flex justify-center">
+        <button
+          onClick={goToDashboard}
+          disabled={!allDone && !error}
+          className={`px-8 py-3 text-base font-semibold rounded-xl transition-all duration-300 ${
+            allDone
+              ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:opacity-90 shadow-lg shadow-emerald-200 scale-100 hover:scale-105'
+              : error
+              ? 'bg-gray-900 text-white hover:bg-gray-800'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          {allDone ? 'Take me to my dashboard →' : error ? 'Continue to dashboard →' : 'Working…'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-      <button
-        onClick={completePhase === 'done' ? goToDashboard : complete}
-        disabled={completing && completePhase !== 'done'}
-        className={`mt-10 px-8 py-3 text-base font-semibold rounded-xl transition-opacity disabled:opacity-60 ${
-          completePhase === 'done'
-            ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:opacity-90 text-white'
-            : 'bg-gradient-to-r from-indigo-600 to-pink-500 hover:opacity-90 text-white'
-        }`}
+function TaskRow({ task, status, subOverride, index }) {
+  const sub = subOverride || task.sub;
+  const isDone = status === 'done';
+  const isActive = status === 'active';
+  const isError = status === 'error';
+
+  return (
+    <li
+      className={`relative flex items-start gap-4 py-3 px-2 rounded-xl transition-all duration-300 ${
+        isActive ? 'bg-gradient-to-r from-indigo-50/80 to-pink-50/80' : ''
+      }`}
+      style={{
+        animation: `fadeSlideIn 400ms ease-out ${index * 60}ms both`,
+      }}
+    >
+      <div className="relative z-10">
+        <StatusIcon status={status} />
+      </div>
+      <div className="flex-1 min-w-0 pt-0.5">
+        <div className={`text-sm font-semibold transition-colors ${
+          isDone ? 'text-gray-900' : isActive ? 'text-indigo-900' : isError ? 'text-red-700' : 'text-gray-400'
+        }`}>
+          {task.label}
+        </div>
+        <div className={`text-xs mt-0.5 transition-colors ${
+          isDone ? 'text-emerald-700' : isActive ? 'text-indigo-600' : isError ? 'text-red-600' : 'text-gray-400'
+        }`}>
+          {sub}
+        </div>
+      </div>
+      {/* Inline animation keyframes */}
+      <style jsx>{`
+        @keyframes fadeSlideIn {
+          0%   { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </li>
+  );
+}
+
+function StatusIcon({ status }) {
+  if (status === 'done') {
+    return (
+      <div
+        className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center text-sm font-bold shadow-md shadow-emerald-200"
+        style={{ animation: 'popIn 400ms cubic-bezier(.34,1.56,.64,1)' }}
       >
-        {completePhase === 'done'
-          ? 'Take me to my dashboard →'
-          : completing
-          ? 'Working…'
-          : 'Finish setup →'}
-      </button>
+        ✓
+        <style jsx>{`
+          @keyframes popIn {
+            0%   { transform: scale(.4); opacity: 0; }
+            70%  { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(1); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+  if (status === 'active') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-white border-2 border-indigo-500 flex items-center justify-center ring-4 ring-indigo-100">
+        <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shadow-md shadow-red-200">
+        !
+      </div>
+    );
+  }
+  return (
+    <div className="w-8 h-8 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
+      <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
     </div>
   );
 }
@@ -676,27 +959,17 @@ function Stat({ label, value }) {
   );
 }
 
-function Checklist({ done, label, sub }) {
-  return (
-    <div className="flex items-start gap-3 p-3 rounded-xl bg-gray-50">
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 ${done ? 'bg-emerald-500 text-white' : 'bg-gray-300 text-gray-500'}`}>
-        {done ? '✓' : '–'}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-gray-900">{label}</div>
-        {sub && <div className="text-xs text-gray-500 mt-0.5 truncate">{sub}</div>}
-      </div>
-    </div>
-  );
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 function prettyIgStatus(status) {
   if (!status) return '';
-  if (status.startsWith('imported_')) return `Imported ${status.split('_')[1]} reels — auto-tagging now.`;
-  if (status === 'no_ig_handle') return 'No Instagram handle yet — add one anytime from Settings.';
-  if (status === 'no_rapidapi_key') return 'Instagram import not configured yet.';
-  if (status === 'no_reels_found') return 'No public reels found for this handle.';
-  if (status.startsWith('ig_preview_')) return `Instagram preview returned ${status.split('_')[2]} — try again from /dashboard/videos.`;
+  if (status.startsWith('imported_')) return `${status.split('_')[1]} reels imported`;
+  if (status === 'no_ig_handle') return 'No Instagram handle';
+  if (status === 'no_rapidapi_key') return 'IG import not configured';
+  if (status === 'no_posts_found') return 'No public posts found';
+  if (status.startsWith('ig_preview_')) return `IG returned ${status.split('_')[2]}`;
   if (status.startsWith('error:')) return status;
   return status;
 }

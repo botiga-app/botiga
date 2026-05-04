@@ -2289,6 +2289,11 @@ export default function VideosPage() {
   const [apiKey, setApiKey] = useState(null);
   const [shopHandle, setShopHandle] = useState(null);
   const [editingWidget, setEditingWidget] = useState(null);
+  // Background auto-tag continuation. If onboarding was abandoned mid-tagging
+  // (or the merchant landed here with un-analyzed videos for any reason), we
+  // quietly finish the job in 5-video chunks and refresh the grid as it goes.
+  const [bgTagRemaining, setBgTagRemaining] = useState(0);
+  const bgTagFiredRef = useRef(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -2301,7 +2306,11 @@ export default function VideosPage() {
         fetch(`${API}/api/merchants/${user.id}`),
         fetch(`${API}/api/merchants/${user.id}/video-widgets`),
       ]);
-      if (videosRes.ok) setVideos(await videosRes.json());
+      let initialVideos = [];
+      if (videosRes.ok) {
+        initialVideos = await videosRes.json();
+        setVideos(initialVideos);
+      }
       if (widgetsRes.ok) setWidgets(await widgetsRes.json());
       if (merchantRes.ok) {
         const m = await merchantRes.json();
@@ -2310,7 +2319,42 @@ export default function VideosPage() {
         setShopHandle(m.shop_handle || null);
       }
       setLoading(false);
+
+      // Kick off background tagging if there are unanalyzed videos.
+      const untagged = initialVideos.filter(v => !v.analyzed_at).length;
+      if (untagged > 0 && !bgTagFiredRef.current) {
+        bgTagFiredRef.current = true;
+        setBgTagRemaining(untagged);
+        runBackgroundTagging(user.id);
+      }
     }
+
+    async function runBackgroundTagging(uid) {
+      let safety = 30;
+      while (safety-- > 0) {
+        try {
+          const res = await fetch(`${API}/api/merchants/${uid}/videos/auto-tag-tick`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chunk_size: 5 }),
+          });
+          if (!res.ok) break;
+          const t = await res.json();
+          // Refresh the grid after each chunk so freshly-tagged videos light up
+          const vRes = await fetch(`${API}/api/merchants/${uid}/videos`);
+          if (vRes.ok) {
+            const fresh = await vRes.json();
+            setVideos(fresh);
+          }
+          setBgTagRemaining(t.remaining ?? 0);
+          if (!t.has_more) break;
+        } catch {
+          break;
+        }
+      }
+      setBgTagRemaining(0);
+    }
+
     load();
   }, []);
 
@@ -2371,6 +2415,17 @@ export default function VideosPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-10">
+
+      {/* Background auto-tag continuation indicator. Only visible while
+          unanalyzed videos remain — quietly finishes onboarding's tagging job. */}
+      {bgTagRemaining > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-pink-50 border border-indigo-100 rounded-xl text-sm">
+          <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <span className="text-indigo-900">
+            Auto-tagging <strong>{bgTagRemaining}</strong> video{bgTagRemaining === 1 ? '' : 's'} in the background — they'll appear tagged in a moment.
+          </span>
+        </div>
+      )}
 
       {/* ── Create Widget ───────────────────────────────────────────────── */}
       <section>

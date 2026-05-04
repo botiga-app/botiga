@@ -3,6 +3,7 @@
 //
 //   POST /api/onboarding/detect-store    { url } → returns auto-detected store info
 //   POST /api/onboarding/save-step       { merchant_id, step, data } → upsert merchant fields
+//   POST /api/onboarding/auto-setup      { merchant_id, bot_* } → create Floating Feed + concierge defaults
 //   POST /api/onboarding/complete        { merchant_id } → mark completed_at, fire IG pull
 
 const express = require('express');
@@ -63,6 +64,91 @@ router.post('/onboarding/save-step', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true, updated: update });
+});
+
+// ─── Auto-setup: provision the obvious defaults so the merchant lands in a
+// working state without manual config. Idempotent — safe to call repeatedly.
+//
+// Creates the Floating Feed video widget (if missing), populates it with the
+// merchant's active videos, flips video_enabled on, and applies concierge bot
+// defaults (name/avatar/personality) when the wizard supplies them.
+router.post('/onboarding/auto-setup', async (req, res) => {
+  const {
+    merchant_id,
+    bot_name,
+    bot_avatar_url,
+    bot_personality,
+    bot_greeting,
+  } = req.body || {};
+  if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
+
+  try {
+    // 1. Floating Feed widget — find or create
+    const { data: existing } = await supabase
+      .from('video_widgets')
+      .select('id, name, type')
+      .eq('merchant_id', merchant_id)
+      .eq('type', 'feed')
+      .limit(1);
+
+    let widget = existing?.[0];
+    if (!widget) {
+      const { data: created, error: cErr } = await supabase
+        .from('video_widgets')
+        .insert({ merchant_id, name: 'Floating Feed', type: 'feed' })
+        .select()
+        .single();
+      if (cErr) throw new Error(`widget_create: ${cErr.message}`);
+      widget = created;
+    }
+
+    // 2. Populate widget with all active videos (replace existing items)
+    const { data: vids } = await supabase
+      .from('videos')
+      .select('id')
+      .eq('merchant_id', merchant_id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+
+    let video_count = 0;
+    if (vids?.length) {
+      await supabase.from('video_widget_items').delete().eq('widget_id', widget.id);
+      const items = vids.map((v, i) => ({
+        widget_id: widget.id,
+        video_id: v.id,
+        sort_order: i,
+      }));
+      const { error: iErr } = await supabase.from('video_widget_items').insert(items);
+      if (iErr) throw new Error(`widget_items: ${iErr.message}`);
+      video_count = vids.length;
+    }
+
+    // 3. Concierge defaults on merchant_settings (upsert so it works even if
+    // 028 backfill didn't run for this merchant).
+    const settingsUpdate = { video_enabled: true };
+    if (bot_name) settingsUpdate.bot_name = bot_name;
+    if (bot_avatar_url) settingsUpdate.bot_avatar_url = bot_avatar_url;
+    if (bot_personality) settingsUpdate.bot_personality = bot_personality;
+    if (bot_greeting) settingsUpdate.bot_greeting = bot_greeting;
+
+    const { error: sErr } = await supabase
+      .from('merchant_settings')
+      .upsert({ merchant_id, ...settingsUpdate }, { onConflict: 'merchant_id' });
+    if (sErr) throw new Error(`settings: ${sErr.message}`);
+
+    res.json({
+      ok: true,
+      widget_id: widget.id,
+      video_count,
+      bot: {
+        name: bot_name || null,
+        avatar_url: bot_avatar_url || null,
+        personality: bot_personality || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Complete onboarding ────────────────────────────────────────────────────
