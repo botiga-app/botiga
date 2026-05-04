@@ -948,12 +948,40 @@ router.post('/videos/:id/analyze', async (req, res) => {
   if (!images.length) return res.status(400).json({ error: 'No images provided' });
   if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
 
-  const prompt = `Analyze these frames from a product video for a Shopify store. Respond ONLY with valid JSON, no markdown:
+  // Detect ONE OR MORE products in the frame. Real videos often show
+  // multiple items (dress + bag + shoes). Returns an array — frontend
+  // shows each as a card so the merchant can review/create each.
+  // Fields: title, description, tags, category, suggested_color,
+  // suggested_sizes (defaults if obvious), price_hint (rare; merchant
+  // confirms), confidence.
+  const prompt = `You're analysing frames from a product video for a Shopify store. The video might show one product or several (e.g. an outfit might have a top, bottoms, shoes, and a bag).
+
+Identify each distinct product visible. For each, return:
+- title (under 60 chars, specific enough to match a catalog — e.g. "Red Gingham Midi Jumpsuit", not just "Dress")
+- description (2-3 sentences, benefit-focused)
+- tags (5-8 search-friendly keywords)
+- category (one of: dress, top, bottom, jumpsuit, jacket, outerwear, bag, shoes, jewelry, accessory, swimwear, loungewear, other)
+- suggested_color (primary visible color, or null)
+- suggested_sizes (likely set: ["XS","S","M","L","XL"] for apparel, ["One Size"] for bags/accessories, [] if unclear)
+- price_hint (in USD, only if a price appears in the frame; otherwise null)
+- confidence (0.0 to 1.0 — how confident you are this is a real, identifiable product)
+
+Skip lifestyle / behind-the-scenes shots — those should give 0 products.
+
+Return ONLY this JSON, no markdown:
 {
-  "title": "compelling product title under 60 chars",
-  "description": "2-3 sentence benefit-focused product description",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "category": "e.g. Women's Fashion"
+  "products": [
+    {
+      "title": "...",
+      "description": "...",
+      "tags": ["...","..."],
+      "category": "...",
+      "suggested_color": "...",
+      "suggested_sizes": ["XS","S","M","L","XL"],
+      "price_hint": null,
+      "confidence": 0.85
+    }
+  ]
 }`;
 
   try {
@@ -961,12 +989,11 @@ router.post('/videos/:id/analyze', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({
-        // llama-3.2-11b-vision-preview was decommissioned by Groq (May 2026).
-        // Replacement: meta-llama/llama-4-scout-17b-16e-instruct.
         model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...images] }],
-        max_tokens: 500,
-        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        max_tokens: 1500,
+        temperature: 0.2,
       }),
     });
 
@@ -977,7 +1004,17 @@ router.post('/videos/:id/analyze', async (req, res) => {
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return res.status(500).json({ error: 'Could not parse AI response', raw: text });
 
-    res.json(JSON.parse(match[0]));
+    let parsed;
+    try { parsed = JSON.parse(match[0]); }
+    catch { return res.status(500).json({ error: 'Invalid JSON from AI' }); }
+
+    // Backwards compatibility: if the model returns a single product (legacy
+    // shape), wrap into a one-item array.
+    if (!parsed.products && parsed.title) {
+      parsed = { products: [parsed] };
+    }
+    parsed.products = (parsed.products || []).filter(p => p.title && (p.confidence ?? 1) >= 0.3);
+    res.json(parsed);
   } catch (err) {
     console.error('[analyze]', err);
     res.status(500).json({ error: 'Analysis failed' });
@@ -986,7 +1023,20 @@ router.post('/videos/:id/analyze', async (req, res) => {
 
 // ─── AI: create Shopify product draft from AI analysis ───────────────────────
 router.post('/videos/:id/create-product', async (req, res) => {
-  const { title, description, tags, merchant_id, image_url } = req.body;
+  const {
+    title,
+    description,
+    tags,
+    merchant_id,
+    image_url,
+    price,                  // string or number, required for proper listing
+    compare_at_price,
+    sizes,                  // array of size strings like ["XS","S","M"]
+    colors,                 // array of color strings
+    product_type,
+    sku,
+    publish,                // bool — default false (draft)
+  } = req.body;
   if (!merchant_id) return res.status(400).json({ error: 'merchant_id required' });
 
   const { data: merchant } = await supabase
@@ -999,12 +1049,75 @@ router.post('/videos/:id/create-product', async (req, res) => {
     return res.status(400).json({ error: 'Shopify not connected — install the app to enable this.' });
   }
 
+  // Build variants from sizes × colors. If neither is supplied, single default variant.
+  const sizeArr = Array.isArray(sizes) && sizes.length ? sizes : null;
+  const colorArr = Array.isArray(colors) && colors.length ? colors : null;
+  const priceStr = price != null ? String(price) : '0.00';
+  const compareStr = compare_at_price != null ? String(compare_at_price) : null;
+
+  let variants = [];
+  let options = [];
+  if (sizeArr && colorArr) {
+    options = [{ name: 'Size' }, { name: 'Color' }];
+    for (const s of sizeArr) {
+      for (const c of colorArr) {
+        variants.push({
+          option1: s, option2: c,
+          price: priceStr,
+          compare_at_price: compareStr,
+          sku: sku || null,
+          inventory_management: 'shopify',
+          inventory_quantity: 100,
+          requires_shipping: true,
+          taxable: true,
+        });
+      }
+    }
+  } else if (sizeArr) {
+    options = [{ name: 'Size' }];
+    variants = sizeArr.map(s => ({
+      option1: s,
+      price: priceStr,
+      compare_at_price: compareStr,
+      sku: sku || null,
+      inventory_management: 'shopify',
+      inventory_quantity: 100,
+      requires_shipping: true,
+      taxable: true,
+    }));
+  } else if (colorArr) {
+    options = [{ name: 'Color' }];
+    variants = colorArr.map(c => ({
+      option1: c,
+      price: priceStr,
+      compare_at_price: compareStr,
+      sku: sku || null,
+      inventory_management: 'shopify',
+      inventory_quantity: 100,
+      requires_shipping: true,
+      taxable: true,
+    }));
+  } else {
+    variants = [{
+      price: priceStr,
+      compare_at_price: compareStr,
+      sku: sku || null,
+      inventory_management: 'shopify',
+      inventory_quantity: 100,
+      requires_shipping: true,
+      taxable: true,
+    }];
+  }
+
   const productPayload = {
     product: {
       title,
-      body_html: `<p>${description}</p>`,
+      body_html: `<p>${description || ''}</p>`,
       tags: Array.isArray(tags) ? tags.join(', ') : (tags || ''),
-      status: 'draft',
+      product_type: product_type || null,
+      status: publish ? 'active' : 'draft',
+      variants,
+      ...(options.length ? { options } : {}),
       ...(image_url ? { images: [{ src: image_url }] } : {}),
     },
   };
@@ -1025,6 +1138,10 @@ router.post('/videos/:id/create-product', async (req, res) => {
 
   const { product } = await shopifyRes.json();
   const variant = product.variants?.[0];
+  // Build the proper Shopify admin URL for this store so "View in Shopify"
+  // takes the merchant directly to THIS store's product (not their default).
+  const storeHandle = merchant.shopify_domain.replace(/\.myshopify\.com$/, '');
+  const adminUrl = `https://admin.shopify.com/store/${storeHandle}/products/${product.id}`;
 
   const { data: tag, error: tagErr } = await supabase.from('video_product_tags').insert({
     video_id: req.params.id,
@@ -1034,11 +1151,13 @@ router.post('/videos/:id/create-product', async (req, res) => {
     product_name: product.title,
     product_handle: product.handle,
     price: parseFloat(variant?.price || 0),
+    compare_at_price: variant?.compare_at_price ? parseFloat(variant.compare_at_price) : null,
     image_url: product.images?.[0]?.src || null,
+    match_status: 'manual',
   }).select().single();
 
   if (tagErr) return res.status(500).json({ error: tagErr.message });
-  res.json({ product, tag });
+  res.json({ product, tag, admin_url: adminUrl });
 });
 
 // ─── Widget: concierge chat ──────────────────────────────────────────────────
