@@ -648,15 +648,19 @@ function Step3({ merchant, detected, completing, completePhase, completeMsg, tag
       )}
 
       <button
-        onClick={complete}
-        disabled={completing}
-        className="mt-10 px-8 py-3 bg-gradient-to-r from-indigo-600 to-pink-500 text-white text-base font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
+        onClick={completePhase === 'done' ? () => router.push('/dashboard') : complete}
+        disabled={completing && completePhase !== 'done'}
+        className={`mt-10 px-8 py-3 text-base font-semibold rounded-xl transition-opacity disabled:opacity-60 ${
+          completePhase === 'done'
+            ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:opacity-90 text-white'
+            : 'bg-gradient-to-r from-indigo-600 to-pink-500 hover:opacity-90 text-white'
+        }`}
       >
-        {completing
-          ? completePhase === 'done'
-            ? 'Heading to your dashboard…'
-            : 'Working…'
-          : 'Take me to my dashboard →'}
+        {completePhase === 'done'
+          ? 'Take me to my dashboard →'
+          : completing
+          ? 'Working…'
+          : 'Finish setup →'}
       </button>
     </div>
   );
