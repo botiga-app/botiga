@@ -156,13 +156,16 @@ export default function OnboardingPage() {
   async function complete() {
     if (!user) return;
     setCompleting(true);
-    setCompletePhase('saving');
-    setCompleteMsg('Saving your setup…');
+    // First visible phase. The /complete API call below will hold this
+    // for the full IG fetch duration (5-30s), so the merchant actually
+    // reads it. The earlier "saving → pulling" two-phase flip got
+    // batched by React and the saving message never appeared.
+    setCompletePhase('pulling');
+    setCompleteMsg(merchant?.ig_handle
+      ? 'Pulling your latest Instagram posts…'
+      : 'Finalizing your setup…');
 
     try {
-      // Phase 1: mark onboarding complete + fire first IG pull (synchronous on server)
-      setCompletePhase('pulling');
-      setCompleteMsg(merchant?.ig_handle ? 'Pulling latest reels from Instagram…' : 'Finalizing…');
       const r = await fetch(`${API}/api/onboarding/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,12 +174,12 @@ export default function OnboardingPage() {
       const data = await r.json();
       setIgStatus(data.ig_pull_status);
 
-      // Phase 2: poll auto-tag-tick if any reels were imported
       const importMatch = String(data.ig_pull_status || '').match(/^imported_(\d+)/);
       const importedCount = importMatch ? parseInt(importMatch[1], 10) : 0;
+
       if (importedCount > 0) {
         setCompletePhase('tagging');
-        setCompleteMsg(`Imported ${importedCount} reels. Tagging products…`);
+        setCompleteMsg(`Imported ${importedCount} posts. Auto-tagging products…`);
         setTagProgress({ tagged: 0, total: importedCount });
         let tagged = 0;
         while (true) {
@@ -189,23 +192,20 @@ export default function OnboardingPage() {
           const t = await tickRes.json();
           tagged += (t.auto_tagged || 0) + (t.pending_review || 0);
           setTagProgress({ tagged, total: importedCount });
-          setCompleteMsg(`Tagging products: ${tagged}/${importedCount}`);
+          setCompleteMsg(`Auto-tagging: ${tagged}/${importedCount}`);
           if (!t.has_more) break;
         }
       }
 
-      // Phase 3: done
+      // Done — wait for merchant to click Continue (no auto-redirect).
+      // The success state persists until they're ready to proceed.
       setCompletePhase('done');
       setCompleteMsg(importedCount > 0
-        ? `✨ All set — ${importedCount} reels in your shop video feed.`
-        : '✨ All set — your dashboard is ready.');
-
-      // Hold for ~1.5s so the success message is visible
-      setTimeout(() => router.push('/dashboard'), 1500);
+        ? `✨ ${importedCount} posts ready in your shop feed.`
+        : '✨ Setup complete.');
     } catch (err) {
       setCompletePhase('done');
-      setCompleteMsg('Setup complete (with a hiccup) — taking you to your dashboard…');
-      setTimeout(() => router.push('/dashboard'), 1500);
+      setCompleteMsg('Setup complete (with a small hiccup). Click below to continue.');
     }
   }
 
