@@ -1688,17 +1688,20 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
   async function addProduct(p) {
     setAdding(p.id);
     try {
+      // shopify-products endpoint returns flattened fields: { image (url string),
+      // price (string), variant_id, ... } — not the raw Shopify product shape.
       const r = await fetch(`${API}/api/videos/${video.id}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchant_id: merchantId,
           shopify_product_id: String(p.id),
-          shopify_variant_id: p.variants?.[0]?.id ? String(p.variants[0].id) : null,
+          shopify_variant_id: p.variant_id || null,
           product_name: p.title,
           product_handle: p.handle,
-          price: p.variants?.[0]?.price ? parseFloat(p.variants[0].price) : null,
-          image_url: p.images?.[0]?.src || p.image?.src || null,
+          price: p.price ? parseFloat(p.price) : null,
+          compare_at_price: p.compare_at_price ? parseFloat(p.compare_at_price) : null,
+          image_url: p.image || null,
         }),
       });
       if (r.ok) {
@@ -1775,15 +1778,15 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
                 disabled={already || adding === p.id}
                 className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {(p.images?.[0]?.src || p.image?.src) ? (
-                  <img src={p.images?.[0]?.src || p.image?.src} alt="" className="w-9 h-9 rounded object-cover bg-gray-100 flex-shrink-0" />
+                {p.image ? (
+                  <img src={p.image} alt="" className="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0" />
                 ) : (
-                  <div className="w-9 h-9 rounded bg-gray-100 flex-shrink-0" />
+                  <div className="w-10 h-10 rounded bg-gray-100 flex-shrink-0 flex items-center justify-center text-base">📦</div>
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-gray-900 truncate">{p.title}</div>
                   <div className="text-xs text-gray-500">
-                    {p.variants?.[0]?.price && <span>${p.variants[0].price}</span>}
+                    {p.price && <span>${p.price}</span>}
                     {p.product_type && <span> · {p.product_type}</span>}
                   </div>
                 </div>
