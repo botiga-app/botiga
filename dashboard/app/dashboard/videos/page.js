@@ -129,12 +129,12 @@ function OneClickAutoImport({ merchantId, onImported }) {
         return;
       }
 
-      // Refresh the parent grid with fresh fetch — the import endpoint
-      // doesn't return full video objects, so trigger a refetch via onImported([])
-      onImported([]);
+      // Refetch the full videos list now so newly imported videos appear
+      // in the grid even before tagging finishes.
+      await refetchVideos();
 
       // Now poll auto-tag-tick until done
-      setStatus({ phase: 'tagging', msg: `Imported ${importedCount} reels. Tagging…`, progress: 0 });
+      setStatus({ phase: 'tagging', msg: `Imported ${importedCount} videos. Tagging…`, progress: 0 });
       let tagged = 0;
       while (true) {
         const tickRes = await fetch(`${API}/api/merchants/${merchantId}/videos/auto-tag-tick`, {
@@ -153,12 +153,26 @@ function OneClickAutoImport({ merchantId, onImported }) {
         if (!t.has_more) break;
       }
 
-      setStatus({ phase: 'done', msg: `✨ ${importedCount} reels imported and tagged.` });
-      onImported([]); // refetch grid one more time so tags appear
+      setStatus({ phase: 'done', msg: `✨ ${importedCount} videos imported and tagged.` });
+      // Final refetch so tag pills appear on the cards
+      await refetchVideos();
     } catch (err) {
       setError(err.message);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function refetchVideos() {
+    try {
+      const r = await fetch(`${API}/api/merchants/${merchantId}/videos`);
+      if (r.ok) {
+        const fresh = await r.json();
+        // Pass the FULL list (not a delta) — parent replaces, not prepends
+        onImported({ replace: true, videos: fresh });
+      }
+    } catch (err) {
+      console.warn('[refetchVideos]', err.message);
     }
   }
 
@@ -2236,13 +2250,29 @@ export default function VideosPage() {
             {merchantId && (
               <OneClickAutoImport
                 merchantId={merchantId}
-                onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
+                onImported={payload => {
+                  // Two call shapes: legacy { array of new videos } from manual modal,
+                  // or new { replace: true, videos: [...] } from auto-import full refetch.
+                  if (payload && payload.replace && Array.isArray(payload.videos)) {
+                    setVideos(payload.videos);
+                  } else if (Array.isArray(payload) && payload.length > 0) {
+                    setVideos(prev => [...payload.map(v => ({ ...v, video_product_tags: [] })), ...prev]);
+                  }
+                }}
               />
             )}
             {merchantId && (
               <InstagramImporter
                 merchantId={merchantId}
-                onImported={videos => setVideos(prev => [...videos.map(v => ({ ...v, video_product_tags: [] })), ...prev])}
+                onImported={payload => {
+                  // Two call shapes: legacy { array of new videos } from manual modal,
+                  // or new { replace: true, videos: [...] } from auto-import full refetch.
+                  if (payload && payload.replace && Array.isArray(payload.videos)) {
+                    setVideos(payload.videos);
+                  } else if (Array.isArray(payload) && payload.length > 0) {
+                    setVideos(prev => [...payload.map(v => ({ ...v, video_product_tags: [] })), ...prev]);
+                  }
+                }}
               />
             )}
           </div>
