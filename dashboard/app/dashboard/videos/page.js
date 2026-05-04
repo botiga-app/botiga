@@ -1264,16 +1264,18 @@ function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUp
           {/* Header */}
           <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-gray-100">
             <div className="flex-1 min-w-0">
-              <input
+              <textarea
                 value={titleDraft}
                 onChange={e => setTitleDraft(e.target.value)}
                 onBlur={saveTitle}
-                onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                placeholder="Untitled video"
-                className="w-full text-base font-semibold text-gray-900 bg-transparent border-0 focus:outline-none focus:bg-indigo-50/40 rounded px-1 -mx-1"
+                placeholder="Untitled — click to add a caption"
+                rows={1}
+                className="w-full text-base font-semibold text-gray-900 bg-transparent border-0 focus:outline-none focus:bg-indigo-50/40 rounded px-1 -mx-1 resize-none leading-snug"
+                style={{ minHeight: '1.5em', height: 'auto' }}
+                onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
               />
               <p className="text-xs text-gray-500 mt-0.5">
-                {titleSaving ? 'Saving…' : isActive ? 'Live on storefront' : 'Hidden from storefront'}
+                {titleSaving ? 'Saving…' : isActive ? 'Live on storefront · click caption to edit' : 'Hidden from storefront · click caption to edit'}
               </p>
             </div>
             <button
@@ -1299,7 +1301,9 @@ function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUp
                       key={tag.id}
                       tag={tag}
                       videoId={video.id}
+                      merchantId={merchantId}
                       onRemoved={() => onTagsUpdated(video.id, tags.filter(t => t.id !== tag.id))}
+                      onUpdated={updated => onTagsUpdated(video.id, tags.map(t => t.id === updated.id ? updated : t))}
                     />
                   ))}
                 </div>
@@ -1410,51 +1414,205 @@ function Section({ title, count, children }) {
 }
 
 // Single tagged-product row — shown in drawer
-function TagRow({ tag, videoId, onRemoved }) {
-  const [removing, setRemoving] = useState(false);
+function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
+  const [busy, setBusy] = useState(null); // null | 'accepting' | 'removing' | 'rules'
+  const [showRules, setShowRules] = useState(false);
+
   async function remove() {
-    if (removing) return;
-    setRemoving(true);
+    if (busy) return;
+    setBusy('removing');
     try {
       await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, { method: 'DELETE' });
       onRemoved();
     } catch (err) {
-      setRemoving(false);
+      setBusy(null);
     }
   }
+
+  async function accept() {
+    if (busy) return;
+    setBusy('accepting');
+    try {
+      const r = await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ match_status: 'auto_tagged' }),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        onUpdated(updated);
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const isPending = tag.match_status === 'pending_review';
+
   return (
-    <div className={`flex items-center gap-3 p-2.5 rounded-lg border ${
-      removing ? 'opacity-40' : ''
+    <div className={`rounded-lg border transition-opacity ${
+      busy === 'removing' ? 'opacity-40' : ''
     } ${isPending ? 'bg-amber-50/40 border-amber-200' : 'bg-white border-gray-200'}`}>
-      {tag.image_url ? (
-        <img src={tag.image_url} alt="" className="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0" />
-      ) : (
-        <div className="w-10 h-10 rounded bg-gray-100 flex-shrink-0" />
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium text-gray-900 truncate">{tag.product_name}</span>
-          {tag.match_status === 'auto_tagged' && (
-            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">AI</span>
-          )}
-          {isPending && (
-            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">Review</span>
-          )}
+      <div className="flex items-center gap-3 p-2.5">
+        {tag.image_url ? (
+          <img src={tag.image_url} alt="" className="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0" />
+        ) : (
+          <div className="w-10 h-10 rounded bg-gray-100 flex-shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium text-gray-900 truncate">{tag.product_name}</span>
+            {tag.match_status === 'auto_tagged' && (
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">AI</span>
+            )}
+            {isPending && (
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">Review</span>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {tag.price != null && <span>${tag.price}</span>}
+            {tag.match_score != null && <span> · {Math.round(tag.match_score * 100)}% match</span>}
+          </div>
         </div>
-        <div className="text-xs text-gray-500 mt-0.5">
-          {tag.price != null && <span>${tag.price}</span>}
-          {tag.match_score != null && <span> · {Math.round(tag.match_score * 100)}% match</span>}
-        </div>
+
+        {/* Rules expand toggle — visible when not pending (no clutter on review row) */}
+        {!isPending && tag.product_handle && merchantId && (
+          <button
+            onClick={() => setShowRules(s => !s)}
+            className={`text-[11px] font-medium px-2 py-1 rounded transition-colors flex-shrink-0 ${
+              showRules
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+            title="Negotiation rule for this product"
+          >
+            {showRules ? '▾ Rules' : 'Rules'}
+          </button>
+        )}
+
+        <button
+          onClick={remove}
+          disabled={!!busy}
+          className="text-gray-400 hover:text-red-600 text-sm w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
+          aria-label="Remove tag"
+        >
+          ×
+        </button>
       </div>
-      <button
-        onClick={remove}
-        disabled={removing}
-        className="text-gray-400 hover:text-red-600 text-sm w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
-        aria-label="Remove tag"
-      >
-        ×
-      </button>
+
+      {/* Pending review action row — Accept / Reject */}
+      {isPending && (
+        <div className="px-2.5 pb-2.5 flex gap-2">
+          <button
+            onClick={accept}
+            disabled={!!busy}
+            className="flex-1 text-xs font-semibold py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
+          >
+            {busy === 'accepting' ? 'Accepting…' : '✓ Accept tag'}
+          </button>
+          <button
+            onClick={remove}
+            disabled={!!busy}
+            className="text-xs font-medium px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            Reject
+          </button>
+        </div>
+      )}
+
+      {/* Rules drawer — per-product max discount override */}
+      {showRules && tag.product_handle && merchantId && (
+        <ProductRuleEditor
+          merchantId={merchantId}
+          productHandle={tag.product_handle}
+          productName={tag.product_name}
+        />
+      )}
+    </div>
+  );
+}
+
+// Per-product negotiation rule editor — appears when "Rules" is expanded on a tag row
+function ProductRuleEditor({ merchantId, productHandle, productName }) {
+  const [rule, setRule] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [maxDiscount, setMaxDiscount] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/merchants/${merchantId}/products/${productHandle}/rule`);
+        if (cancelled) return;
+        if (r.ok) {
+          const data = await r.json();
+          setRule(data);
+          setMaxDiscount(data?.max_discount_pct != null ? String(data.max_discount_pct) : '');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [merchantId, productHandle]);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const num = maxDiscount === '' ? null : parseFloat(maxDiscount);
+      const r = await fetch(`${API}/api/merchants/${merchantId}/products/${productHandle}/rule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_discount_pct: num }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setRule(data);
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1600);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="px-3 pb-3 pt-1 border-t border-gray-100 bg-gray-50/40 rounded-b-lg">
+      <p className="text-[11px] text-gray-500 mb-2">
+        Override the default max discount for <strong>{productName}</strong>.
+        Leave blank to use store default.
+      </p>
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : (
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-600 flex-shrink-0">Max discount</label>
+          <div className="relative flex-1 max-w-[140px]">
+            <input
+              type="number"
+              min="0"
+              max="80"
+              step="1"
+              value={maxDiscount}
+              onChange={e => setMaxDiscount(e.target.value)}
+              placeholder="e.g. 25"
+              className="w-full border border-gray-200 rounded-md pl-2 pr-6 py-1 text-xs focus:outline-none focus:border-indigo-500"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+          </div>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="text-xs font-medium px-3 py-1 rounded-md bg-gray-900 hover:bg-gray-800 text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {savedFlash && <span className="text-xs text-emerald-600 font-medium">✓</span>}
+        </div>
+      )}
     </div>
   );
 }

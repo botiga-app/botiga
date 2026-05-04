@@ -151,6 +151,69 @@ router.delete('/videos/:id/tags/:tagId', dashboardCors, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Dashboard: update tag status (accept / reject pending AI suggestions) ──
+// Accept moves a 'pending_review' tag to 'auto_tagged' (or 'manual' if explicit).
+// Reject just deletes the tag and is handled by DELETE above.
+router.patch('/videos/:id/tags/:tagId', dashboardCors, async (req, res) => {
+  const ALLOWED_STATUSES = new Set(['manual', 'auto_tagged', 'pending_review', 'rejected']);
+  const { match_status } = req.body || {};
+  if (match_status && !ALLOWED_STATUSES.has(match_status)) {
+    return res.status(400).json({ error: 'invalid match_status' });
+  }
+  const update = {};
+  if (match_status) update.match_status = match_status;
+  if (Object.keys(update).length === 0) return res.json({ ok: true, no_op: true });
+
+  const { data, error } = await supabase.from('video_product_tags')
+    .update(update)
+    .eq('id', req.params.tagId)
+    .eq('video_id', req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// ─── Dashboard: per-product negotiation rule overrides (CRUD) ───────────────
+// Lets the drawer edit max-discount-% on a specific product (or product handle).
+// Stored in negotiation_rules with rule_type='product' + entity_id=product_handle.
+// GET returns the current rule for this {merchant, product_handle}.
+router.get('/merchants/:merchantId/products/:handle/rule', dashboardCors, async (req, res) => {
+  const { merchantId, handle } = req.params;
+  const { data, error } = await supabase
+    .from('negotiation_rules')
+    .select('*')
+    .eq('merchant_id', merchantId)
+    .eq('rule_type', 'product')
+    .eq('entity_id', handle)
+    .maybeSingle();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || null);
+});
+
+router.put('/merchants/:merchantId/products/:handle/rule', dashboardCors, async (req, res) => {
+  const { merchantId, handle } = req.params;
+  const { max_discount_pct, floor_price_pct, floor_price_fixed } = req.body || {};
+
+  const update = {
+    merchant_id: merchantId,
+    rule_type: 'product',
+    entity_id: handle,
+  };
+  if (max_discount_pct !== undefined) update.max_discount_pct = max_discount_pct;
+  if (floor_price_pct !== undefined) update.floor_price_pct = floor_price_pct;
+  if (floor_price_fixed !== undefined) update.floor_price_fixed = floor_price_fixed;
+
+  // upsert
+  const { data, error } = await supabase
+    .from('negotiation_rules')
+    .upsert(update, { onConflict: 'merchant_id,rule_type,entity_id' })
+    .select()
+    .single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
 // ─── Dashboard: list video widgets ───────────────────────────────────────────
 router.get('/merchants/:merchantId/video-widgets', dashboardCors, async (req, res) => {
   const { data, error } = await supabase
