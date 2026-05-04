@@ -271,6 +271,7 @@ export default function OnboardingPage() {
               tagProgress={tagProgress}
               igStatus={igStatus}
               complete={complete}
+              goToDashboard={() => router.push('/dashboard')}
             />
           )}
         </div>
@@ -580,7 +581,7 @@ function Step2({ brand, installPath, setInstallPath, devStoreUrl, setDevStoreUrl
   );
 }
 
-function Step3({ merchant, detected, completing, completePhase, completeMsg, tagProgress, igStatus, complete }) {
+function Step3({ merchant, detected, completing, completePhase, completeMsg, tagProgress, igStatus, complete, goToDashboard }) {
   const igHandle = merchant?.ig_handle || detected?.ig_handle;
   const installed = !!merchant?.shopify_access_token;
   const tagPct = tagProgress?.total > 0 ? Math.round((tagProgress.tagged / tagProgress.total) * 100) : 0;
@@ -648,7 +649,7 @@ function Step3({ merchant, detected, completing, completePhase, completeMsg, tag
       )}
 
       <button
-        onClick={completePhase === 'done' ? () => router.push('/dashboard') : complete}
+        onClick={completePhase === 'done' ? goToDashboard : complete}
         disabled={completing && completePhase !== 'done'}
         className={`mt-10 px-8 py-3 text-base font-semibold rounded-xl transition-opacity disabled:opacity-60 ${
           completePhase === 'done'
