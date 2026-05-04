@@ -368,24 +368,31 @@ function normalizeInstagramPosts(raw) {
   // Shape 6: { posts: [...] }
   else if (Array.isArray(raw?.posts)) items = raw.posts;
 
+  // Accept BOTH video reels AND photo posts. Photos render as static frames
+  // in the shop feed (the widget falls back to <img> when there's no video).
+  // is_photo is set so callers can distinguish if needed.
   return items
-    .filter(item => {
-      return item.is_video ||
+    .map(item => {
+      const isVideo = !!(
+        item.is_video ||
         item.media_type === 2 ||
         item.video_url ||
-        (Array.isArray(item.video_versions) && item.video_versions.length > 0);
-    })
-    .map(item => {
-      const videoUrl = item.video_url
-        || item.video_versions?.[0]?.url
-        || item.videos?.standard_resolution?.url
-        || null;
+        (Array.isArray(item.video_versions) && item.video_versions.length > 0)
+      );
+
+      const videoUrl = isVideo
+        ? (item.video_url
+          || item.video_versions?.[0]?.url
+          || item.videos?.standard_resolution?.url
+          || null)
+        : null;
 
       const thumbUrl = item.thumbnail_url
         || item.display_url
         || item.thumbnail_src
         || item.image_versions2?.candidates?.[0]?.url
         || item.cover_frame_url
+        || (item.image_versions?.items?.[0]?.url)
         || null;
 
       const caption = item.caption?.text
@@ -401,6 +408,7 @@ function normalizeInstagramPosts(raw) {
         id: String(item.id || item.pk || Math.random()),
         video_url: videoUrl,
         thumbnail_url: thumbUrl,
+        is_photo: !isVideo,
         caption: caption.slice(0, 200),
         post_url: postUrl,
         duration: item.video_duration || item.duration || null,
@@ -408,7 +416,8 @@ function normalizeInstagramPosts(raw) {
         play_count: item.play_count || item.view_count || 0,
       };
     })
-    .filter(p => p.video_url || p.thumbnail_url); // must have at least a thumbnail
+    // Must have a thumbnail to be usable. Photos always do; videos almost always.
+    .filter(p => p.thumbnail_url || p.video_url);
 }
 
 // ─── Instagram: import selected posts ────────────────────────────────────────
@@ -420,11 +429,14 @@ router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async 
     return res.status(400).json({ error: 'posts array required' });
   }
 
+  // s3_url is the playable media URL — only set for actual videos. For
+  // photos we leave it null and rely on thumbnail_url, which the widget +
+  // drawer fall back to when there's no video to play.
   const toInsert = posts.map(post => ({
     merchant_id: merchantId,
     title: post.caption ? post.caption.slice(0, 80) : null,
     s3_key: null,
-    s3_url: post.video_url || post.thumbnail_url,
+    s3_url: post.video_url || null,
     thumbnail_url: post.thumbnail_url || null,
     source,
     source_url: post.post_url || null,
@@ -703,16 +715,21 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
     else if (Array.isArray(raw?.items)) items = raw.items;
     if (!items.length) break;
 
-    const pageVideos = items
-      .filter(i => i.is_video || i.media_type === 2 || i.video_url || (Array.isArray(i.video_versions) && i.video_versions.length))
-      .map(i => ({
-        video_url: i.video_url || i.video_versions?.[0]?.url || null,
-        thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
-        caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
-        post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
-      }))
-      .filter(p => p.video_url || p.thumbnail_url);
-    allVideos.push(...pageVideos);
+    // Accept both videos AND photo posts — photos render as static frames
+    // in the shop feed (widget falls back to <img> when s3_url is null).
+    const pageItems = items
+      .map(i => {
+        const isVideo = !!(i.is_video || i.media_type === 2 || i.video_url ||
+          (Array.isArray(i.video_versions) && i.video_versions.length));
+        return {
+          video_url: isVideo ? (i.video_url || i.video_versions?.[0]?.url || null) : null,
+          thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
+          caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
+          post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
+        };
+      })
+      .filter(p => p.thumbnail_url || p.video_url);
+    allVideos.push(...pageItems);
 
     const nextMaxId =
       raw?.result?.page_info?.end_cursor ||
@@ -744,7 +761,7 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
         merchant_id: merchantId,
         title: post.caption || null,
         s3_key: null,
-        s3_url: post.video_url || post.thumbnail_url,
+        s3_url: post.video_url || null,                  // null for photos — widget shows thumbnail instead
         thumbnail_url: post.thumbnail_url,
         source: 'instagram',
         source_url: post.post_url || post.video_url,
