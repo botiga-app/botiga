@@ -7,7 +7,19 @@
   })();
 
   var API_KEY = script.getAttribute('data-key') || '';
-  var API_BASE = script.getAttribute('data-api') || 'https://botiga-api-two.vercel.app';
+  // Derive API base in priority order: data-api / data-key attribute →
+  // infer from the script's own src URL → hardcoded fallback. The middle
+  // step is critical for the auto-install path: Shopify Script Tags API
+  // only allows setting src (no custom attributes), so the auto-installed
+  // video.js has no data-api. Reading the src origin makes that work.
+  var API_BASE = (function () {
+    var fromAttr = script.getAttribute('data-api');
+    if (fromAttr) return fromAttr.replace(/\/$/, '');
+    if (script.src) {
+      try { return new URL(script.src).origin; } catch (_) {}
+    }
+    return 'https://botiga-api-two.vercel.app';
+  })();
   var GRID_TITLE = script.hasAttribute('data-grid-title')
     ? script.getAttribute('data-grid-title')
     : 'Watch & Shop';

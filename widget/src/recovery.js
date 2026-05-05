@@ -1,4 +1,16 @@
-const API_BASE = 'https://api.botiga.ai';
+// Derive from current script's src so we don't have to hard-code a URL
+// that may not match the merchant's deploy target. Falls back to the
+// Vercel default if no script src can be inferred.
+const API_BASE = (() => {
+  try {
+    const s = document.currentScript ||
+      document.querySelector('script[src*="/n.js"]') ||
+      document.querySelector('script[data-api]');
+    if (s?.dataset?.api) return s.dataset.api.replace(/\/$/, '');
+    if (s?.src) return new URL(s.src).origin;
+  } catch (_) {}
+  return 'https://botiga-api-two.vercel.app';
+})();
 
 export function setupExitIntent(settings, getCurrentNegotiationId) {
   let triggered = false;

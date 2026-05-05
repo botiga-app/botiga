@@ -6,7 +6,20 @@
     document.querySelector('script[data-api]');
   if (!script) return;
 
-  const API_BASE = (script.dataset.api || 'https://api.botiga.ai').replace(/\/$/, '');
+  // Derive API base in priority order: explicit data-api → infer from
+  // script's own src URL → hardcoded fallback (last resort). The middle
+  // step is critical because Shopify's Script Tags API doesn't allow
+  // setting custom attributes — only src — so auto-installed n.js loads
+  // without data-api. Reading the src origin makes the snippet work in
+  // both manual-paste and auto-install configurations.
+  function _btgInferApiBase(scriptEl) {
+    if (scriptEl.dataset && scriptEl.dataset.api) return scriptEl.dataset.api.replace(/\/$/, '');
+    if (scriptEl.src) {
+      try { return new URL(scriptEl.src).origin; } catch (_) {}
+    }
+    return 'https://botiga-api-two.vercel.app';
+  }
+  const API_BASE = _btgInferApiBase(script);
   const apiKey = (script.src ? new URL(script.src).searchParams.get('k') : null) || script.dataset.k;
   if (!apiKey) return;
 
