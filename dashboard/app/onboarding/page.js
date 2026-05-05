@@ -661,6 +661,51 @@ const TASKS = [
   { id: 'concierge',    label: 'Concierge bot ready',      sub: 'Trained on your store voice' },
 ];
 
+// Celebratory confetti burst when onboarding completes. CSS-only DOM
+// particles — no extra dependency, no canvas. Three staggered bursts
+// (left corner → right corner → center) so the moment lands without
+// being a single quick pop. Brand-palette colors.
+const _CONFETTI_COLORS = [
+  '#FFC107', '#FF6B35', '#F72585', '#9C27B0',
+  '#4F46E5', '#06B6D4', '#10B981', '#FACC15',
+];
+function fireConfetti() {
+  if (typeof document === 'undefined') return;
+  const bursts = [
+    { x: 0.05, y: 0.65, count: 70, vx: [200, 600],  vy: [-700, -350] }, // left → up-right
+    { x: 0.95, y: 0.65, count: 70, vx: [-600, -200], vy: [-700, -350] }, // right → up-left
+    { x: 0.50, y: 0.45, count: 90, vx: [-400, 400], vy: [-800, -500] }, // center → up
+  ];
+  bursts.forEach((b, idx) => {
+    setTimeout(() => spawnConfettiBurst(b), idx * 220);
+  });
+}
+function spawnConfettiBurst({ x, y, count, vx, vy }) {
+  const startX = window.innerWidth * x;
+  const startY = window.innerHeight * y;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    const isCircle = Math.random() < 0.3;
+    const size = 6 + Math.random() * 10;
+    const color = _CONFETTI_COLORS[Math.floor(Math.random() * _CONFETTI_COLORS.length)];
+    const dx = vx[0] + Math.random() * (vx[1] - vx[0]);
+    const dy = vy[0] + Math.random() * (vy[1] - vy[0]);
+    const rotStart = (Math.random() * 360).toFixed(0);
+    const rotEnd = (rotStart * 1 + 360 + Math.random() * 720).toFixed(0);
+    const dur = (1.6 + Math.random() * 1.2).toFixed(2);
+    el.style.cssText =
+      `position:fixed;left:${startX}px;top:${startY}px;` +
+      `width:${size}px;height:${size * (isCircle ? 1 : 0.5)}px;` +
+      `background:${color};border-radius:${isCircle ? '50%' : '2px'};` +
+      `pointer-events:none;z-index:9999;will-change:transform,opacity;` +
+      `--dx:${dx}px;--dy:${dy}px;--rot-start:${rotStart}deg;--rot-end:${rotEnd}deg;--dur:${dur}s;` +
+      `animation:_btg_confetti_fly var(--dur) cubic-bezier(.22,.61,.36,1) forwards;` +
+      `box-shadow:0 1px 2px rgba(0,0,0,.08);`;
+    document.body.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
+  }
+}
+
 function Step4LiveProgress({ user, merchant, detected, botName, botAvatar, goToDashboard }) {
   // taskState: id → 'pending' | 'active' | 'done' | 'error'
   const [state, setState] = useState(() => {
@@ -672,6 +717,19 @@ function Step4LiveProgress({ user, merchant, detected, botName, botAvatar, goToD
   const [allDone, setAllDone] = useState(false);
   const [error, setError] = useState(null);
   const ranRef = useRef(false);
+  const confettiFiredRef = useRef(false);
+
+  // Fire the celebratory confetti exactly once when onboarding completes.
+  // Guarded against re-renders (the simple useEffect dependency would
+  // re-fire if a parent re-renders us).
+  useEffect(() => {
+    if (allDone && !confettiFiredRef.current) {
+      confettiFiredRef.current = true;
+      fireConfetti();
+      // Encore burst 1.4s in to extend the moment as the user reads the list
+      setTimeout(fireConfetti, 1400);
+    }
+  }, [allDone]);
 
   function setTask(id, status, sub) {
     setState(s => ({ ...s, [id]: status }));
@@ -802,6 +860,18 @@ function Step4LiveProgress({ user, merchant, detected, botName, botAvatar, goToD
 
   return (
     <div className="p-10">
+      {/* Keyframes for the confetti burst. Scoped global so DOM particles
+          appended to document.body can resolve them. */}
+      <style jsx global>{`
+        @keyframes _btg_confetti_fly {
+          0%   { transform: translate(0,0) rotate(var(--rot-start)); opacity: 1; }
+          70%  { opacity: 1; }
+          100% {
+            transform: translate(var(--dx), calc(var(--dy) + 900px)) rotate(var(--rot-end));
+            opacity: 0;
+          }
+        }
+      `}</style>
       <div className="text-center">
         <div className={`text-5xl mb-3 transition-transform duration-500 ${allDone ? 'scale-110' : ''}`}>
           {allDone ? '🎉' : '✨'}
