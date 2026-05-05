@@ -292,15 +292,16 @@ function FeedSlide({ video, isActive, onActive, apiKey, shopifyDomain, onLikeBum
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
-  // Auto-pause when out of view, autoplay when scrolled into view + fire a
-  // view event the first time this slide is more than 50% visible.
+  // Observe the slide regardless of media type so photo slides also count
+  // as views. Only the play/pause path requires a real <video> element;
+  // view tracking + onActive should fire either way. Using empty deps so
+  // the observer attaches once on mount and isn't churned by re-renders.
   useEffect(() => {
-    if (!slideRef.current || !videoRef.current) return;
-    const el = videoRef.current;
+    if (!slideRef.current) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
-          el.play().catch(() => {});
+          if (videoRef.current) videoRef.current.play().catch(() => {});
           onActive();
           if (!viewFiredRef.current) {
             viewFiredRef.current = true;
@@ -311,15 +312,16 @@ function FeedSlide({ video, isActive, onActive, apiKey, shopifyDomain, onLikeBum
             });
             trackEvent('view');
           }
-        } else {
-          el.pause();
+        } else if (videoRef.current) {
+          videoRef.current.pause();
         }
       },
       { threshold: [0.5] }
     );
     observer.observe(slideRef.current);
     return () => observer.disconnect();
-  }, [onActive]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tags = video.video_product_tags || [];
   const firstTag = tags[0];
@@ -355,9 +357,12 @@ function FeedSlide({ video, isActive, onActive, apiKey, shopifyDomain, onLikeBum
         <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
 
-        {/* Views pill — top-left, like Reels */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-black/40 backdrop-blur text-white text-[11px] font-semibold">
-          <span>👁</span>
+        {/* Views pill — top-left. Play-triangle is the platform standard
+            (YouTube/TikTok/Reels) for "watched/viewed" counts. */}
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur text-white text-[11px] font-semibold">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden>
+            <path d="M8 5v14l11-7z" />
+          </svg>
           <span>{formatCount(viewsCount)}</span>
         </div>
 
