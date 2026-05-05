@@ -235,40 +235,68 @@ async function firstIgPull(merchantId, handle, limit) {
 
   // Accept both reels AND photo posts. Photos render as static frames in
   // the shop feed (widget falls back to <img> when s3_url is null), so the
-  // merchant gets a fuller feed even on photo-heavy IG accounts.
+  // merchant gets a fuller feed even on photo-heavy IG accounts. Use the
+  // same stable_id pattern as auto-import-latest so re-clicks dedup
+  // correctly (signed video URLs change per fetch — those break dedup).
   const posts = allItems
     .map(i => {
       const isVideo = !!(i.is_video || i.media_type === 2 || i.video_url ||
         (Array.isArray(i.video_versions) && i.video_versions.length));
+      const stableId = i.shortcode
+        ? `https://www.instagram.com/p/${i.shortcode}/`
+        : (i.id || i.pk ? `ig://${i.id || i.pk}` : null);
       return {
         video_url: isVideo ? (i.video_url || i.video_versions?.[0]?.url || null) : null,
         thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
         caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
         post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
+        stable_id: stableId,
       };
     })
-    .filter(p => p.thumbnail_url || p.video_url)
+    .filter(p => (p.thumbnail_url || p.video_url) && p.stable_id)
     .slice(0, limit);
 
   if (!posts.length) return 'no_posts_found';
 
-  const toInsert = posts.map(post => ({
-    merchant_id: merchantId,
-    title: post.caption || null,
-    s3_key: null,
-    s3_url: post.video_url || null,                    // null for photos — widget falls back to thumbnail
-    thumbnail_url: post.thumbnail_url,
-    source: 'instagram',
-    source_url: post.post_url || post.video_url,
-    status: 'active',
-  }));
+  // Per-post insert so a single bad row (e.g. NOT NULL violation on a
+  // photo before migration 032 lands) doesn't poison the whole batch.
+  let imported = 0;
+  let failed = 0;
+  let lastError = null;
+  for (const post of posts) {
+    // Dedupe against earlier imports (e.g. merchant ran auto-import then
+    // re-ran onboarding) before attempting the insert.
+    const { data: existing } = await supabase
+      .from('videos')
+      .select('id')
+      .eq('merchant_id', merchantId)
+      .eq('source_url', post.stable_id)
+      .maybeSingle();
+    if (existing) continue;
 
-  const { data, error } = await supabase
-    .from('videos')
-    .insert(toInsert)
-    .select('id');
-  if (error) return `db_${error.code || 'error'}`;
-  return `imported_${data.length}`;
+    const { error: insErr } = await supabase
+      .from('videos')
+      .insert({
+        merchant_id: merchantId,
+        title: post.caption || null,
+        s3_key: null,
+        s3_url: post.video_url || null,                  // null for photos — widget falls back to thumbnail
+        thumbnail_url: post.thumbnail_url,
+        source: 'instagram',
+        source_url: post.stable_id,
+        status: 'active',
+      });
+    if (insErr) {
+      failed++;
+      lastError = insErr.code || insErr.message;
+      continue;
+    }
+    imported++;
+  }
+
+  if (imported === 0 && failed > 0) return `db_${lastError || 'error'}`;
+  if (failed > 0) return `imported_${imported}_failed_${failed}`;
+  return `imported_${imported}`;
 }
 
 module.exports = router;

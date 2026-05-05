@@ -965,11 +965,16 @@ function sleep(ms) {
 
 function prettyIgStatus(status) {
   if (!status) return '';
+  // imported_<n>_failed_<m> — partial success
+  const partial = status.match(/^imported_(\d+)_failed_(\d+)/);
+  if (partial) return `${partial[1]} imported, ${partial[2]} skipped`;
   if (status.startsWith('imported_')) return `${status.split('_')[1]} reels imported`;
   if (status === 'no_ig_handle') return 'No Instagram handle';
   if (status === 'no_rapidapi_key') return 'IG import not configured';
   if (status === 'no_posts_found') return 'No public posts found';
   if (status.startsWith('ig_preview_')) return `IG returned ${status.split('_')[2]}`;
+  // db_<code> — Postgres error code. Most likely cause is a missing migration.
+  if (status.startsWith('db_')) return `Database constraint blocked import (${status.slice(3)}). Ask admin to run latest migrations.`;
   if (status.startsWith('error:')) return status;
   return status;
 }

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '../../../lib/supabase';
+import ButtonCustomizer from '../../../components/ButtonCustomizer';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 
@@ -934,6 +935,122 @@ function NegotiationDefaultsPanel({ merchantId, settings, onChange }) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Negotiate button look — color, label, position. Drives the
+              "Make an offer" button on storefront product/cart pages. */}
+          <div className="pt-4 border-t border-gray-100">
+            <label className="block text-xs font-semibold text-gray-700 mb-2">Negotiate button</label>
+            <ButtonCustomizer
+              label={settings.button_label}
+              color={settings.button_color}
+              textColor={settings.button_text_color}
+              position={settings.button_position}
+              onChange={p => patch({
+                ...(p.label !== undefined ? { button_label: p.label } : {}),
+                ...(p.color !== undefined ? { button_color: p.color } : {}),
+                ...(p.textColor !== undefined ? { button_text_color: p.textColor } : {}),
+                ...(p.position !== undefined ? { button_position: p.position } : {}),
+              })}
+            />
+          </div>
+
+          {/* Widget appearance + triggers — what the negotiate widget looks
+              like and when it shows on the storefront. */}
+          <div className="pt-4 border-t border-gray-100 space-y-5">
+            <label className="block text-xs font-semibold text-gray-700">Widget appearance & triggers</label>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-2">How it looks</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'bubble', label: '💬 Bubble', sub: 'Floating circle, bottom right' },
+                  { value: 'button', label: '🔘 Button', sub: 'Sits below Add to Cart' },
+                  { value: 'banner', label: '📢 Banner', sub: 'Pinned bar across the top' },
+                ].map(opt => (
+                  <button key={opt.value} onClick={() => patch({ widget_type: opt.value })}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${settings.widget_type === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <div className="text-xs font-semibold text-gray-800">{opt.label}</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-2">When the chat opens</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 0,  label: 'Right away',     sub: 'Chat opens the moment the widget appears' },
+                  { value: -1, label: 'After a delay',  sub: 'Widget first, then typing, then chat' },
+                ].map(opt => {
+                  const isActive = opt.value === 0 ? settings.chat_popup_delay === 0 : settings.chat_popup_delay > 0;
+                  return (
+                    <button key={opt.value}
+                      onClick={() => patch({ chat_popup_delay: opt.value === -1 ? (settings.chat_popup_delay > 0 ? settings.chat_popup_delay : 10) : 0 })}
+                      className={`p-3 rounded-xl border-2 text-left transition-all ${isActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                      <div className="text-xs font-semibold text-gray-800">{opt.label}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5">{opt.sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              {settings.chat_popup_delay > 0 && (
+                <div className="mt-2 pl-1">
+                  <label className="text-[11px] text-gray-500">Open after <strong>{settings.chat_popup_delay}s</strong></label>
+                  <input type="range" min={3} max={60} step={1}
+                    value={settings.chat_popup_delay}
+                    onChange={e => patch({ chat_popup_delay: Number(e.target.value) })}
+                    className="w-full max-w-xs mt-1" />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-2">When to appear</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'always',    label: 'Right away',           sub: 'Shows as soon as the page loads' },
+                  { value: 'on_scroll', label: "When they've read enough", sub: 'After scrolling 60% down' },
+                  { value: 'on_exit',   label: 'When they\'re leaving', sub: 'Last chance before tab close' },
+                  { value: 'on_click',  label: 'Only when tapped',     sub: 'Visible but opens only on click' },
+                ].map(opt => (
+                  <button key={opt.value} onClick={() => patch({ show_trigger: opt.value })}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${settings.show_trigger === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <div className="text-xs font-semibold text-gray-800">{opt.label}</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">First message in the chat</label>
+              <input
+                type="text"
+                value={settings.proactive_message || ''}
+                onChange={e => patch({ proactive_message: e.target.value })}
+                placeholder="Still eyeing this? I might be able to work on the price…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">Leave blank for the default greeting.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-2">On the cart page</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'always',  label: 'Always show',       sub: 'Widget appears whenever they visit cart' },
+                  { value: 'on_exit', label: 'Only when leaving', sub: 'Last chance to save the sale' },
+                ].map(opt => (
+                  <button key={opt.value} onClick={() => patch({ cart_trigger: opt.value })}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${settings.cart_trigger === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <div className="text-xs font-semibold text-gray-800">{opt.label}</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
