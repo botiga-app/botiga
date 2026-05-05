@@ -5,6 +5,86 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 ---
 
+## Strategic Pillars
+
+> Three product pillars frame the build. Each pillar maps to one or more detailed sections further down. Use this as the strategic-priority view; use the per-section tables for execution detail.
+
+### Pillar 1 — Concierge
+
+> Proactive AI rep that greets shoppers, qualifies intent, and routes to the right tool (video / negotiate / search). The unifying surface — every other capability lives behind it.
+
+**Status: ~45% built (substrate + persona, brain still missing)**
+
+- ✅ Widget shell, proactive open trigger, button + bubble modes — see *Shopify Widget*
+- ✅ Product context fetch + lead capture
+- ✅ `storeContext` service — bot reads live collections, active promos, and brand voice from any public Shopify storefront. Same path works for clone targets and real merchants.
+- ✅ Bot persona (name + avatar + greeting) — set during onboarding, persisted to `merchant_settings`
+- ❌ Intent classification (just-browsing / compare / haggle / support)
+- ❌ 3-path routing UI — chips that hand off to video / negotiate / search
+- ❌ Returning customer recognition + loyalty tiers (also feeds Pillar 2)
+- ❌ Behavioral triggers beyond dwell-time (scroll depth, exit-intent, cart value)
+
+**Critical next:** Concierge V1 — proactive pop-up + 3 intent chips + routing. Listed in *What to Build Next → Tier 1*.
+
+---
+
+### Pillar 2 — Negotiation Engine
+
+> Customer makes an offer, AI counter-offers along an adaptive price ladder until deal or floor. Most mature pillar.
+
+**Status: ~85% built**
+
+- ✅ Core `POST /negotiate`, price ladder, 4-moment deal screen — see *Negotiation API*
+- ✅ Adaptive spread tiers by price point, tone-matched escalation
+- ✅ Lead capture, recovery flow, cart bundle negotiation, per-product rules
+- ✅ Plan enforcement, rate limiting, API key auth
+- ✅ Shopify expiring offline tokens + refresh-on-use helper (May 2026 — required by Shopify deprecation of non-expiring tokens)
+- ❌ Returning customer recognition + loyalty tiers (Next — see *Customer Loyalty & Retention*)
+- ❌ Counter-offer floor warnings, exit-intent trigger
+- ❌ Klaviyo / Postscript connectors
+
+**Critical next:** Loyalty / returning customer recognition.
+
+---
+
+### Pillar 3 — Content Engine
+
+> Merchant gives Botiga a video / IG handle / WhatsApp message — Botiga creates Shopify products and shoppable videos automatically. Zero manual tagging.
+
+**Status: ~70% surface, ~50% brain**
+
+- ✅ Shoppable video viewer — stories, carousel, feed, deep links, multi-deal banners — see *Shoppable Video*
+- ✅ Instagram import — merchant enters @handle, pulls recent videos + photos (capped 20 during demo)
+- ✅ Manual product tagging, in-video negotiation overlay
+- ✅ AI video analysis — Groq Llama 4 Scout vision on frames + caption → product candidates with confidence
+- ✅ Auto-tag with confidence thresholds: ≥0.5 auto / 0.3-0.5 pending review / <0.3 skip
+- ✅ AI Tag drawer — multi-product cards, inline price + sizes, accept-tag emerald flash
+- ✅ AI Product Create — builds Shopify draft with variants from analyzer output
+- ✅ Public preview at `/preview/[merchantId]` — TikTok-style vertical feed, brand-gradient action buttons, deep-link via `?btgv=`
+- ✅ Floating Feed widget — auto-provisioned in onboarding, populated with merchant's videos
+- ✅ Background auto-tag continuation — videos page silently finishes any unanalyzed videos in 5-chunks
+- ⚠️ Plumbing built but uncommitted (in working tree): WhatsApp inbound webhook, transcribe, image→video, messenger, catalog match, Shopify resolve
+- ❌ WhatsApp video → product create (commit + wire the plumbing above)
+- ❌ Proactive Agent — IG auto-poll + UNDO window (see *Proactive Agent*)
+- ❌ TikTok import, auto-sync, phone upload
+
+**Critical next:** WhatsApp video → product create (Phase 3) + Proactive Agent (IG auto-poll + UNDO).
+
+---
+
+### Cross-pillar infrastructure (shipped)
+
+These don't belong to one pillar — they unblock or power multiple:
+
+- **Clone tool** (`/admin/clone`) — writes a real public storefront's catalog + policies + pages into a dev store for eval testing
+- **`storeContext` service** — live read of any public storefront's collections / banners / about content (powers Pillar 1 awareness)
+- **Shopify expiring offline tokens + refresh helper** — unblocks Pillars 2 and 3 from May 2026 Shopify deprecation
+- **4-step onboarding wizard** — URL → Install → Bot persona → TurboTax-style live progress (auto-fires bot setup, IG pull, auto-tag chunks, Floating Feed reseed, defaults). Under 2 min target.
+- **`POST /onboarding/auto-setup`** — idempotent setup endpoint: provisions Floating Feed widget + populates with active videos + applies concierge defaults
+- **Defensive module loading** — `safeRequire` / `safeMount` in api/index.js so missing files don't 500 the whole API
+
+---
+
 ## Proactive Agent
 
 > The agent's job is to make sure that when a merchant uploads a video on Instagram (or as a habit), it shows up on their store as a tagged shop video — without the merchant having to remember to send it to us. Trust > friction: silent auto-import with an UNDO escape hatch beats prompt-and-wait.
@@ -126,9 +206,14 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 | Negotiation history view | Shipped | M | Analytics | Discussed |
 | Video widget management — upload, tag, reorder | Shipped | L | Merchant UX | Discussed |
 | Marketplace opt-in settings (discount %, commission, store name) | Shipped | S | Merchant UX | Discussed |
-| Settings page — tabbed redesign | Backlog | M | Merchant UX | Suggested |
+| 4-step onboarding wizard — URL → Install → Bot persona → TurboTax-style live progress | Shipped | L | Merchant UX | Discussed |
+| Bot persona setup in onboarding — name + 6 preset emoji avatars + custom GIF/URL paste, live preview chat bubble | Shipped | M | Merchant UX | Discussed |
+| Sidebar reorder — pillar-first nav (Concierge → Negotiation → Video bot → Install → Billing) | Shipped | S | Merchant UX | Discussed |
+| Public preview at `/preview/[merchantId]` with copy-share link — phone-frame vertical feed | Shipped | M | Demo / sharing | Discussed |
+| Per-product rules UI — inline editor in video drawer | Shipped | M | Control | Discussed |
+| Settings page — tabbed redesign / split into Concierge bot + Negotiation bot pages | Backlog | M | Merchant UX | Discussed |
 | Live preview panel in settings | Backlog | M | Merchant UX | Suggested |
-| Per-product rules UI | Backlog | M | Control | Suggested |
+| Dashboard full revamp — pillar-page UX (deferred until first iteration ships) | Backlog | L | Merchant UX | Discussed |
 | Negotiation funnel chart | Backlog | M | Analytics | Suggested |
 | Revenue recovered KPI card | Backlog | S | Analytics | Suggested |
 | Per-product analytics | Backlog | M | Analytics | Suggested |
@@ -254,9 +339,39 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 |---|---|---|---|---|
 | Vercel deployment (API + dashboard + marketplace) | Shipped | S | Core | Discussed |
 | Supabase (Postgres + auth) | Shipped | M | Core | Discussed |
-| DB migrations (001–013) | Shipped | S | Core | Discussed |
+| DB migrations (001–031) — through cascade FKs + onboarding + branding | Shipped | M | Core | Discussed |
+| Defensive module loading — `safeRequire` / `safeMount` wraps optional routes so a missing file doesn't 500 the whole API | Shipped | S | Stability | Discussed |
+| Tick-pattern chunking — auto-tag-tick, clone-tick, IG-import-tick run within Vercel's 60s ceiling | Shipped | M | Stability | Discussed |
+| Background queue (Inngest / Trigger.dev) — proper agent-friendly execution past Vercel ceiling | **Later** | M | Stability | Discussed |
 | Merchant white-label | Later | M | Revenue | Suggested |
 | Competitor price matching | Icebox | L | Conversion | Suggested |
+
+---
+
+## Agentic Flows (post-V1)
+
+> After the first iteration ships and we're seeing real merchant signal, lift the Pillar-3 vision pipeline and Pillar-1 concierge into proper tool-using agents. Single-call LLMs ship faster; agents win once the surface forks too much for hard-coded paths. Deferred deliberately — don't change too much before proving the V1 loop.
+
+| Flow | Status | Size | Impact | Origin | Why agent (not script) |
+|---|---|---|---|---|---|
+| **Content agent** — video / WhatsApp message → tagged Shopify product. Tools: `analyzeFrames`, `searchCatalog`, `createDraftProduct`, `tagToVideo`, `askMerchant` (1 question max) | **Backlog** | L | Merchant UX | Discussed | Path forks heavily: existing vs new product, photo vs video, ambiguous vs clear, confidence-driven branching |
+| **Concierge agent** — greet → classify intent → route to negotiate / video / search → close. Tools: `searchProducts`, `lookupPolicy`, `startNegotiation`, `openVideo`, `captureLead`, returning-customer memory | **Backlog** | L | Conversion | Discussed | Pillar 1 is fundamentally an agent problem — single-call LLMs can't handle browse/compare/haggle/support fork |
+| **Customer-voice agent** — read negotiation transcripts + comments + reviews → distill brand voice + objection patterns → feed into all bot prompts. Runs nightly, read-only. | Backlog | M | Cross-pillar | Discussed | Compounds across all pillars; no shopper-facing risk |
+| Recovery agent — cold WhatsApp follow-up on dropped negotiations | Later | M | Recovery | Suggested | Risky for trust — needs careful guardrails |
+| Catalog gap agent — flag products without videos and prompt merchant | Later | S | Engagement | Discussed | Nice-to-have, lives behind Content agent |
+| Health monitor agent — anomalies in orders / negotiations / costs → Slack | Later | S | Operations | Suggested | Internal tool, not customer-facing |
+
+**Substrate the agentic flows will need (build once, before any agent):**
+- `agent_runs` table — full step trace per run for replay / debug / kill-switch
+- Tool registry — typed tool definitions reused across agents
+- Step + tool-call budget caps per merchant (avoid runaway cost)
+- Background queue (Inngest / Trigger.dev) — Vercel 60s tick-loop is the wrong shape for agents
+- Reasoning model: Claude Sonnet 4.6 default, Opus 4.7 for the harder Content-agent calls. Vision stays Groq Llama 4 Scout for cheap frames.
+
+**Explicitly NOT agentic** (deterministic state machines win):
+- Negotiation engine — price ladder + tone tiers are tightly scoped, single-call works
+- Onboarding wizard — 2-min deterministic flow more reliable than conversational
+- Clone tool — deterministic, agents would only add cost
 
 ---
 
@@ -268,15 +383,21 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 | Feature | Status | Size | Impact | Origin |
 |---|---|---|---|---|
-| **AI video analysis** — extract frames, call Vision AI (Groq Llama 3.2), return title + description + tags | **Next** | S | Merchant UX | Discussed |
-| **Auto Shopify product create** — POST draft product to Shopify Admin API from AI analysis, tag video automatically | **Next** | M | Merchant UX | Discussed |
-| **AI Tag button on video card** — one-click flow: analyze → review AI suggestion → create product or match existing | **Next** | S | Merchant UX | Discussed |
-| Auto-analyze on Instagram import — run Vision AI automatically on every imported video, pre-fill product suggestions | Backlog | S | Merchant UX | Discussed |
-| Batch analyze — run AI on all untagged videos at once | Backlog | S | Merchant UX | Discussed |
+| AI video analysis — extract frames + caption, call Groq Llama 4 Scout vision, return product candidates with confidence | Shipped | M | Merchant UX | Discussed |
+| Confidence thresholds: ≥0.5 auto-tag / 0.3-0.5 pending review / <0.3 skip — human always verifies | Shipped | S | Trust | Discussed |
+| Auto Shopify product create — POST draft with variants (sizes/colors) to Shopify Admin API from AI analysis | Shipped | M | Merchant UX | Discussed |
+| AI Tag drawer — multi-product cards, inline price + sizes, single form (not turn-by-turn chat) | Shipped | M | Merchant UX | Discussed |
+| Accept-tag emerald flash with 900ms hold — visible feedback before row morph | Shipped | S | UX | Discussed |
+| Auto-analyze on Instagram import — `auto-tag-tick` chunked endpoint runs Vision AI on every imported video | Shipped | M | Merchant UX | Discussed |
+| Background auto-tag continuation on dashboard — silently finishes unanalyzed videos in 5-chunks if onboarding closed mid-tag | Shipped | S | UX | Discussed |
+| Per-product negotiation rule editor inside video drawer | Shipped | M | Control | Discussed |
+| Product picker with collection / tag filters (paginates through all products, not capped at 20) | Shipped | M | Merchant UX | Discussed |
+| Vision-model fallback chain — Groq → Gemini Flash → paid (Anthropic vision) for redundancy | **Backlog** | M | Reliability | Discussed |
 | AI video title + caption generation — suggest TikTok/Instagram captions from product analysis | Backlog | S | Content | Suggested |
 | Video → product image extraction — pull best frames as Shopify product images | Backlog | M | Merchant UX | Discussed |
+| WhatsApp video → product create — merchant DMs a video, agent transcribes + extracts price/size + creates draft | **Next** | L | Merchant UX | Discussed |
 
-**Cost:** Groq Llama 3.2 Vision free tier = ~2,400 video analyses/day. Paid rate ~$0.0005/video. Absorb in plan pricing.
+**Cost:** Groq Llama 4 Scout free tier = ~2,400 video analyses/day. Paid rate ~$0.0005/video. Absorb in plan pricing.
 
 ---
 
@@ -383,4 +504,4 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 ---
 
-*Last updated: 2026-04-30 — added Proactive Agent section (IG auto-poll + UNDO chosen as the proactive loop strategy)*
+*Last updated: 2026-05-04 — onboarding wizard (TurboTax-style live progress + bot persona step), Floating Feed auto-provision, background auto-tag continuation, sidebar reorder; added Agentic Flows section (deferred until post-V1). Previously 2026-05-02 added Strategic Pillars summary; 2026-04-30 added Proactive Agent section.*
