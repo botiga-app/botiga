@@ -19,7 +19,8 @@ router.get('/shopify/auth', async (req, res) => {
   if (!id_token) {
     // write_script_tags is required for auto-installing the Botiga widget
     // scripts on the merchant's theme. See shopify-oauth.js for full reasoning.
-    const SCOPES = 'write_products,write_content,write_price_rules,write_discounts,write_draft_orders,write_script_tags';
+    // write_content dropped (unused) so this list matches the app config.
+    const SCOPES = 'write_products,write_price_rules,write_discounts,write_draft_orders,write_script_tags';
     const redirectUri = 'https://botiga-api-two.vercel.app/api/shopify/callback';
     const authorizeUrl = `https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     return res.redirect(authorizeUrl);
