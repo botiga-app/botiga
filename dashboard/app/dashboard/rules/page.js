@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '../../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
@@ -11,6 +11,9 @@ export default function RulesPage() {
   const [collections, setCollections] = useState([]);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [globalDiscount, setGlobalDiscount] = useState(20);
+  // Full merchant_settings — drives the Negotiation Defaults panel above
+  // the per-product rules table. PUT /api/merchants/:id/settings persists.
+  const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewBy, setViewBy] = useState('products'); // 'products' | 'tags' | 'collections'
@@ -78,8 +81,11 @@ export default function RulesPage() {
         setTagRules(productsData.tag_rules || {});
       }
 
-      const disc = merchantData?.merchant_settings?.max_discount_pct;
-      if (disc) setGlobalDiscount(disc);
+      const ms = merchantData?.merchant_settings || null;
+      if (ms) {
+        setSettings(ms);
+        if (ms.max_discount_pct) setGlobalDiscount(ms.max_discount_pct);
+      }
     } catch (e) {
       setError({ kind: 'other', message: e.message });
     }
@@ -292,9 +298,29 @@ export default function RulesPage() {
     <div className="p-8 max-w-5xl space-y-5">
       {/* Header */}
       <div>
-        <h2 className="text-xl font-bold text-gray-900">Negotiation Rules</h2>
+        <h2 className="text-xl font-bold text-gray-900">Negotiation bot</h2>
         <p className="text-sm text-gray-500 mt-0.5">
-          Set negotiation rules by product, tag, or collection. Product rules override tag/collection rules. Global default: <strong>{globalDiscount}% max discount</strong>. Configure in <a href="/dashboard/settings" className="text-indigo-600 hover:underline">Settings</a>.
+          Tone, defaults, brand-story justifications, recovery, and per-product overrides — everything the negotiation bot uses lives here.
+        </p>
+      </div>
+
+      {/* Negotiation defaults — global settings that drive every negotiation */}
+      {merchantId && settings && (
+        <NegotiationDefaultsPanel
+          merchantId={merchantId}
+          settings={settings}
+          onChange={patch => {
+            setSettings(prev => ({ ...prev, ...patch }));
+            if ('max_discount_pct' in patch) setGlobalDiscount(patch.max_discount_pct);
+          }}
+        />
+      )}
+
+      <div>
+        <h3 className="text-base font-bold text-gray-900">Per-product rules</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Override the global default per product, tag, or collection. Product rules win over tag/collection rules.
+          Current global: <strong>{globalDiscount}% max discount</strong>.
         </p>
       </div>
 
@@ -688,6 +714,229 @@ export default function RulesPage() {
         {viewBy === 'tags' && `${tags.length} unique tags · Tag rules override collection rules but not product rules`}
         {viewBy === 'collections' && `${collections.length} collections · Collection rules apply when no product or tag rule is set`}
       </p>
+    </div>
+  );
+}
+
+// ─── Negotiation Defaults Panel ─────────────────────────────────────────────
+// Global settings that drive every negotiation. Lives at the top of the
+// Negotiation tab. Persists via PUT /api/merchants/:id/settings — same
+// endpoint the legacy /dashboard/settings page uses.
+function NegotiationDefaultsPanel({ merchantId, settings, onChange }) {
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [open, setOpen] = useState(true);
+  const saveTimer = useRef(null);
+
+  // Debounced save — typing in fields shouldn't fire a request per keystroke
+  function patch(updates) {
+    onChange(updates);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => save({ ...settings, ...updates }), 500);
+  }
+
+  async function save(next) {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/api/merchants/${merchantId}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (res.ok) {
+        setSavedAt(Date.now());
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1400);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const tones = [
+    { value: 'friendly',    label: '😊 Friendly',    sub: 'Warm, helpful, non-pushy' },
+    { value: 'salesy',      label: '🔥 Salesy',      sub: 'Enthusiastic, creates urgency' },
+    { value: 'expert',      label: '🎓 Expert',      sub: 'Precise, knowledgeable' },
+    { value: 'playful',     label: '✨ Playful',     sub: 'Light humor, upbeat' },
+  ];
+
+  const justifications = settings.brand_value_statements || ['', '', '', '', ''];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="text-left">
+          <div className="text-sm font-bold text-gray-900">Negotiation defaults</div>
+          <div className="text-xs text-gray-500 mt-0.5">Tone · pricing rules · justifications · recovery</div>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          {saving && <span className="text-gray-400">Saving…</span>}
+          {savedFlash && <span className="text-emerald-600 font-semibold">✓ Saved</span>}
+          <span className="text-gray-400">{open ? '▴' : '▾'}</span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 pt-1 space-y-6 border-t border-gray-100">
+          {/* Tone */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">Conversation tone</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {tones.map(t => (
+                <button
+                  key={t.value}
+                  onClick={() => patch({ tone: t.value })}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    (settings.tone || 'friendly') === t.value
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-gray-800">{t.label}</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">{t.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Pricing — max discount + floor + broker fee */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Max discount % <span className="text-gray-400 font-normal">(off list)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range" min={0} max={50} step={1}
+                  value={settings.max_discount_pct ?? 20}
+                  onChange={e => patch({ max_discount_pct: Number(e.target.value) })}
+                  className="flex-1"
+                />
+                <span className="text-sm font-semibold w-10 text-right">{settings.max_discount_pct ?? 20}%</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Floor price — fixed $</label>
+              <input
+                type="number" min={0} step={0.01}
+                value={settings.floor_price_fixed ?? ''}
+                onChange={e => patch({ floor_price_fixed: e.target.value ? Number(e.target.value) : null })}
+                placeholder="e.g. 49.99"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Broker fee %</label>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={settings.broker_fee_pct ?? 25}
+                onChange={e => patch({ broker_fee_pct: Number(e.target.value) })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Cart bundle negotiation */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-gray-100 hover:border-gray-200">
+              <input
+                type="checkbox"
+                checked={settings.negotiate_on_cart !== false}
+                onChange={e => patch({ negotiate_on_cart: e.target.checked })}
+                className="mt-0.5 w-4 h-4 rounded text-indigo-600"
+              />
+              <div>
+                <div className="text-sm font-medium text-gray-800">Cart bundle negotiation</div>
+                <div className="text-xs text-gray-500 mt-0.5">Customer can negotiate the whole cart total at /cart</div>
+              </div>
+            </label>
+            {settings.negotiate_on_cart !== false && (
+              <div className="p-3 rounded-xl border border-gray-100">
+                <label className="text-xs font-semibold text-gray-700">
+                  Cart max discount: <strong>{settings.cart_max_discount_pct ?? 10}%</strong>
+                </label>
+                <input
+                  type="range" min={1} max={30} step={1}
+                  value={settings.cart_max_discount_pct ?? 10}
+                  onChange={e => patch({ cart_max_discount_pct: Number(e.target.value) })}
+                  className="w-full mt-1"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Brand value statements / full-price justifications */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Full-price justifications</label>
+            <p className="text-xs text-gray-500 mb-2">
+              3-5 reasons why customers should pay full price. The bot weaves these in as defense lines —
+              e.g. <em>"I can do $199 — hand-finished by artisans, not mass produced."</em>
+            </p>
+            <div className="space-y-2">
+              {[0, 1, 2, 3, 4].map(i => (
+                <input
+                  key={i}
+                  type="text"
+                  value={justifications[i] || ''}
+                  onChange={e => {
+                    const arr = [...justifications];
+                    arr[i] = e.target.value;
+                    patch({ brand_value_statements: arr });
+                  }}
+                  placeholder={[
+                    'Hand-finished by artisans — not mass produced',
+                    'Free returns within 30 days, no questions asked',
+                    'Only 3 left in this size',
+                    'Ships within 24 hours from our warehouse',
+                    'Sustainably sourced fabric, certified ethical',
+                  ][i]}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Recovery */}
+          <div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!settings.recovery_enabled}
+                onChange={e => patch({ recovery_enabled: e.target.checked })}
+                className="mt-0.5 w-4 h-4 rounded text-indigo-600"
+              />
+              <div>
+                <div className="text-sm font-medium text-gray-800">Recovery follow-ups</div>
+                <div className="text-xs text-gray-500 mt-0.5">When a customer gets a deal but doesn't checkout, send a reminder</div>
+              </div>
+            </label>
+            {settings.recovery_enabled && (
+              <div className="mt-3 pl-7">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Send via</label>
+                <div className="flex gap-2">
+                  {['whatsapp', 'email', 'both'].map(ch => (
+                    <button
+                      key={ch}
+                      onClick={() => patch({ recovery_channel: ch })}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        (settings.recovery_channel || 'whatsapp') === ch
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3698,6 +3698,110 @@
       });
   }
 
+  // ─── Product-page auto-inject: "Watch & Shop" shelf ──────────────────────────
+  // On /products/<handle> pages, fetch videos tagged to this product and
+  // inject a horizontal shelf right above the product form (cart button).
+  // Zero theme edits required from the merchant. Silent no-op if no tagged
+  // videos exist for this product.
+  function injectProductShelf() {
+    var m = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    if (!m) return;
+    var handle = m[1];
+
+    fetch(API_BASE + '/api/widget/videos/by-product?k=' + encodeURIComponent(API_KEY) + '&handle=' + encodeURIComponent(handle))
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (videos) {
+        if (!videos || !videos.length) return;
+        renderProductShelf(videos);
+      }).catch(function () {});
+  }
+
+  function renderProductShelf(videos) {
+    // Avoid double-render on SPA-style theme navigation
+    if (document.getElementById('_btgv_product_shelf')) return;
+
+    // Find a sensible insert point — closest form ancestor of the cart button
+    // is the most consistent across themes. Fall back to the cart button's
+    // parent, then to body.
+    var cartBtnSelectors = [
+      '[data-add-to-cart]', '.btn-cart', '#add-to-cart', '[name="add"]',
+      '.product-form__cart-submit', '.product-form__submit',
+      '.add-to-cart-btn', '.btn-addtocart', '#AddToCart',
+      '.shopify-payment-button__button',
+    ];
+    var cartBtn = null;
+    for (var i = 0; i < cartBtnSelectors.length; i++) {
+      cartBtn = document.querySelector(cartBtnSelectors[i]);
+      if (cartBtn) break;
+    }
+    var anchor = cartBtn ? (cartBtn.closest('form') || cartBtn.parentNode) : null;
+    if (!anchor || !anchor.parentNode) return;
+
+    var host = document.createElement('div');
+    host.id = '_btgv_product_shelf';
+    host.style.cssText = 'margin: 16px 0; width: 100%;';
+    var shadow = host.attachShadow({ mode: 'open' });
+
+    var style = document.createElement('style');
+    style.textContent = [
+      '.shelf{font-family:system-ui,-apple-system,sans-serif;}',
+      '.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}',
+      '.hdr h3{margin:0;font-size:14px;font-weight:600;color:#111;letter-spacing:-.01em}',
+      '.hdr .pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#fff;padding:3px 8px;border-radius:999px;background:linear-gradient(135deg,#FF6B35,#F72585);}',
+      '.row{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;}',
+      '.row::-webkit-scrollbar{display:none}',
+      '.tile{position:relative;flex:0 0 auto;width:124px;aspect-ratio:9/16;border-radius:14px;overflow:hidden;background:#000;cursor:pointer;scroll-snap-align:start;box-shadow:0 4px 14px rgba(0,0,0,.12);transition:transform .15s ease, box-shadow .15s ease}',
+      '.tile:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.18)}',
+      '.tile img,.tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}',
+      '.tile .play{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:600;padding:3px 7px;border-radius:6px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:3px}',
+      '.tile .grad{position:absolute;inset-x:0;bottom:0;height:50%;background:linear-gradient(to top,rgba(0,0,0,.7),transparent);pointer-events:none}',
+      '.tile .ttl{position:absolute;left:8px;right:8px;bottom:6px;color:#fff;font-size:11px;line-height:1.25;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 2px rgba(0,0,0,.35)}',
+    ].join('');
+    shadow.appendChild(style);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'shelf';
+
+    var hdr = document.createElement('div');
+    hdr.className = 'hdr';
+    hdr.innerHTML = '<h3>Watch & Shop</h3><span class="pill">' + videos.length + (videos.length === 1 ? ' video' : ' videos') + '</span>';
+    wrap.appendChild(hdr);
+
+    var row = document.createElement('div');
+    row.className = 'row';
+    videos.forEach(function (v, idx) {
+      var tile = document.createElement('div');
+      tile.className = 'tile';
+      var media = '';
+      if (v.thumbnail_url) {
+        media = '<img src="' + v.thumbnail_url + '" alt="" loading="lazy" />';
+      } else if (v.s3_url) {
+        media = '<video src="' + v.s3_url + '" muted playsinline preload="metadata"></video>';
+      }
+      var title = (v.title || '').replace(/[<>"']/g, '').slice(0, 80);
+      tile.innerHTML = media +
+        '<div class="play">▶ ' + (v.s3_url ? 'Play' : 'View') + '</div>' +
+        '<div class="grad"></div>' +
+        (title ? '<div class="ttl">' + title + '</div>' : '');
+      tile.addEventListener('click', function () {
+        // Reuse the existing feed-viewer if available, otherwise deep-link
+        // to the floating launcher in feed mode.
+        if (typeof openFeed === 'function' && Array.isArray(videos)) {
+          try { openFeed(idx, videos); return; } catch (e) {}
+        }
+        // Fallback: deep-link to /preview if the dashboard is hosting it
+        var url = window.location.pathname + '?btgv=' + encodeURIComponent(v.id);
+        history.replaceState(null, '', url);
+        window.dispatchEvent(new Event('popstate'));
+      });
+      row.appendChild(tile);
+    });
+    wrap.appendChild(row);
+
+    shadow.appendChild(wrap);
+    anchor.parentNode.insertBefore(host, anchor);
+  }
+
   // ─── Init ────────────────────────────────────────────────────────────────────
   function init() {
     var path = window.location.pathname;
@@ -3705,6 +3809,10 @@
     if (path === '/cart' || path.startsWith('/cart/')) { handleCartPage(); return; }
     injectStyles();
     rtGetConfig(null); // fetch bot config (bot_name, bot_greeting) from API eagerly
+
+    // Product page: drop a Watch & Shop shelf above the cart form. No-op
+    // if not on a product page or no videos are tagged to this product.
+    injectProductShelf();
 
     // Auto-open concierge with product-specific deal intro when landing from a card click
     (function () {

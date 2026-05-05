@@ -617,6 +617,55 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
 });
 
 // ─── Widget: live stats for a single video (polling) ────────────────────────
+// ─── Widget: videos tagged to a specific product handle ─────────────────────
+// Powers the auto-injected "Watch & Shop" shelf on Shopify product pages.
+// Returns active videos that have at least one tag pointing at the requested
+// product handle, ordered by sort_order then created_at.
+router.get('/widget/videos/by-product', widgetCors, async (req, res) => {
+  try {
+    const { k: apiKey, handle } = req.query;
+    if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+    if (!handle) return res.status(400).json({ error: 'Missing handle' });
+
+    const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+    if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+
+    // First pull the matching tag rows for this product, then the videos
+    // they're attached to. Two queries (avoids a join we'd have to filter).
+    const { data: tagRows } = await supabase
+      .from('video_product_tags')
+      .select('video_id, shopify_product_id, shopify_variant_id, product_name, product_handle, price, compare_at_price, image_url')
+      .eq('merchant_id', merchant.id)
+      .eq('product_handle', handle)
+      .in('match_status', ['manual', 'auto_tagged']); // exclude pending_review / rejected
+
+    if (!tagRows?.length) return res.json([]);
+
+    const videoIds = [...new Set(tagRows.map(t => t.video_id))];
+    const { data: videos } = await supabase
+      .from('videos')
+      .select(`id, title, s3_url, thumbnail_url, duration_seconds, width, height,
+               status, views_count, likes_count, shares_count, sort_order, created_at`)
+      .in('id', videoIds)
+      .eq('status', 'active')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    // Attach the matching tag rows to each video so the widget can render
+    // product cards + price without a second round-trip.
+    const tagsByVideo = {};
+    for (const t of tagRows) {
+      if (!tagsByVideo[t.video_id]) tagsByVideo[t.video_id] = [];
+      tagsByVideo[t.video_id].push(t);
+    }
+    const out = (videos || []).map(v => ({ ...v, video_product_tags: tagsByVideo[v.id] || [] }));
+    res.json(out);
+  } catch (err) {
+    console.error('[widget/videos/by-product] error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch videos' });
+  }
+});
+
 router.get('/widget/videos/:id/stats', widgetCors, async (req, res) => {
   const { data, error } = await supabase
     .from('videos')

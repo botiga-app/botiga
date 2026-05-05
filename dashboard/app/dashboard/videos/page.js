@@ -207,8 +207,8 @@ function OneClickAutoImport({ merchantId, onImported }) {
 }
 
 // ─── Instagram importer ───────────────────────────────────────────────────────
-function InstagramImporter({ merchantId, onImported }) {
-  const [handle, setHandle] = useState('');
+function InstagramImporter({ merchantId, defaultHandle, onImported }) {
+  const [handle, setHandle] = useState(defaultHandle || '');
   const [loading, setLoading] = useState(false);
   const [posts, setPosts] = useState(null);
   const [selected, setSelected] = useState(new Set());
@@ -217,6 +217,12 @@ function InstagramImporter({ merchantId, onImported }) {
   const [open, setOpen] = useState(false);
   const [autotagging, setAutotagging] = useState(false);
   const [autotagProgress, setAutotagProgress] = useState({ tagged: 0, total: 0, remaining: 0 });
+
+  // Keep the input synced with the merchant's stored handle when it loads
+  // after first render (the parent fetches the merchant async).
+  useEffect(() => {
+    if (defaultHandle && !handle) setHandle(defaultHandle);
+  }, [defaultHandle]);
 
   async function fetchPosts() {
     const h = handle.replace('@', '').trim();
@@ -295,7 +301,8 @@ function InstagramImporter({ merchantId, onImported }) {
       setOpen(false);
       setPosts(null);
       setSelected(new Set());
-      setHandle('');
+      // Keep the merchant's primary handle pre-loaded for next time
+      setHandle(defaultHandle || '');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -323,7 +330,11 @@ function InstagramImporter({ merchantId, onImported }) {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <div>
                 <h3 className="font-bold text-gray-900">Import from Instagram</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Enter a public Instagram handle to import Reels & videos</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {defaultHandle
+                    ? <>Pulling from <span className="font-medium text-gray-600">@{defaultHandle}</span> · change below if needed</>
+                    : 'Enter a public Instagram handle to import Reels & videos'}
+                </p>
               </div>
               <button onClick={() => setOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500">×</button>
             </div>
@@ -2386,6 +2397,7 @@ export default function VideosPage() {
   const [shopifyDomain, setShopifyDomain] = useState(null);
   const [apiKey, setApiKey] = useState(null);
   const [shopHandle, setShopHandle] = useState(null);
+  const [igHandle, setIgHandle] = useState(null);
   const [editingWidget, setEditingWidget] = useState(null);
   // Background auto-tag continuation. If onboarding was abandoned mid-tagging
   // (or the merchant landed here with un-analyzed videos for any reason), we
@@ -2415,6 +2427,7 @@ export default function VideosPage() {
         setShopifyDomain(m.shopify_domain || null);
         setApiKey(m.api_key || null);
         setShopHandle(m.shop_handle || null);
+        setIgHandle(m.ig_handle || null);
       }
       setLoading(false);
 
@@ -2603,6 +2616,7 @@ export default function VideosPage() {
             {merchantId && (
               <InstagramImporter
                 merchantId={merchantId}
+                defaultHandle={igHandle}
                 onImported={payload => {
                   // Two call shapes: legacy { array of new videos } from manual modal,
                   // or new { replace: true, videos: [...] } from auto-import full refetch.
