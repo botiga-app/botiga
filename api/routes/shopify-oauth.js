@@ -12,11 +12,10 @@ const APP_URL = process.env.APP_URL || 'https://botiga-api-two.vercel.app';
 // Script Tags API. Without it, every Script Tags call 403s and merchants
 // have to manually paste scripts into theme.liquid.
 //
-// write_* implicitly grants read_*, so we don't list the read variants.
-// write_content was previously requested speculatively but isn't actually
-// used (we don't touch blog posts or Shopify pages) — dropped to keep
-// the OAuth request matching what the app is configured for.
-const SCOPES = 'write_products,write_price_rules,write_discounts,write_draft_orders,write_script_tags';
+// write_content reserved for future use (Shopify pages — e.g. auto-creating
+// a /pages/shop landing page for the IG Ad Funnel feed surface, or merchant
+// blog post integration). Listed in the app's configured scopes.
+const SCOPES = 'write_products,write_content,write_price_rules,write_discounts,write_draft_orders,write_script_tags';
 
 // Register all mandatory webhooks for a store
 async function registerWebhooks(domain, token) {
