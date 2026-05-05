@@ -406,7 +406,9 @@
       '._btgv_rail button._btgv_popping span:first-child{display:inline-block;animation:_btgv_like_pop 500ms cubic-bezier(.34,1.56,.64,1)}',
 
       // ─── Top chrome: brand badge (left) + progress bar + views (right) ──
-      '._btgv_topbar{position:absolute;top:env(safe-area-inset-top,12px);left:0;right:0;z-index:8;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;pointer-events:none}',
+      // Right padding clears the close button (#_btgv_close at right:16px,
+      // 36px wide) so the views pill never hides under it.
+      '._btgv_topbar{position:absolute;top:env(safe-area-inset-top,12px);left:0;right:0;z-index:8;display:flex;align-items:center;justify-content:space-between;padding:10px 60px 10px 14px;pointer-events:none}',
       '@media(min-width:640px){._btgv_topbar{max-width:420px;left:50%;transform:translateX(-50%)}}',
       '._btgv_brand{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.42);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);padding:4px 10px 4px 4px;border-radius:99px;color:#fff;text-decoration:none;cursor:pointer;pointer-events:auto;-webkit-tap-highlight-color:transparent;transition:transform .15s}',
       '._btgv_brand:active{transform:scale(.96)}',
@@ -428,28 +430,34 @@
       '._btgv_pauseicon{position:absolute;top:50%;left:50%;width:72px;height:72px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;pointer-events:none;z-index:7;animation:_btgv_pause_fade 700ms ease-out forwards}',
 
       // ─── Bottom zone: caption + price pill + primary CTA ────────────────
-      '._btgv_bzone{position:absolute;bottom:0;left:0;right:0;z-index:8;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px);background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.55) 60%,transparent 100%);display:flex;flex-direction:column;gap:8px;pointer-events:none}',
+      // Tightened spacing — was ~130px, now ~85px. Brand handle dropped
+      // (already shown top-left) so we don't waste vertical real estate.
+      '._btgv_bzone{position:absolute;bottom:0;left:0;right:0;z-index:8;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px);background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.55) 65%,transparent 100%);display:flex;flex-direction:column;gap:6px;pointer-events:none}',
       '@media(min-width:640px){._btgv_bzone{max-width:420px;left:50%;transform:translateX(-50%);border-radius:0 0 14px 14px}}',
       '._btgv_bzone>*{pointer-events:auto}',
-      // Caption row: handle + title
-      '._btgv_caprow{display:flex;flex-direction:column;gap:2px}',
-      '._btgv_caphandle{font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:.01em}',
-      '._btgv_captext{font-size:12.5px;color:rgba(255,255,255,.92);line-height:1.32;text-shadow:0 1px 3px rgba(0,0,0,.5);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}',
+      // Caption: title only (no brand handle — that lives top-left)
+      '._btgv_captext{font-size:12px;color:rgba(255,255,255,.94);line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.55);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;font-weight:500}',
       '._btgv_captext._btgv_capexpand{-webkit-line-clamp:unset;display:block}',
-      // Price line: $ now · was-strike · % off · "as low as" hint
-      '._btgv_priceline{display:flex;align-items:center;gap:7px;flex-wrap:wrap}',
-      '._btgv_price_now{color:#fff;font-size:17px;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:-.01em}',
-      '._btgv_price_was{color:rgba(255,255,255,.5);font-size:12px;text-decoration:line-through}',
-      '._btgv_price_disc{background:#ff4d6d;color:#fff;font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:99px;letter-spacing:.03em}',
-      '._btgv_price_aslow{color:rgba(255,255,255,.85);font-size:11px;font-weight:600;padding:2px 7px 2px 5px;border-radius:99px;background:linear-gradient(135deg,rgba(255,193,7,.18),rgba(247,37,133,.18));border:1px solid rgba(255,193,7,.32);display:inline-flex;align-items:center;gap:3px}',
+      // Compact price line — single row with all the price signal
+      '._btgv_priceline{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
+      '._btgv_price_now{color:#fff;font-size:16px;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:-.01em}',
+      '._btgv_price_was{color:rgba(255,255,255,.5);font-size:11.5px;text-decoration:line-through}',
+      '._btgv_price_disc{background:#ff4d6d;color:#fff;font-size:9px;font-weight:800;padding:2px 5px;border-radius:99px;letter-spacing:.03em}',
+      '._btgv_price_aslow{color:rgba(255,255,255,.92);font-size:10.5px;font-weight:600;padding:2px 7px 2px 5px;border-radius:99px;background:linear-gradient(135deg,rgba(255,193,7,.22),rgba(247,37,133,.22));border:1px solid rgba(255,193,7,.36);display:inline-flex;align-items:center;gap:3px}',
       // Primary CTA + small inline icon-only buttons
-      '._btgv_ctarow{display:flex;align-items:stretch;gap:7px;margin-top:2px}',
-      '._btgv_cta_neg{flex:1;background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);color:#fff;border:none;border-radius:12px;padding:11px 14px;font-size:13.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 4px 18px rgba(247,37,133,.32);font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,box-shadow .12s}',
+      '._btgv_ctarow{display:flex;align-items:stretch;gap:6px;margin-top:1px}',
+      '._btgv_cta_neg{flex:1;background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);color:#fff;border:none;border-radius:11px;padding:10px 12px;font-size:13px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 4px 18px rgba(247,37,133,.32);font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,box-shadow .12s;letter-spacing:.01em}',
       '._btgv_cta_neg:active{transform:scale(.97);box-shadow:0 2px 10px rgba(247,37,133,.32)}',
-      '._btgv_cta_inline{width:46px;flex-shrink:0;border:none;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;color:#fff;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,opacity .15s}',
+      '._btgv_cta_inline{width:42px;flex-shrink:0;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;color:#fff;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,opacity .15s}',
       '._btgv_cta_inline:active{transform:scale(.94)}',
       '._btgv_cta_cart{background:rgba(255,255,255,.18);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22)}',
       '._btgv_cta_buy{background:linear-gradient(135deg,#FF6B35 0%,#F72585 100%);box-shadow:0 4px 14px rgba(247,37,133,.32)}',
+      // Small hearts that explode out of the like button on tap (5 directions)
+      '@keyframes _btgv_lh_fly{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}15%{opacity:1;transform:translate(calc(-50% + var(--lhx)*.3),calc(-50% + var(--lhy)*.3)) scale(1)}100%{opacity:0;transform:translate(calc(-50% + var(--lhx)),calc(-50% + var(--lhy))) scale(.6)}}',
+      '._btgv_lh{position:absolute;top:50%;left:50%;font-size:14px;pointer-events:none;will-change:transform,opacity;animation:_btgv_lh_fly 700ms cubic-bezier(.22,.61,.36,1) forwards}',
+      // Like-count flash to brand color when tapped
+      '@keyframes _btgv_count_flash{0%{color:#fff}30%{color:#F72585;transform:scale(1.18)}100%{color:#fff;transform:scale(1)}}',
+      '._btgv_count_flash{display:inline-block;animation:_btgv_count_flash 600ms ease-out}',
 
       // ─── Multi-product horizontal strip (when 2+ tagged) ────────────────
       '._btgv_pstrip{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:4px 0 6px;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none}',
@@ -464,10 +472,13 @@
       '._btgv_pstrip_now{color:#fff;font-weight:800}',
       '._btgv_pstrip_was{color:rgba(255,255,255,.45);text-decoration:line-through;font-size:10px}',
 
-      // ─── Floating concierge bubble ──────────────────────────────────────
-      '._btgv_concbubble{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 220px);right:14px;z-index:11;width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);box-shadow:0 6px 22px rgba(99,102,241,.42);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;-webkit-tap-highlight-color:transparent;transition:transform .15s}',
+      // ─── Floating concierge bubble — bottom-LEFT, mirror of action rail
+      // so it doesn't collide with mute. Four-corner layout: top-left brand,
+      // top-right close+views, right-rail actions, bottom-left concierge,
+      // bottom-center caption+CTA. ────────────────────────────────────────
+      '._btgv_concbubble{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 130px);left:14px;z-index:11;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);box-shadow:0 6px 22px rgba(99,102,241,.42);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;-webkit-tap-highlight-color:transparent;transition:transform .15s;overflow:visible}',
       '._btgv_concbubble:active{transform:scale(.92)}',
-      '@media(min-width:640px){._btgv_concbubble{right:calc(50% - 220px)}}',
+      '@media(min-width:640px){._btgv_concbubble{left:calc(50% - 200px)}}',
       '._btgv_concbubble img{width:100%;height:100%;border-radius:50%;object-fit:cover}',
       '@keyframes _btgv_concpulse{0%,100%{box-shadow:0 6px 22px rgba(99,102,241,.42)}50%{box-shadow:0 6px 28px rgba(99,102,241,.7),0 0 0 6px rgba(99,102,241,.18)}}',
       '._btgv_concbubble._btgv_concpulse{animation:_btgv_concpulse 1.6s ease-in-out infinite}',
@@ -724,35 +735,46 @@
     document.head.appendChild(s);
   }
 
+  // Filename patterns from cameras / phones get used as title when there
+  // was no real caption. Drop them so we don't show "MVI_2026-04-30" as
+  // the video description.
+  function _btgvCleanTitle(t) {
+    if (!t) return null;
+    var s = String(t).trim();
+    if (!s) return null;
+    // Pure filename patterns
+    if (/^(MVI|IMG|VID|DSC|DSCN|PXL|GOPR)[_-]?\d/i.test(s)) return null;
+    // Trailing file extension
+    if (/\.(mp4|mov|m4v|avi|webm|mkv|3gp|wmv|flv)$/i.test(s)) {
+      s = s.replace(/\.(mp4|mov|m4v|avi|webm|mkv|3gp|wmv|flv)$/i, '');
+    }
+    // ISO-date-only or pure-number titles aren't meaningful descriptions
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    if (/^\d+$/.test(s)) return null;
+    return s.length >= 3 ? s : null;
+  }
+
   // ─── New compact bottom zone — caption + price + primary CTA ─────────────
   // Replaces the old buildProductShelf for the customer-facing feed.
-  // - 1 tagged product → caption / price-pill / primary "Make an offer" CTA
-  // - 2+ tagged products → caption / horizontal product strip + tap-to-switch
-  // Context (merchant + settings) drives the negotiable-price hint.
+  // - 1 tagged product → title (if real) / price-pill / primary "Make an offer" CTA
+  // - 2+ tagged products → title / horizontal product strip + tap-to-switch
+  // Brand handle is NOT shown here — it's already on the top-left badge.
   function buildBottomZone(vid, tags, context) {
     var zone = document.createElement('div');
     zone.className = '_btgv_bzone';
 
-    // Caption row — brand handle + video title (click to expand)
-    var caprow = document.createElement('div');
-    caprow.className = '_btgv_caprow';
-    if (context.brandHandle || context.brandName) {
-      var handle = document.createElement('div');
-      handle.className = '_btgv_caphandle';
-      handle.textContent = '@' + (context.brandHandle || (context.brandName || '').toLowerCase().replace(/\s+/g, ''));
-      caprow.appendChild(handle);
-    }
-    if (vid.title) {
+    // Title — only if it's a real caption, not a filename pattern
+    var cleanedTitle = _btgvCleanTitle(vid.title);
+    if (cleanedTitle) {
       var captext = document.createElement('div');
       captext.className = '_btgv_captext';
-      captext.textContent = vid.title;
+      captext.textContent = cleanedTitle;
       captext.onclick = function (e) {
         e.stopPropagation();
         captext.classList.toggle('_btgv_capexpand');
       };
-      caprow.appendChild(captext);
+      zone.appendChild(captext);
     }
-    if (caprow.children.length) zone.appendChild(caprow);
 
     if (!tags || !tags.length) {
       // No products tagged — show a gentle empty state instead of a void
@@ -825,16 +847,11 @@
         var d = document.createElement('span'); d.className = '_btgv_price_disc'; d.textContent = Math.round((1 - pr / was) * 100) + '% OFF';
         priceLine.appendChild(w); priceLine.appendChild(d);
       }
-      // "Most pay $X-Y" hint that telegraphs negotiability — pulls from
-      // merchant_settings.max_discount_pct so the floor matches reality.
-      var maxDisc = context.maxDiscount || 20;
-      var lowEnd = Math.max(1, pr * (1 - maxDisc / 100));
-      var aslow = document.createElement('span');
-      aslow.className = '_btgv_price_aslow';
-      aslow.innerHTML = '💡 most pay $' + Math.round(lowEnd) + '–' + Math.round(pr - 1);
-      priceLine.appendChild(aslow);
     }
     zone.appendChild(priceLine);
+    // Note: removed the inline "most pay" hint — the CTA below already
+    // carries the negotiability signal ("Make an offer · usually $X-Y")
+    // and showing it twice on adjacent lines reads as repetitive.
 
     // CTA row: primary Negotiate (full-width gradient) + small Cart + Buy icons
     var ctaRow = document.createElement('div');
@@ -842,8 +859,13 @@
 
     var negBtn = document.createElement('button');
     negBtn.className = '_btgv_cta_neg';
-    var savings = was > pr ? was - pr : pr * (context.maxDiscount || 20) / 100;
-    negBtn.innerHTML = '<span style="font-size:16px">🤝</span><span>Make an offer · save up to $' + Math.round(savings) + '</span>';
+    // Copy: "Make an offer · usually $X-Y" telegraphs the realistic floor
+    // range, not just "save up to" (which can feel hypothetical). Pulls
+    // from merchant_settings.max_discount_pct so the range is grounded.
+    var maxDiscPct = context.maxDiscount || 20;
+    var lowEnd = Math.max(1, Math.round(pr * (1 - maxDiscPct / 100)));
+    var highEnd = Math.max(lowEnd + 1, Math.round(pr - 1));
+    negBtn.innerHTML = '<span style="font-size:16px">🤝</span><span>Make an offer · usually $' + lowEnd + '–' + highEnd + '</span>';
     negBtn.onclick = function (e) {
       e.stopPropagation();
       track(vid.id, 'negotiate', tag.shopify_product_id);
@@ -2302,21 +2324,52 @@
       var rail = document.createElement('div'); rail.className = '_btgv_rail';
       var likeCount = vid.likes_count || 0;
       var likeBtn = document.createElement('button');
+      likeBtn.style.position = 'relative'; // anchor for explosion hearts
       likeBtn.innerHTML = '<span style="font-size:22px">🤍</span><span>' + fmtCount(likeCount) + '</span>';
+
+      // Explode 5 small hearts outward from the button on every tap. They
+      // shoot in random radial directions and fade out in 700ms.
+      function explodeHeartsFromButton(btn) {
+        var dirs = [
+          { x: -36, y: -42 }, { x: 0, y: -50 }, { x: 36, y: -42 },
+          { x: -42, y: -10 }, { x: 42, y: -10 },
+        ];
+        var glyphs = ['❤', '❤', '💖', '💕', '🧡'];
+        dirs.forEach(function (d, i) {
+          var h = document.createElement('span');
+          h.className = '_btgv_lh';
+          h.textContent = glyphs[i % glyphs.length];
+          h.style.color = i === 1 ? '#F72585' : '#fff';
+          h.style.setProperty('--lhx', d.x + 'px');
+          h.style.setProperty('--lhy', d.y + 'px');
+          btn.appendChild(h);
+          h.addEventListener('animationend', function () { h.remove(); });
+        });
+      }
+
+      // Expose so the cross-user polled-stats path can also trigger
+      // the explode animation on incoming likes.
+      likeBtn._explode = function () { explodeHeartsFromButton(likeBtn); };
+
       function fireLike() {
-        // Spring-pop on every tap (even repeat-clicks) for tactile feedback.
-        // Heart particles arrive ~200-500ms later via the realtime echo,
-        // which keeps cross-user behavior consistent.
+        // Spring-pop on the button itself
         likeBtn.classList.remove('_btgv_popping');
-        // Force reflow so the animation restarts on quick re-taps
         void likeBtn.offsetWidth;
         likeBtn.classList.add('_btgv_popping');
         setTimeout(function () { likeBtn.classList.remove('_btgv_popping'); }, 520);
+        // Heart explosion outward from the button
+        explodeHeartsFromButton(likeBtn);
         if (!likedSet[vid.id]) {
           likedSet[vid.id] = true;
           likeBtn.querySelectorAll('span')[0].textContent = '❤️';
           likeCount++;
-          likeBtn.querySelectorAll('span')[1].textContent = fmtCount(likeCount);
+          var countSpan = likeBtn.querySelectorAll('span')[1];
+          countSpan.textContent = fmtCount(likeCount);
+          // Brand-color flash on the count
+          countSpan.classList.remove('_btgv_count_flash');
+          void countSpan.offsetWidth;
+          countSpan.classList.add('_btgv_count_flash');
+          setTimeout(function () { countSpan.classList.remove('_btgv_count_flash'); }, 620);
           track(vid.id, 'like');
         }
       }
@@ -2351,6 +2404,30 @@
 
       cmtBtn.onclick = function (e) { e.stopPropagation(); cmtDrawer.open(); };
 
+      // Save bookmark — persists to localStorage now (no backend yet),
+      // shows filled bookmark when this video is saved.
+      var savedSet = (function () {
+        try {
+          var raw = localStorage.getItem('_btgv_saves_' + API_KEY);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_) { return {}; }
+      })();
+      var saveBtn = document.createElement('button');
+      var isSaved = !!savedSet[vid.id];
+      saveBtn.innerHTML = '<span style="font-size:20px">' + (isSaved ? '🔖' : '📑') + '</span><span>' + (isSaved ? 'Saved' : 'Save') + '</span>';
+      saveBtn.onclick = function (e) {
+        e.stopPropagation();
+        savedSet[vid.id] = !savedSet[vid.id];
+        try { localStorage.setItem('_btgv_saves_' + API_KEY, JSON.stringify(savedSet)); } catch (_) {}
+        var nowSaved = !!savedSet[vid.id];
+        saveBtn.innerHTML = '<span style="font-size:20px">' + (nowSaved ? '🔖' : '📑') + '</span><span>' + (nowSaved ? 'Saved' : 'Save') + '</span>';
+        // Spring-pop on toggle for satisfying feedback
+        saveBtn.classList.remove('_btgv_popping');
+        void saveBtn.offsetWidth;
+        saveBtn.classList.add('_btgv_popping');
+        setTimeout(function () { saveBtn.classList.remove('_btgv_popping'); }, 520);
+      };
+
       // Mute toggle in the rail (replaces the global #_btgv_mute button)
       var muteBtn = document.createElement('button');
       muteBtn.innerHTML = '<span style="font-size:18px">' + (muted ? '🔇' : '🔊') + '</span>';
@@ -2360,7 +2437,7 @@
         feedEl.querySelectorAll('._btgv_rail button:last-child span').forEach(function (s) { s.textContent = muted ? '🔇' : '🔊'; });
         feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) { v.muted = muted; });
       };
-      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(muteBtn);
+      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(saveBtn); rail.appendChild(muteBtn);
 
       slide._btgv_likeBtn = likeBtn;
       slide.appendChild(video);
@@ -2390,8 +2467,8 @@
           var vEl = slideEl.querySelector('._btgv_views span');
           if (vEl && d.views_count != null) { item.views_count = d.views_count; vEl.textContent = fmtCount(d.views_count); }
           // Update like count — spawn hearts + pop animation if increased.
-          // Trigger the spring-pop on the like button itself (not just the
-          // count text) so cross-user likes also do the satisfying bounce.
+          // Trigger the spring-pop AND explode hearts on the button so
+          // cross-user likes get the same visual punch as own clicks.
           var likeBtn = slideEl._btgv_likeBtn;
           var likeSpan = likeBtn ? likeBtn.querySelectorAll('span')[1] : null;
           if (likeSpan && d.likes_count != null) {
@@ -2402,6 +2479,13 @@
               void likeBtn.offsetWidth;
               likeBtn.classList.add('_btgv_popping');
               setTimeout(function () { likeBtn.classList.remove('_btgv_popping'); }, 520);
+              // Inline burst of small hearts from the rail like button
+              if (likeBtn._explode) likeBtn._explode();
+              // Brand-color count flash
+              likeSpan.classList.remove('_btgv_count_flash');
+              void likeSpan.offsetWidth;
+              likeSpan.classList.add('_btgv_count_flash');
+              setTimeout(function () { likeSpan.classList.remove('_btgv_count_flash'); }, 620);
             }
             item._polledLikes = d.likes_count;
             likeSpan.textContent = fmtCount(d.likes_count);
