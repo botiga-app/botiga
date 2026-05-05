@@ -11,9 +11,44 @@ export default function InstallPage() {
   const [merchantId, setMerchantId] = useState(null);
   const [shopDomain, setShopDomain] = useState('');
   const [shopifyConnected, setShopifyConnected] = useState(false);
+  // Per-script install state for Shopify-connected merchants.
+  // Shape: { all_installed: bool, scripts: [{name, src, installed}] } | null
+  const [scriptStatus, setScriptStatus] = useState(null);
+  const [reinstalling, setReinstalling] = useState(false);
   const supabase = createClient();
 
   const [justInstalled, setJustInstalled] = useState(false);
+
+  // Pull script-tag install state from /api/setup/script-tag
+  async function checkScriptStatus(key) {
+    if (!key) return;
+    try {
+      const r = await fetch(`${API}/api/setup/script-tag?api_key=${encodeURIComponent(key)}`);
+      if (r.ok) {
+        const data = await r.json();
+        setScriptStatus(data);
+      } else {
+        setScriptStatus(null);
+      }
+    } catch {
+      setScriptStatus(null);
+    }
+  }
+
+  async function reinstallScripts() {
+    if (!apiKey || reinstalling) return;
+    setReinstalling(true);
+    try {
+      await fetch(`${API}/api/setup/script-tag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+      await checkScriptStatus(apiKey);
+    } finally {
+      setReinstalling(false);
+    }
+  }
 
   useEffect(() => {
     // Detect App Store install redirect
@@ -34,6 +69,8 @@ export default function InstallPage() {
         if (data.shopify_domain) {
           setShopDomain(data.shopify_domain);
           setShopifyConnected(true);
+          // Fire-and-forget — show actual storefront install state
+          checkScriptStatus(data.api_key);
         }
       }
     }
@@ -111,6 +148,49 @@ export default function InstallPage() {
           </div>
         )}
       </div>
+
+      {/* Storefront widget install state — only shown when Shopify is connected.
+          Reflects what's actually live on the merchant's theme via Shopify's
+          Script Tags API. Reinstall is idempotent; re-runs add anything missing. */}
+      {shopifyConnected && scriptStatus && (
+        <div className="mt-6 bg-white rounded-xl border border-gray-100 p-6">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="font-semibold text-gray-900">Storefront widgets</h3>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {scriptStatus.all_installed
+                  ? 'All widgets are live on your storefront. Customers can negotiate, watch, and chat.'
+                  : 'Some widgets are missing from your theme — click Reinstall to fix.'}
+              </p>
+            </div>
+            <button
+              onClick={reinstallScripts}
+              disabled={reinstalling}
+              className="text-sm bg-gray-900 hover:bg-gray-800 text-white font-medium px-3 py-1.5 rounded-lg disabled:opacity-60 whitespace-nowrap"
+            >
+              {reinstalling ? 'Reinstalling…' : (scriptStatus.all_installed ? 'Reinstall' : 'Install missing')}
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {scriptStatus.scripts.map(s => (
+              <div key={s.name} className="flex items-center gap-2 text-sm">
+                <span className={s.installed ? 'text-emerald-600' : 'text-gray-300'}>
+                  {s.installed ? '✓' : '○'}
+                </span>
+                <span className="font-medium text-gray-900">
+                  {s.name === 'video' ? 'Video feed + concierge bot' :
+                   s.name === 'n' ? 'Negotiate widget (Make an offer)' :
+                   s.name === 'confetti' ? 'Confetti effect on deal close' :
+                   s.name}
+                </span>
+                <span className={`text-xs ${s.installed ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  {s.installed ? 'Installed' : 'Missing'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center justify-between bg-yellow-50 border border-yellow-100 rounded-xl p-4">
         <div>

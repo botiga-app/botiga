@@ -8,8 +8,11 @@ export default function InstallScript({ apiKey }) {
   const [platform, setPlatform] = useState('Any Website');
   const [testMode, setTestMode] = useState(false);
 
-  const widgetUrl = process.env.NEXT_PUBLIC_WIDGET_URL || 'https://botiga-dashboard-gamma.vercel.app';
+  // Widget files are served by the API server, NOT the dashboard.
+  // The dashboard is a Next.js app — it doesn't serve /n.js or /video.js.
+  // Fall back to the API URL if the explicit WIDGET_URL env isn't set.
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
+  const widgetUrl = process.env.NEXT_PUBLIC_WIDGET_URL || apiUrl;
   const scriptTag = `<script src="${widgetUrl}/n.js?k=${apiKey}${testMode ? '&test=1' : ''}" data-api="${apiUrl}"></script>`;
 
   const fullScript = `<script

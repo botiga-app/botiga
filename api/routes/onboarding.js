@@ -136,10 +136,34 @@ router.post('/onboarding/auto-setup', async (req, res) => {
       .upsert({ merchant_id, ...settingsUpdate }, { onConflict: 'merchant_id' });
     if (sErr) throw new Error(`settings: ${sErr.message}`);
 
+    // 4. Defensive re-install of storefront widget scripts. The OAuth
+    // callback also does this, but if it failed (Shopify rate-limit,
+    // transient error) the merchant would land in onboarding's "You're
+    // live" screen with a non-functional storefront. Re-running the
+    // idempotent registration here closes that gap.
+    let scripts_status = 'no_shopify';
+    try {
+      const { data: m } = await supabase
+        .from('merchants')
+        .select('shopify_domain, shopify_access_token, api_key')
+        .eq('id', merchant_id)
+        .single();
+      if (m?.shopify_domain && m?.shopify_access_token && m?.api_key) {
+        const { registerAllScripts } = require('./script-tags');
+        const tagResults = await registerAllScripts(m.shopify_domain, m.shopify_access_token, m.api_key);
+        const allOk = tagResults.every(r => r.status === 'registered' || r.status === 'already_registered');
+        scripts_status = allOk ? 'installed' : 'partial';
+      }
+    } catch (err) {
+      console.warn(`[auto-setup] script-tag re-install failed: ${err.message}`);
+      scripts_status = `error:${err.message}`;
+    }
+
     res.json({
       ok: true,
       widget_id: widget.id,
       video_count,
+      scripts_status,
       bot: {
         name: bot_name || null,
         avatar_url: bot_avatar_url || null,

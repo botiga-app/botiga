@@ -144,11 +144,23 @@ router.get('/shopify/callback', async (req, res) => {
         console.warn('[Shopify OAuth] Webhook registration failed:', e.message);
       }
 
-      // Auto-register confetti Script Tag on install
+      // Auto-register all Botiga widget Script Tags (video.js + n.js +
+      // confetti.js). Idempotent — safe to run on every install. We need
+      // the merchant's api_key so the registered script src includes it
+      // (?k=<api_key>) and the widget knows which merchant it belongs to.
       try {
-        const { registerScriptTag } = require('./script-tags');
-        const tagResult = await registerScriptTag(storeDomain, access_token);
-        console.log('[Shopify OAuth] Script tag:', tagResult);
+        const { registerAllScripts } = require('./script-tags');
+        const { data: m } = await supabase
+          .from('merchants')
+          .select('api_key')
+          .eq('id', merchant.id)
+          .single();
+        if (m?.api_key) {
+          const tagResults = await registerAllScripts(storeDomain, access_token, m.api_key);
+          console.log('[Shopify OAuth] Widget scripts:', tagResults);
+        } else {
+          console.warn('[Shopify OAuth] No api_key — script tag install skipped');
+        }
       } catch (e) {
         console.warn('[Shopify OAuth] Script tag registration failed:', e.message);
       }
