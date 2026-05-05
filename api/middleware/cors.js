@@ -1,9 +1,13 @@
 const cors = require('cors');
 
-// Wide-open CORS for widget embedding — the widget needs to call the API from any merchant domain
+// Wide-open CORS for widget embedding — the widget needs to call the API from any merchant domain.
+// NOTE: this middleware also serves the global OPTIONS preflight (`app.options('*', widgetCors)`),
+// so its methods list governs preflight responses for *every* route — including dashboard PATCH /
+// DELETE calls. Keep PATCH + DELETE in here even though the widget itself doesn't use them, or the
+// browser will block dashboard mutations with no visible error.
 const widgetCors = cors({
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: '*'
 });
 

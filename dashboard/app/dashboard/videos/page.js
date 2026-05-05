@@ -1477,6 +1477,7 @@ function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUp
                       tag={tag}
                       videoId={video.id}
                       merchantId={merchantId}
+                      shopifyDomain={shopifyDomain}
                       onRemoved={() => onTagsUpdated(video.id, tags.filter(t => t.id !== tag.id))}
                       onUpdated={updated => onTagsUpdated(video.id, tags.map(t => t.id === updated.id ? updated : t))}
                     />
@@ -1589,18 +1590,22 @@ function Section({ title, count, children }) {
 }
 
 // Single tagged-product row — shown in drawer
-function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
+function TagRow({ tag, videoId, merchantId, shopifyDomain, onRemoved, onUpdated }) {
   const [busy, setBusy] = useState(null); // null | 'accepting' | 'removing' | 'rules'
   const [showRules, setShowRules] = useState(false);
   const [justAccepted, setJustAccepted] = useState(false); // green flash after accept
+  const [actionError, setActionError] = useState(null);
 
   async function remove() {
     if (busy) return;
     setBusy('removing');
+    setActionError(null);
     try {
-      await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, { method: 'DELETE' });
+      const r = await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(`Server returned ${r.status}`);
       onRemoved();
     } catch (err) {
+      setActionError(err.message || 'Failed to remove');
       setBusy(null);
     }
   }
@@ -1608,21 +1613,26 @@ function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
   async function accept() {
     if (busy) return;
     setBusy('accepting');
+    setActionError(null);
     try {
       const r = await fetch(`${API}/api/videos/${videoId}/tags/${tag.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ match_status: 'auto_tagged' }),
       });
-      if (r.ok) {
-        const updated = await r.json();
-        // Hold a green-flash state briefly so the merchant SEES the change
-        setJustAccepted(true);
-        setTimeout(() => {
-          setJustAccepted(false);
-          onUpdated(updated); // hands the new tag up — row morphs from amber to white
-        }, 900);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `Server returned ${r.status}`);
       }
+      const updated = await r.json();
+      // Hold a green-flash state briefly so the merchant SEES the change
+      setJustAccepted(true);
+      setTimeout(() => {
+        setJustAccepted(false);
+        onUpdated(updated); // hands the new tag up — row morphs from amber to white
+      }, 900);
+    } catch (err) {
+      setActionError(err.message || 'Failed to accept');
     } finally {
       setBusy(null);
     }
@@ -1640,11 +1650,11 @@ function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
         ? 'bg-amber-50/40 border-amber-200'
         : 'bg-white border-gray-200'
     }`}>
-      <div className="flex items-center gap-3 p-2.5">
+      <div className="flex items-start gap-3 p-2.5">
         {tag.image_url ? (
-          <img src={tag.image_url} alt="" className="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0" />
+          <img src={tag.image_url} alt="" className="w-12 h-12 rounded-md object-cover bg-gray-100 flex-shrink-0" />
         ) : (
-          <div className="w-10 h-10 rounded bg-gray-100 flex-shrink-0" />
+          <div className="w-12 h-12 rounded-md bg-gray-100 flex-shrink-0" />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -1656,35 +1666,71 @@ function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
               <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold flex-shrink-0">Review</span>
             )}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            {tag.price != null && <span>${tag.price}</span>}
-            {tag.match_score != null && <span> · {Math.round(tag.match_score * 100)}% match</span>}
+          <div className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            {tag.price != null && <span className="font-medium">${tag.price}</span>}
+            {tag.compare_at_price != null && tag.compare_at_price > (tag.price ?? 0) && (
+              <span className="text-gray-400 line-through">${tag.compare_at_price}</span>
+            )}
+            {tag.match_score != null && (
+              <span className="text-gray-500">· {Math.round(tag.match_score * 100)}% match</span>
+            )}
+            {tag.product_handle && (
+              <span className="text-gray-400">· {tag.product_handle}</span>
+            )}
+          </div>
+          {/* Action chips: Shopify link + storefront link. Only show when we know
+              where they live (shopifyDomain for admin link, product_handle for storefront). */}
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {shopifyDomain && tag.shopify_product_id && (
+              <a
+                href={`https://${shopifyDomain}/admin/products/${tag.shopify_product_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+                title="Open in Shopify admin"
+              >
+                Edit in Shopify ↗
+              </a>
+            )}
+            {tag.product_handle && shopifyDomain && (
+              <a
+                href={`https://${shopifyDomain.replace('.myshopify.com', '')}.myshopify.com/products/${tag.product_handle}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-medium px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                title="Open product on storefront"
+              >
+                View on store ↗
+              </a>
+            )}
           </div>
         </div>
 
-        {/* Rules expand toggle — visible when not pending (no clutter on review row) */}
-        {!isPending && tag.product_handle && merchantId && (
-          <button
-            onClick={() => setShowRules(s => !s)}
-            className={`text-[11px] font-medium px-2 py-1 rounded transition-colors flex-shrink-0 ${
-              showRules
-                ? 'bg-indigo-100 text-indigo-700'
-                : 'text-gray-500 hover:bg-gray-100'
-            }`}
-            title="Negotiation rule for this product"
-          >
-            {showRules ? '▾ Rules' : 'Rules'}
-          </button>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Rules expand toggle — visible when not pending (no clutter on review row) */}
+          {!isPending && tag.product_handle && merchantId && (
+            <button
+              onClick={() => setShowRules(s => !s)}
+              className={`text-[11px] font-medium px-2 py-1 rounded transition-colors ${
+                showRules
+                  ? 'bg-indigo-100 text-indigo-700'
+                  : 'text-gray-500 hover:bg-gray-100'
+              }`}
+              title="Negotiation rule for this product"
+            >
+              {showRules ? '▾ Rules' : 'Rules'}
+            </button>
+          )}
 
-        <button
-          onClick={remove}
-          disabled={!!busy}
-          className="text-gray-400 hover:text-red-600 text-sm w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
-          aria-label="Remove tag"
-        >
-          ×
-        </button>
+          <button
+            onClick={remove}
+            disabled={!!busy}
+            className="text-gray-400 hover:text-red-600 text-sm w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center transition-colors"
+            aria-label="Remove tag"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       {/* Pending review action row — Accept / Reject */}
@@ -1713,6 +1759,18 @@ function TagRow({ tag, videoId, merchantId, onRemoved, onUpdated }) {
           <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
             <span className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">✓</span>
             Tag accepted — saved to this video
+          </div>
+        </div>
+      )}
+
+      {/* Action error — visible when accept / remove fails so the merchant
+          can see what went wrong instead of the click silently doing nothing. */}
+      {actionError && (
+        <div className="px-2.5 pb-2.5">
+          <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-md px-2.5 py-1.5">
+            <span className="font-semibold">Couldn't save:</span>
+            <span className="flex-1">{actionError}</span>
+            <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-600 font-bold">×</button>
           </div>
         </div>
       )}
@@ -1824,29 +1882,42 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
   const [allTags, setAllTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(null);
+  // Surface fetch failures so empty dropdowns aren't ambiguous (real-empty vs broken-fetch).
+  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setFetchError(null);
       try {
         const [pRes, cRes] = await Promise.all([
           fetch(`${API}/api/merchants/${merchantId}/shopify-products`),
           fetch(`${API}/api/merchants/${merchantId}/shopify-collections`),
         ]);
         if (cancelled) return;
+
         if (pRes.ok) {
-          const { products: ps } = await pRes.json();
-          setProducts(ps || []);
-          // Derive unique tag list from products
-          const tagSet = new Set();
-          (ps || []).forEach(p => (p.tags || []).forEach(t => tagSet.add(t)));
-          setAllTags([...tagSet].sort());
+          const pData = await pRes.json();
+          if (pData.error === 'no_shopify') {
+            setFetchError('Connect your Shopify store first to load products.');
+          } else {
+            setProducts(pData.products || []);
+            const tagSet = new Set();
+            (pData.products || []).forEach(p => (p.tags || []).forEach(t => tagSet.add(t)));
+            setAllTags([...tagSet].sort());
+          }
+        } else {
+          const body = await pRes.json().catch(() => ({}));
+          setFetchError(body.error || `Couldn't load products (HTTP ${pRes.status})`);
         }
+
         if (cRes.ok) {
-          const { collections: cs } = await cRes.json();
-          setCollections(cs || []);
+          const cData = await cRes.json();
+          setCollections(cData.collections || []);
         }
+      } catch (err) {
+        if (!cancelled) setFetchError(err.message || 'Network error');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1913,43 +1984,68 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
           onChange={e => { setFilterMode(e.target.value); setFilterValue(''); }}
           className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-indigo-500"
         >
-          <option value="all">All</option>
-          <option value="collection">By collection</option>
-          <option value="tag">By tag</option>
+          <option value="all">All ({products.length})</option>
+          <option value="collection">By collection ({collections.length})</option>
+          <option value="tag">By tag ({allTags.length})</option>
         </select>
       </div>
 
+      {/* Surface fetch errors so empty dropdowns aren't mysterious */}
+      {fetchError && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-md px-2.5 py-1.5">
+          <strong>Couldn't load:</strong> {fetchError}
+        </div>
+      )}
+
       {/* Filter value selector */}
       {filterMode === 'collection' && (
-        <select
-          value={filterValue}
-          onChange={e => setFilterValue(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-        >
-          <option value="">Pick a collection…</option>
-          {collections.map(c => (
-            <option key={c.id || c.handle} value={c.handle}>{c.title || c.handle}</option>
-          ))}
-        </select>
+        collections.length === 0 ? (
+          <div className="text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-1.5">
+            No collections defined in your Shopify store yet. Add one in <a className="underline" target="_blank" rel="noreferrer" href="https://admin.shopify.com">Shopify admin → Products → Collections</a>.
+          </div>
+        ) : (
+          <select
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">Pick a collection… ({collections.length})</option>
+            {collections.map(c => (
+              <option key={c.id || c.handle} value={c.handle}>
+                {c.title || c.handle}{c.products_count ? ` (${c.products_count})` : ''}
+              </option>
+            ))}
+          </select>
+        )
       )}
       {filterMode === 'tag' && (
-        <select
-          value={filterValue}
-          onChange={e => setFilterValue(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-        >
-          <option value="">Pick a tag…</option>
-          {allTags.map(t => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
+        allTags.length === 0 ? (
+          <div className="text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-1.5">
+            No product tags found. Add tags to products in Shopify (Products → pick one → Tags).
+          </div>
+        ) : (
+          <select
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">Pick a tag… ({allTags.length})</option>
+            {allTags.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )
       )}
 
       {/* Results */}
       {loading ? (
         <div className="text-xs text-gray-400 py-3">Loading products…</div>
       ) : filtered.length === 0 ? (
-        <div className="text-xs text-gray-400 py-3">No matching products. Try a different filter.</div>
+        <div className="text-xs text-gray-400 py-3">
+          {products.length === 0
+            ? 'No Shopify products loaded yet. If you just installed, wait a moment and reopen.'
+            : 'No matching products. Try a different filter or clear the search.'}
+        </div>
       ) : (
         <div className="border border-gray-200 rounded-lg max-h-72 overflow-y-auto divide-y divide-gray-100">
           {filtered.map(p => {

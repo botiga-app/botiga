@@ -195,31 +195,48 @@ router.post('/onboarding/complete', async (req, res) => {
 });
 
 // Helper: do the IG preview → import for the merchant's first reels.
-// Mirrors the inline preview/normalize logic from /admin/videos/import-ig.
+// Walks up to 5 pages from instagram120 (page 1 typically returns ~12 items)
+// so a 20-cap actually fills, instead of getting whatever single-page returned.
 async function firstIgPull(merchantId, handle, limit) {
   const cleanHandle = String(handle).replace(/^@/, '').trim();
-  const previewRes = await fetch('https://instagram120.p.rapidapi.com/api/instagram/posts', {
-    method: 'POST',
-    headers: {
-      'x-rapidapi-key': process.env.RAPIDAPI_KEY,
-      'x-rapidapi-host': 'instagram120.p.rapidapi.com',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ username: cleanHandle, maxId: '' }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!previewRes.ok) return `ig_preview_${previewRes.status}`;
-  const raw = await previewRes.json();
+  const allItems = [];
+  let nextMaxId = '';
+  for (let page = 0; page < 5; page++) {
+    const previewRes = await fetch('https://instagram120.p.rapidapi.com/api/instagram/posts', {
+      method: 'POST',
+      headers: {
+        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username: cleanHandle, maxId: nextMaxId }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!previewRes.ok) {
+      // Page 1 failure → fail the whole pull. Later-page failure → use what we have.
+      if (page === 0) return `ig_preview_${previewRes.status}`;
+      break;
+    }
+    const raw = await previewRes.json();
 
-  let items = [];
-  if (raw?.result?.edges) items = raw.result.edges.map(e => e.node || e);
-  else if (raw?.data?.items) items = raw.data.items;
-  else if (Array.isArray(raw?.items)) items = raw.items;
+    let pageItems = [];
+    if (raw?.result?.edges) pageItems = raw.result.edges.map(e => e.node || e);
+    else if (raw?.data?.items) pageItems = raw.data.items;
+    else if (Array.isArray(raw?.items)) pageItems = raw.items;
+
+    if (!pageItems.length) break;
+    allItems.push(...pageItems);
+    if (allItems.length >= limit) break;
+
+    // Cursor for next page — instagram120 returns it in different shapes
+    nextMaxId = raw?.result?.next_max_id || raw?.next_max_id || raw?.data?.next_max_id || '';
+    if (!nextMaxId) break;
+  }
 
   // Accept both reels AND photo posts. Photos render as static frames in
   // the shop feed (widget falls back to <img> when s3_url is null), so the
   // merchant gets a fuller feed even on photo-heavy IG accounts.
-  const posts = items
+  const posts = allItems
     .map(i => {
       const isVideo = !!(i.is_video || i.media_type === 2 || i.video_url ||
         (Array.isArray(i.video_versions) && i.video_versions.length));
