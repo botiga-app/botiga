@@ -24,14 +24,20 @@ export default function InstallPage() {
     if (!key) return;
     try {
       const r = await fetch(`${API}/api/setup/script-tag?api_key=${encodeURIComponent(key)}`);
+      const data = await r.json().catch(() => ({}));
       if (r.ok) {
-        const data = await r.json();
         setScriptStatus(data);
       } else {
-        setScriptStatus(null);
+        // Surface the error so we can show a clear CTA — most common case
+        // is the merchant's OAuth token doesn't have write_script_tags
+        // scope and needs to reinstall the Shopify app.
+        const isScopeIssue = String(data.error || '').includes('read_script_tags') ||
+                             String(data.error || '').includes('write_script_tags') ||
+                             String(data.error || '').includes('403');
+        setScriptStatus({ error: data.error || `HTTP ${r.status}`, scope_issue: isScopeIssue, scripts: [] });
       }
-    } catch {
-      setScriptStatus(null);
+    } catch (err) {
+      setScriptStatus({ error: err.message, scope_issue: false, scripts: [] });
     }
   }
 
@@ -151,8 +157,38 @@ export default function InstallPage() {
 
       {/* Storefront widget install state — only shown when Shopify is connected.
           Reflects what's actually live on the merchant's theme via Shopify's
-          Script Tags API. Reinstall is idempotent; re-runs add anything missing. */}
-      {shopifyConnected && scriptStatus && (
+          Script Tags API. Three states:
+          - scope_issue: the merchant's OAuth token is missing write_script_tags;
+            they need to reinstall the Shopify app to grant the new scope.
+          - error (other): generic failure — show the message + a retry button.
+          - normal: per-script install state with Reinstall CTA. */}
+      {shopifyConnected && scriptStatus && scriptStatus.scope_issue && (
+        <div className="mt-6 bg-amber-50 rounded-xl border border-amber-200 p-6">
+          <h3 className="font-semibold text-amber-900">Reconnect Shopify to finish setup</h3>
+          <p className="text-sm text-amber-800 mt-1">
+            Your Shopify app needs the <code className="text-xs bg-amber-100 px-1 py-0.5 rounded">write_script_tags</code> permission so we can install the Botiga widget on your theme automatically. Reinstalling the Shopify app grants this — your data stays put.
+          </p>
+          <button
+            onClick={connectShopify}
+            className="mt-4 text-sm bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-lg whitespace-nowrap"
+          >
+            Reinstall Shopify app →
+          </button>
+        </div>
+      )}
+      {shopifyConnected && scriptStatus && scriptStatus.error && !scriptStatus.scope_issue && (
+        <div className="mt-6 bg-red-50 rounded-xl border border-red-200 p-6">
+          <h3 className="font-semibold text-red-900">Couldn't check storefront install status</h3>
+          <p className="text-sm text-red-800 mt-1">{scriptStatus.error}</p>
+          <button
+            onClick={() => checkScriptStatus(apiKey)}
+            className="mt-3 text-sm bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 rounded-lg"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {shopifyConnected && scriptStatus && !scriptStatus.error && (
         <div className="mt-6 bg-white rounded-xl border border-gray-100 p-6">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>

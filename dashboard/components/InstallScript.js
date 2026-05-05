@@ -8,11 +8,13 @@ export default function InstallScript({ apiKey }) {
   const [platform, setPlatform] = useState('Any Website');
   const [testMode, setTestMode] = useState(false);
 
-  // Widget files are served by the API server, NOT the dashboard.
-  // The dashboard is a Next.js app — it doesn't serve /n.js or /video.js.
-  // Fall back to the API URL if the explicit WIDGET_URL env isn't set.
+  // Widget files (n.js, video.js, confetti.js) are served exclusively by the
+  // API server. The dashboard is a Next.js app and doesn't serve them.
+  // We deliberately ignore NEXT_PUBLIC_WIDGET_URL — having two URL configs
+  // led to merchants getting a script tag pointing at the dashboard domain
+  // (which 404s on /n.js). One URL, one source of truth.
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://botiga-api-two.vercel.app';
-  const widgetUrl = process.env.NEXT_PUBLIC_WIDGET_URL || apiUrl;
+  const widgetUrl = apiUrl;
   const scriptTag = `<script src="${widgetUrl}/n.js?k=${apiKey}${testMode ? '&test=1' : ''}" data-api="${apiUrl}"></script>`;
 
   const fullScript = `<script
