@@ -23,6 +23,7 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 - ❌ 3-path routing UI — chips that hand off to video / negotiate / search
 - ❌ Returning customer recognition + loyalty tiers (also feeds Pillar 2)
 - ❌ Behavioral triggers beyond dwell-time (scroll depth, exit-intent, cart value)
+- ❌ **Brand-story auto-write** — scrape About Us / IG bio / FB about page → distill into a brand-voice paragraph the concierge bot uses when greeting / answering. Today the merchant has to write this manually if they want it.
 
 **Critical next:** Concierge V1 — proactive pop-up + 3 intent chips + routing. Listed in *What to Build Next → Tier 1*.
 
@@ -39,6 +40,7 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 - ✅ Lead capture, recovery flow, cart bundle negotiation, per-product rules
 - ✅ Plan enforcement, rate limiting, API key auth
 - ✅ Shopify expiring offline tokens + refresh-on-use helper (May 2026 — required by Shopify deprecation of non-expiring tokens)
+- ❌ **Full-price justifications** — 3-5 merchant-supplied (or auto-distilled from About Us / IG) reasons the bot uses to defend price during haggling. e.g. "I can do $199 — hand-finished by artisans, not mass produced." Today the bot only has tone + ladder; no narrative anchor for *why* the price holds.
 - ❌ Returning customer recognition + loyalty tiers (Next — see *Customer Loyalty & Retention*)
 - ❌ Counter-offer floor warnings, exit-intent trigger
 - ❌ Klaviyo / Postscript connectors
@@ -239,6 +241,7 @@ These don't belong to one pillar — they unblock or power multiple:
 | Rate limiting | Shipped | S | Stability | Discussed |
 | API key auth middleware | Shipped | S | Security | Discussed |
 | CORS — wide-open for widget / strict for dashboard | Shipped | S | Security | Discussed |
+| **Full-price justifications** — 3-5 merchant statements (or auto-distilled from About Us / IG) the bot uses to defend price. Stored on `merchant_settings.price_justifications jsonb`, fed into the negotiation system prompt. | **Next** | M | Conversion | Discussed |
 | Counter-offer floor warnings | Backlog | S | Conversion | Suggested |
 | Escalation path tuning by product tag | Backlog | M | Control | Suggested |
 | Post-deal follow-up email (24h reminder) | Backlog | S | Recovery | Suggested |
@@ -489,6 +492,8 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 | Feature | Why | Section |
 |---|---|---|
+| **Brand-story auto-write** — onboarding scrapes About Us / IG bio / FB about → drafts the brand voice paragraph + 3-5 full-price justifications, merchant edits & approves | Removes the "stare at empty textarea" moment from onboarding — same data flows into both Concierge greeting AND Negotiation defense. Nothing else gives one scrape this much downstream leverage. | Pillar 1 + Pillar 2 |
+| **Full-price justifications** — bot uses these as defense lines when offers get aggressive | Today bot only has tone + ladder; no narrative for *why* price holds. Sales-coach-grade negotiation needs reasons, not just numbers. | Negotiation API |
 | **Add-to-cart counter on video** — "🛒 23 people added this" | Data already in DB. One API call. Highest-trust social proof signal — purchase intent, not passive views. | Social Proof |
 | **Scarcity badge from Shopify inventory** — "⚡ Only 4 left" | One Shopify API call per product. Real urgency. Nibble and Tolstoy don't do this. | Social Proof |
 | **Returning customer recognition in concierge** | Rep AI's biggest selling point. Loyalty memory changes the conversation from cold to warm on every return visit. | Customer Loyalty |
@@ -504,4 +509,4 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 ---
 
-*Last updated: 2026-05-04 — onboarding wizard (TurboTax-style live progress + bot persona step), Floating Feed auto-provision, background auto-tag continuation, sidebar reorder; added Agentic Flows section (deferred until post-V1). Previously 2026-05-02 added Strategic Pillars summary; 2026-04-30 added Proactive Agent section.*
+*Last updated: 2026-05-04 — added brand-story auto-write (Pillar 1) + full-price justifications (Pillar 2) as Next-tier items; promoted both into "What to Build Next → Tier 2" since one About Us scrape feeds both. Previously: onboarding wizard (TurboTax-style live progress + bot persona step), Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*

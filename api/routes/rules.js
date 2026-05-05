@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../lib/supabase');
 const { widgetCors } = require('../middleware/cors');
+const { getShopifyAuth } = require('../lib/shopifyToken');
 
 router.use(widgetCors);
 
@@ -10,14 +11,24 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
   const { merchantId } = req.params;
   const { page = 1 } = req.query;
 
-  const { data: merchant } = await supabase
-    .from('merchants')
-    .select('shopify_domain, shopify_access_token')
-    .eq('id', merchantId)
-    .single();
-
-  const domain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN;
-  const token = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+  // Use getShopifyAuth so an expired token gets transparently refreshed before
+  // we hit Shopify. Direct reads of shopify_access_token bypass refresh and
+  // 401 against the May-2026 expiring-token regime.
+  let domain, token;
+  try {
+    ({ domain, token } = await getShopifyAuth(merchantId));
+  } catch (err) {
+    // Refresh itself failed (e.g. refresh_token revoked). Surface as token_invalid
+    // so the UI shows the "Reinstall Botiga" CTA rather than a raw stack trace.
+    console.error(`[shopify-products] auth/refresh failed for ${merchantId}: ${err.message}`);
+    return res.status(200).json({
+      products: [],
+      error: 'token_invalid',
+      message: 'Your Shopify access token was revoked. Reinstall Botiga to reconnect.',
+    });
+  }
+  if (!domain) domain = process.env.SHOPIFY_DOMAIN;
+  if (!token) token = process.env.SHOPIFY_ACCESS_TOKEN;
 
   if (!domain || !token) {
     return res.status(200).json({ products: [], error: 'no_shopify', message: 'Connect your Shopify store first' });
@@ -34,7 +45,17 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
       if (!shopRes.ok) {
         const body = await shopRes.text();
         console.error(`[shopify-products] ${shopRes.status} from domain=${domain}: ${body}`);
-        throw new Error(`Shopify ${shopRes.status} (domain: ${domain}, token: ${token.slice(0,10)}...): ${body}`);
+        // 401 from Shopify after a successful refresh attempt means the token
+        // is genuinely revoked at Shopify's end — surface a reinstall CTA
+        // instead of a raw error string.
+        if (shopRes.status === 401) {
+          return res.status(200).json({
+            products: [],
+            error: 'token_invalid',
+            message: `Reinstall Botiga on ${domain} — Shopify rejected the access token.`,
+          });
+        }
+        throw new Error(`Shopify ${shopRes.status} (domain: ${domain}): ${body}`);
       }
       const { products: batch } = await shopRes.json();
       if (!Array.isArray(batch) || !batch.length) break;
@@ -93,14 +114,19 @@ router.get('/merchants/:merchantId/shopify-products', async (req, res) => {
 router.get('/merchants/:merchantId/shopify-collections', async (req, res) => {
   const { merchantId } = req.params;
 
-  const { data: merchant } = await supabase
-    .from('merchants')
-    .select('shopify_domain, shopify_access_token')
-    .eq('id', merchantId)
-    .single();
-
-  const domain = merchant?.shopify_domain || process.env.SHOPIFY_DOMAIN;
-  const token = merchant?.shopify_access_token || process.env.SHOPIFY_ACCESS_TOKEN;
+  let domain, token;
+  try {
+    ({ domain, token } = await getShopifyAuth(merchantId));
+  } catch (err) {
+    console.error(`[shopify-collections] auth/refresh failed for ${merchantId}: ${err.message}`);
+    return res.status(200).json({
+      collections: [],
+      error: 'token_invalid',
+      message: 'Your Shopify access token was revoked. Reinstall Botiga to reconnect.',
+    });
+  }
+  if (!domain) domain = process.env.SHOPIFY_DOMAIN;
+  if (!token) token = process.env.SHOPIFY_ACCESS_TOKEN;
 
   if (!domain || !token) {
     return res.status(200).json({ collections: [], error: 'no_shopify' });
@@ -112,6 +138,14 @@ router.get('/merchants/:merchantId/shopify-collections', async (req, res) => {
       fetch(`https://${domain}/admin/api/2024-01/custom_collections.json?limit=250`, { headers }),
       fetch(`https://${domain}/admin/api/2024-01/smart_collections.json?limit=250`, { headers })
     ]);
+
+    if (customRes.status === 401 || smartRes.status === 401) {
+      return res.status(200).json({
+        collections: [],
+        error: 'token_invalid',
+        message: `Reinstall Botiga on ${domain} — Shopify rejected the access token.`,
+      });
+    }
 
     const [customData, smartData] = await Promise.all([
       customRes.ok ? customRes.json() : { custom_collections: [] },

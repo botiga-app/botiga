@@ -721,14 +721,24 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
       .map(i => {
         const isVideo = !!(i.is_video || i.media_type === 2 || i.video_url ||
           (Array.isArray(i.video_versions) && i.video_versions.length));
+        // Stable identifier — needed for dedup. Falling back to the
+        // signed video_url breaks dedup because IG signs URLs with an
+        // expiring token, so the same post returns a different URL each
+        // time. Use shortcode → ig post id → null (skip if neither).
+        const stableId = i.shortcode
+          ? `https://www.instagram.com/p/${i.shortcode}/`
+          : (i.id || i.pk ? `ig://${i.id || i.pk}` : null);
         return {
           video_url: isVideo ? (i.video_url || i.video_versions?.[0]?.url || null) : null,
           thumbnail_url: i.thumbnail_url || i.display_url || i.image_versions2?.candidates?.[0]?.url || null,
           caption: (i.caption?.text || i.edge_media_to_caption?.edges?.[0]?.node?.text || '').slice(0, 200),
           post_url: i.shortcode ? `https://www.instagram.com/p/${i.shortcode}/` : null,
+          stable_id: stableId,
         };
       })
-      .filter(p => p.thumbnail_url || p.video_url);
+      // Drop anything we can't reliably dedupe — better to skip an unknown
+      // post than to import the same reel five times.
+      .filter(p => (p.thumbnail_url || p.video_url) && p.stable_id);
     allVideos.push(...pageItems);
 
     const nextMaxId =
@@ -744,14 +754,15 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
 
   if (!posts.length) return res.json({ imported: 0, video_ids: [], message: 'No reels found for this handle.' });
 
-  // Insert (skip dupes by source_url)
+  // Insert (skip dupes by stable_id — IG shortcode or post id, NOT
+  // signed video_url which IG re-signs on every fetch).
   const inserted = [];
   for (const post of posts) {
     const { data: existing } = await supabase
       .from('videos')
       .select('id')
       .eq('merchant_id', merchantId)
-      .eq('source_url', post.post_url || post.video_url)
+      .eq('source_url', post.stable_id)
       .maybeSingle();
     if (existing) continue;
 
@@ -764,7 +775,7 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
         s3_url: post.video_url || null,                  // null for photos — widget shows thumbnail instead
         thumbnail_url: post.thumbnail_url,
         source: 'instagram',
-        source_url: post.post_url || post.video_url,
+        source_url: post.stable_id,                      // stable across fetches
         status: 'active',
       })
       .select('id')
@@ -772,11 +783,43 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
     if (!error && data) inserted.push(data.id);
   }
 
+  // Reseed the Floating Feed widget so newly imported videos show up in
+  // the customer-facing feed without the merchant having to manually
+  // rebuild the widget. Idempotent — replaces all items with the current
+  // active set.
+  let feed_seeded = 0;
+  try {
+    const { data: feed } = await supabase
+      .from('video_widgets')
+      .select('id')
+      .eq('merchant_id', merchantId)
+      .eq('type', 'feed')
+      .limit(1)
+      .maybeSingle();
+    if (feed) {
+      const { data: activeVids } = await supabase
+        .from('videos')
+        .select('id')
+        .eq('merchant_id', merchantId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      await supabase.from('video_widget_items').delete().eq('widget_id', feed.id);
+      if (activeVids?.length) {
+        const items = activeVids.map((v, i) => ({ widget_id: feed.id, video_id: v.id, sort_order: i }));
+        await supabase.from('video_widget_items').insert(items);
+        feed_seeded = activeVids.length;
+      }
+    }
+  } catch (err) {
+    console.error(`[auto-import-latest] feed reseed failed: ${err.message}`);
+  }
+
   res.json({
     handle: cleanHandle,
     fetched: posts.length,
     imported: inserted.length,
     video_ids: inserted,
+    feed_seeded,
     next_step: 'Poll /merchants/:id/videos/auto-tag-tick until has_more=false',
   });
 });

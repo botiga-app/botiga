@@ -288,103 +288,158 @@ function FeedSlide({ video, isActive, onActive, apiKey }) {
   const tags = video.video_product_tags || [];
   const firstTag = tags[0];
 
+  // On desktop / landscape (sm:+) we render a TikTok-on-desktop layout:
+  // a phone-shaped video panel centered with side rail + caption stacked
+  // OUTSIDE the video to its right. On mobile we keep the classic full-
+  // screen overlay style (controls on top of video). The breakpoint is
+  // viewport-driven via Tailwind's sm: utility.
   return (
     <div
       ref={slideRef}
       id={`feed-slide-${video.id}`}
       className="snap-start h-[100dvh] w-full relative bg-black flex items-center justify-center overflow-hidden"
     >
-      {/* Media — video if s3_url present, else thumbnail image */}
-      {video.s3_url ? (
-        <video
-          ref={videoRef}
-          src={video.s3_url}
-          loop
-          muted={muted}
-          playsInline
-          className="w-full h-full object-cover"
-        />
-      ) : video.thumbnail_url ? (
-        <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
-      ) : (
-        <div className="text-white/40 text-sm">No preview</div>
-      )}
+      {/* Wrapper that pairs the video panel + the desktop side rail.
+          On mobile only the video panel renders; the side rail is hidden. */}
+      <div className="relative h-full flex items-center gap-4">
+        {/* Phone-shaped video panel. On wide viewports it stays at native
+            9:16 ratio (no horizontal stretch); on mobile it fills the
+            entire screen. max-h-[100dvh] keeps it within viewport always. */}
+        <div className="relative h-full sm:h-[min(100dvh,90vh)] w-screen sm:w-auto sm:aspect-[9/16] sm:max-h-[min(100dvh,90vh)] bg-black sm:rounded-2xl overflow-hidden shadow-2xl">
+          {video.s3_url ? (
+            <video
+              ref={videoRef}
+              src={video.s3_url}
+              loop
+              muted={muted}
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          ) : video.thumbnail_url ? (
+            <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-white/40 text-sm">No preview</div>
+          )}
 
-      {/* Gradient overlays for legibility */}
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
-      <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+          {/* Gradient overlays for legibility */}
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
-      {/* Right-side action rail (like + share + mute). On wide viewports
-          this anchors to the same edge as the caption/product card so the
-          two elements stay visually paired instead of drifting apart. */}
-      <div className="absolute right-[max(0.75rem,calc((100vw-28rem)/2-3rem))] bottom-32 flex flex-col items-center gap-4 z-10">
-        <button
-          onClick={handleLike}
-          className={`w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-2xl text-white transition-transform ${
-            popping ? 'scale-125' : 'hover:scale-110'
-          }`}
-          style={popping ? { animation: '_btgv_heart_btn_pop 500ms cubic-bezier(.34,1.56,.64,1)' } : undefined}
-          aria-label="Like"
-        >
-          {liked ? '❤️' : '🤍'}
-        </button>
-        <button
-          onClick={() => navigator.share ? navigator.share({ url: window.location.href }) : navigator.clipboard.writeText(window.location.href)}
-          className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-xl text-white hover:scale-110 transition-transform"
-          aria-label="Share"
-        >
-          ↗
-        </button>
-        {video.s3_url && (
-          <button
-            onClick={() => setMuted(m => !m)}
-            className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-lg text-white hover:scale-110 transition-transform"
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted ? '🔇' : '🔊'}
-          </button>
-        )}
-      </div>
-
-      {/* Bottom — caption + product card with action buttons. Capped at
-          max-w-md and centered so on a wide desktop it stays a phone-shaped
-          column instead of stretching edge-to-edge. */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-3 w-[min(28rem,calc(100vw-1.5rem))] z-10">
-        {video.title && (
-          <p className="text-white text-sm leading-snug mb-3 line-clamp-2 drop-shadow-md max-w-[80%]">
-            {video.title}
-          </p>
-        )}
-
-        {firstTag ? (
-          <div className="bg-white/95 backdrop-blur rounded-xl p-2.5 flex items-center gap-3 shadow-lg">
-            {firstTag.image_url ? (
-              <img src={firstTag.image_url} alt="" className="w-12 h-12 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
-            ) : (
-              <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0" />
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900 truncate">{firstTag.product_name}</div>
-              <div className="text-xs text-gray-600">
-                {firstTag.price != null && <span className="font-medium">${firstTag.price}</span>}
-                {firstTag.compare_at_price && firstTag.compare_at_price > firstTag.price && (
-                  <span className="ml-2 text-gray-400 line-through">${firstTag.compare_at_price}</span>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-1.5 flex-shrink-0">
-              <ActionBtn label="🛒" subtle title="Add to cart" />
-              <ActionBtn label="⚡" buy title="Buy now" />
-              <ActionBtn label="🤝" negotiate title="Negotiate" />
-            </div>
+          {/* Mobile-only overlay: action rail */}
+          <div className="sm:hidden absolute right-3 bottom-32 flex flex-col items-center gap-4 z-10">
+            <ActionRail
+              liked={liked}
+              popping={popping}
+              muted={muted}
+              hasVideo={!!video.s3_url}
+              onLike={handleLike}
+              onShare={() => navigator.share ? navigator.share({ url: window.location.href }) : navigator.clipboard.writeText(window.location.href)}
+              onToggleMute={() => setMuted(m => !m)}
+            />
           </div>
-        ) : (
-          <div className="bg-white/10 backdrop-blur border border-white/15 rounded-xl px-3 py-2 text-white/70 text-xs">
-            No products tagged yet
+
+          {/* Mobile-only overlay: caption + product card */}
+          <div className="sm:hidden absolute inset-x-3 bottom-3 z-10">
+            <CaptionBlock video={video} firstTag={firstTag} />
           </div>
-        )}
+        </div>
+
+        {/* Desktop-only side panel: action rail + caption + product card,
+            stacked vertically OUTSIDE the video so nothing overlays the
+            footage. Hidden below sm. */}
+        <div className="hidden sm:flex flex-col items-stretch gap-4 w-[min(22rem,30vw)] max-h-[min(100dvh,90vh)]">
+          <div className="flex items-center gap-3 self-end">
+            <ActionRail
+              liked={liked}
+              popping={popping}
+              muted={muted}
+              hasVideo={!!video.s3_url}
+              onLike={handleLike}
+              onShare={() => navigator.share ? navigator.share({ url: window.location.href }) : navigator.clipboard.writeText(window.location.href)}
+              onToggleMute={() => setMuted(m => !m)}
+              horizontal
+            />
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            <CaptionBlock video={video} firstTag={firstTag} desktop />
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+// Action rail — vertical column on mobile, horizontal row on desktop.
+function ActionRail({ liked, popping, muted, hasVideo, onLike, onShare, onToggleMute, horizontal }) {
+  const layout = horizontal ? 'flex-row gap-3' : 'flex-col gap-4';
+  const btn = 'w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-white transition-transform';
+  return (
+    <div className={`flex ${layout}`}>
+      <button
+        onClick={onLike}
+        className={`${btn} text-2xl ${popping ? 'scale-125' : 'hover:scale-110'}`}
+        style={popping ? { animation: '_btgv_heart_btn_pop 500ms cubic-bezier(.34,1.56,.64,1)' } : undefined}
+        aria-label="Like"
+      >
+        {liked ? '❤️' : '🤍'}
+      </button>
+      <button onClick={onShare} className={`${btn} text-xl hover:scale-110`} aria-label="Share">
+        ↗
+      </button>
+      {hasVideo && (
+        <button onClick={onToggleMute} className={`${btn} text-lg hover:scale-110`} aria-label={muted ? 'Unmute' : 'Mute'}>
+          {muted ? '🔇' : '🔊'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Caption + product card. Mobile renders at the bottom-overlay; desktop
+// renders in the side panel with a slightly different background treatment.
+function CaptionBlock({ video, firstTag, desktop }) {
+  const captionCls = desktop
+    ? 'text-white/90 text-sm leading-snug mb-3 line-clamp-3'
+    : 'text-white text-sm leading-snug mb-3 line-clamp-2 drop-shadow-md max-w-[80%]';
+  const cardCls = desktop
+    ? 'bg-white/[.06] backdrop-blur border border-white/10 rounded-xl p-3 flex items-center gap-3'
+    : 'bg-white/95 backdrop-blur rounded-xl p-2.5 flex items-center gap-3 shadow-lg';
+  const titleCls = desktop ? 'text-sm font-semibold text-white truncate' : 'text-sm font-semibold text-gray-900 truncate';
+  const priceCls = desktop ? 'text-xs text-white/70' : 'text-xs text-gray-600';
+  const strikeCls = desktop ? 'ml-2 text-white/40 line-through' : 'ml-2 text-gray-400 line-through';
+  const emptyCls = desktop
+    ? 'bg-white/[.04] border border-white/10 rounded-xl px-3 py-2 text-white/60 text-xs'
+    : 'bg-white/10 backdrop-blur border border-white/15 rounded-xl px-3 py-2 text-white/70 text-xs';
+
+  return (
+    <>
+      {video.title && <p className={captionCls}>{video.title}</p>}
+      {firstTag ? (
+        <div className={cardCls}>
+          {firstTag.image_url ? (
+            <img src={firstTag.image_url} alt="" className="w-12 h-12 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
+          ) : (
+            <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className={titleCls}>{firstTag.product_name}</div>
+            <div className={priceCls}>
+              {firstTag.price != null && <span className="font-medium">${firstTag.price}</span>}
+              {firstTag.compare_at_price && firstTag.compare_at_price > firstTag.price && (
+                <span className={strikeCls}>${firstTag.compare_at_price}</span>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <ActionBtn label="🛒" subtle title="Add to cart" />
+            <ActionBtn label="⚡" buy title="Buy now" />
+            <ActionBtn label="🤝" negotiate title="Negotiate" />
+          </div>
+        </div>
+      ) : (
+        <div className={emptyCls}>No products tagged yet</div>
+      )}
+    </>
   );
 }
 

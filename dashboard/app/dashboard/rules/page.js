@@ -68,9 +68,11 @@ export default function RulesPage() {
       const merchantData = await merchantRes.json();
 
       if (productsData.error === 'no_shopify') {
-        setError('no_shopify');
+        setError({ kind: 'no_shopify' });
+      } else if (productsData.error === 'token_invalid') {
+        setError({ kind: 'token_invalid', message: productsData.message });
       } else if (productsData.error) {
-        setError(productsData.error);
+        setError({ kind: 'other', message: productsData.message || productsData.error });
       } else if (productsData.products) {
         setProducts(productsData.products);
         setTagRules(productsData.tag_rules || {});
@@ -79,7 +81,7 @@ export default function RulesPage() {
       const disc = merchantData?.merchant_settings?.max_discount_pct;
       if (disc) setGlobalDiscount(disc);
     } catch (e) {
-      setError(e.message);
+      setError({ kind: 'other', message: e.message });
     }
     setLoading(false);
   }, []);
@@ -259,14 +261,23 @@ export default function RulesPage() {
     return (
       <div className="p-8 max-w-2xl space-y-3">
         <h2 className="text-xl font-bold text-gray-900">Negotiation Rules</h2>
-        {error === 'no_shopify' ? (
+        {error.kind === 'no_shopify' ? (
           <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-6 text-sm text-yellow-800">
             <strong>Shopify not connected.</strong> Connect your store to manage negotiation rules.
             <br /><a href="/dashboard/install" className="underline mt-2 inline-block">Go to Install →</a>
           </div>
+        ) : error.kind === 'token_invalid' ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-sm text-amber-900">
+            <strong>Reconnect Shopify.</strong>
+            <p className="mt-1">{error.message || 'Your Shopify access token was revoked. Reinstall Botiga to reconnect.'}</p>
+            <p className="text-amber-700 text-xs mt-2">This usually happens after uninstalling the app, switching dev stores, or a long inactivity period.</p>
+            <a href="/dashboard/install" className="inline-block mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-sm transition-colors">
+              Reinstall Botiga →
+            </a>
+          </div>
         ) : (
           <div className="bg-red-50 border border-red-100 rounded-xl p-6 text-sm text-red-800">
-            <strong>Failed to load products:</strong> <code className="ml-1">{error}</code>
+            <strong>Failed to load products:</strong> <code className="ml-1">{error.message}</code>
             <br /><span className="text-red-600 mt-1 block">Check that your Shopify store is connected and the access token is valid.</span>
             <a href="/dashboard/install" className="underline mt-2 inline-block">Go to Install →</a>
           </div>

@@ -1901,6 +1901,8 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
           const pData = await pRes.json();
           if (pData.error === 'no_shopify') {
             setFetchError('Connect your Shopify store first to load products.');
+          } else if (pData.error === 'token_invalid') {
+            setFetchError(pData.message || 'Reinstall Botiga — Shopify rejected the access token.');
           } else {
             setProducts(pData.products || []);
             const tagSet = new Set();
@@ -1909,7 +1911,7 @@ function ProductPicker({ video, merchantId, existingTagIds, onTagAdded }) {
           }
         } else {
           const body = await pRes.json().catch(() => ({}));
-          setFetchError(body.error || `Couldn't load products (HTTP ${pRes.status})`);
+          setFetchError(body.message || body.error || `Couldn't load products (HTTP ${pRes.status})`);
         }
 
         if (cRes.ok) {
