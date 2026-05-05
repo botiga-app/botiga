@@ -1,7 +1,54 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { createClient } from '../../../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
+
+// Persistent per-browser id so the API can dedupe / attribute events.
+function sessionId() {
+  if (typeof window === 'undefined') return null;
+  let id = localStorage.getItem('_btgv_sid');
+  if (!id) {
+    id = (crypto?.randomUUID?.() || `s_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem('_btgv_sid', id);
+  }
+  return id;
+}
+
+// Full-screen heart particle burst. Each call spawns a stagger of 6-10 hearts
+// that float up from the bottom-third of the viewport with random drift,
+// rotation, and fade. Fires for both the user's own click (instant) and for
+// other users' likes (via Supabase Realtime UPDATE on videos.likes_count).
+const HEART_GLYPHS = ['❤️', '🧡', '💕', '💗', '💖', '💓', '💝', '🌟'];
+function spawnHearts(burstSize) {
+  if (typeof document === 'undefined') return;
+  const count = burstSize || (6 + Math.floor(Math.random() * 5));
+  for (let i = 0; i < count; i++) {
+    const delay = i * 70;
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = '_btgv_heart';
+      el.textContent = HEART_GLYPHS[Math.floor(Math.random() * HEART_GLYPHS.length)];
+      const size = 22 + Math.random() * 44;
+      // Spawn from a "thumb-up" zone — bottom-right cluster, drifting up + slightly left
+      const startX = window.innerWidth - 80 - Math.random() * 60;
+      const startY = window.innerHeight - 140 - Math.random() * 80;
+      const dx = -40 - Math.random() * 100;
+      const dy = -(window.innerHeight * (0.55 + Math.random() * 0.35));
+      const dur = (1.6 + Math.random() * 1.2).toFixed(2);
+      const rot = ((Math.random() - 0.5) * 30).toFixed(1);
+      const rot2 = ((Math.random() - 0.5) * 60).toFixed(1);
+      el.style.cssText =
+        `position:fixed;left:${startX}px;top:${startY}px;font-size:${size}px;` +
+        `pointer-events:none;z-index:9999;will-change:transform,opacity;` +
+        `--dx:${dx}px;--dy:${dy}px;--dur:${dur}s;--rot:${rot}deg;--rot2:${rot2}deg;` +
+        `animation:_btgv_heart_float var(--dur) cubic-bezier(.22,.61,.36,1) forwards;` +
+        `filter:drop-shadow(0 4px 12px rgba(247,37,133,.35));`;
+      document.body.appendChild(el);
+      el.addEventListener('animationend', () => el.remove());
+    }, delay);
+  }
+}
 
 // Public, shareable preview at /preview/[merchantId]
 // Renders the vertical TikTok-style shoppable feed exactly as customers see it.
@@ -63,6 +110,40 @@ export default function PreviewPage({ params }) {
     });
   }
 
+  // Cross-user like animation. We subscribe to UPDATE on videos.likes_count
+  // for the *active* video and pop hearts whenever the count climbs (which
+  // means another viewer just liked). The user's own click also pops hearts
+  // optimistically below — we suppress the realtime echo for our own writes
+  // by tracking `prev` per video and only firing when count *grows*.
+  const activeVideo = videos[activeIdx];
+  useEffect(() => {
+    if (!activeVideo?.id) return;
+    const supa = createClient();
+    let prev = activeVideo.likes_count ?? null;
+    const channel = supa.channel(`btgv_preview_${activeVideo.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'videos',
+        filter: `id=eq.${activeVideo.id}`,
+      }, payload => {
+        const next = payload.new?.likes_count;
+        if (next == null) return;
+        if (prev != null && next > prev) {
+          // Cap the burst so a flood of likes doesn't lock the browser
+          const diff = Math.min(next - prev, 6);
+          for (let i = 0; i < diff; i++) {
+            setTimeout(() => spawnHearts(8), i * 140);
+          }
+        }
+        prev = next;
+        // Mirror count back into local state so the displayed counter stays fresh
+        setVideos(vs => vs.map(v => v.id === activeVideo.id ? { ...v, likes_count: next } : v));
+      })
+      .subscribe();
+    return () => { supa.removeChannel(channel); };
+  }, [activeVideo?.id]);
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -76,77 +157,114 @@ export default function PreviewPage({ params }) {
   }
 
   return (
-    <div className="min-h-screen bg-black">
-      {/* Top bar (preview chrome — not on real storefront) */}
-      <div className="bg-white/95 backdrop-blur border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {merchant?.logo_url && (
-              <img src={merchant.logo_url} alt="" className="w-7 h-7 rounded object-cover bg-white border border-gray-100 flex-shrink-0" />
-            )}
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-900 truncate">{merchant?.name || 'Preview'}</div>
-              <div className="text-[11px] text-gray-500 truncate">Customer view · Botiga shoppable feed</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={copyShareLink}
-              className="text-[11px] font-medium px-3 py-1.5 rounded-full text-white"
-              style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}
-              title="Copy a public link to share"
-            >
-              {copied ? '✓ Copied' : '🔗 Share'}
-            </button>
-            <a
-              href="/dashboard/videos"
-              className="text-[11px] font-medium px-3 py-1.5 rounded-full bg-gray-900 hover:bg-gray-800 text-white transition-colors"
-            >
-              ← Dashboard
-            </a>
-          </div>
+    <div className="h-[100dvh] w-screen bg-black overflow-hidden relative">
+      {/* Keyframes for heart particles + button bounce. Scoped at the page
+          root so spawnHearts() can append to document.body and still pick
+          them up. */}
+      <style jsx global>{`
+        @keyframes _btgv_heart_float {
+          0%   { transform: translate(0,0) rotate(var(--rot)); opacity: 0; }
+          15%  { opacity: 1; }
+          80%  { opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot2)); opacity: 0; }
+        }
+        @keyframes _btgv_heart_btn_pop {
+          0%   { transform: scale(1); }
+          40%  { transform: scale(1.4); }
+          70%  { transform: scale(0.92); }
+          100% { transform: scale(1.1); }
+        }
+      `}</style>
+      {/* Floating chrome — preview-only, not on real storefront. Lifted off the
+          feed so each slide gets the full viewport. Top-left = store badge,
+          top-right = share + back to dashboard. */}
+      <div className="absolute top-3 left-3 z-30 flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full pl-1.5 pr-3 py-1.5 border border-white/10">
+        {merchant?.logo_url ? (
+          <img src={merchant.logo_url} alt="" className="w-7 h-7 rounded-full object-cover bg-white flex-shrink-0" />
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-white/20 flex-shrink-0" />
+        )}
+        <div className="text-xs font-semibold text-white truncate max-w-[40vw]">
+          {merchant?.name || 'Preview'}
         </div>
       </div>
 
-      {/* Feed — vertical scroll snap */}
-      <div className="max-w-md mx-auto bg-black">
-        {loading ? (
-          <div className="h-screen flex items-center justify-center text-gray-400 text-sm">Loading feed…</div>
-        ) : videos.length === 0 ? (
-          <div className="h-screen flex flex-col items-center justify-center text-gray-400 text-sm gap-2">
-            <span className="text-3xl">🎬</span>
-            <p>No videos yet</p>
-            <a href="/dashboard/videos" className="text-xs text-indigo-300 underline">Add some →</a>
-          </div>
-        ) : (
-          <div
-            className="h-[100dvh] overflow-y-scroll snap-y snap-mandatory"
-            style={{ scrollbarWidth: 'none' }}
-          >
-            <style>{`
-              .feed-scroll::-webkit-scrollbar { display: none }
-            `}</style>
-            {videos.map((v, idx) => (
-              <FeedSlide
-                key={v.id}
-                video={v}
-                isActive={idx === activeIdx}
-                onActive={() => setActiveIdx(idx)}
-              />
-            ))}
-          </div>
-        )}
+      <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+        <button
+          onClick={copyShareLink}
+          className="text-[11px] font-semibold px-3 py-1.5 rounded-full text-white shadow-lg"
+          style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}
+          title="Copy a public link to share"
+        >
+          {copied ? '✓ Copied' : '🔗 Share'}
+        </button>
+        <a
+          href="/dashboard/videos"
+          className="text-[11px] font-semibold px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10 hover:bg-black/70 text-white transition-colors"
+        >
+          ← Dashboard
+        </a>
       </div>
+
+      {/* Feed — full-screen vertical scroll snap. No max-width container; each
+          slide spans the full viewport height + width. */}
+      {loading ? (
+        <div className="h-full flex items-center justify-center text-gray-400 text-sm">Loading feed…</div>
+      ) : videos.length === 0 ? (
+        <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm gap-2">
+          <span className="text-3xl">🎬</span>
+          <p>No videos yet</p>
+          <a href="/dashboard/videos" className="text-xs text-indigo-300 underline">Add some →</a>
+        </div>
+      ) : (
+        <div
+          className="feed-scroll h-full overflow-y-scroll snap-y snap-mandatory"
+          style={{ scrollbarWidth: 'none' }}
+        >
+          <style>{`
+            .feed-scroll::-webkit-scrollbar { display: none }
+          `}</style>
+          {videos.map((v, idx) => (
+            <FeedSlide
+              key={v.id}
+              video={v}
+              isActive={idx === activeIdx}
+              onActive={() => setActiveIdx(idx)}
+              apiKey={merchant?.api_key}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 // One full-screen video slide in the feed
-function FeedSlide({ video, isActive, onActive }) {
+function FeedSlide({ video, isActive, onActive, apiKey }) {
   const videoRef = useRef(null);
   const slideRef = useRef(null);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState(false);
+  const [popping, setPopping] = useState(false); // drives the heart-button bounce on click
+
+  async function handleLike() {
+    // Optimistic pop — hearts spawn instantly so the user gets feedback
+    // even before the network round-trip lands.
+    spawnHearts();
+    setLiked(true);
+    setPopping(true);
+    setTimeout(() => setPopping(false), 500);
+    if (!apiKey) return;
+    try {
+      await fetch(`${API}/api/widget/videos/${video.id}/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ k: apiKey, event_type: 'like', session_id: sessionId() }),
+      });
+    } catch {
+      // Best-effort — don't reverse the optimistic UI on transient network errors
+    }
+  }
 
   // Auto-pause when out of view, autoplay when scrolled into view
   useEffect(() => {
@@ -196,11 +314,16 @@ function FeedSlide({ video, isActive, onActive }) {
       <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
-      {/* Right-side action rail (like + share + mute) */}
-      <div className="absolute right-3 bottom-32 flex flex-col items-center gap-4 z-10">
+      {/* Right-side action rail (like + share + mute). On wide viewports
+          this anchors to the same edge as the caption/product card so the
+          two elements stay visually paired instead of drifting apart. */}
+      <div className="absolute right-[max(0.75rem,calc((100vw-28rem)/2-3rem))] bottom-32 flex flex-col items-center gap-4 z-10">
         <button
-          onClick={() => setLiked(l => !l)}
-          className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-2xl text-white hover:scale-110 transition-transform"
+          onClick={handleLike}
+          className={`w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-2xl text-white transition-transform ${
+            popping ? 'scale-125' : 'hover:scale-110'
+          }`}
+          style={popping ? { animation: '_btgv_heart_btn_pop 500ms cubic-bezier(.34,1.56,.64,1)' } : undefined}
           aria-label="Like"
         >
           {liked ? '❤️' : '🤍'}
@@ -223,8 +346,10 @@ function FeedSlide({ video, isActive, onActive }) {
         )}
       </div>
 
-      {/* Bottom — caption + product card with action buttons */}
-      <div className="absolute inset-x-3 bottom-3 z-10">
+      {/* Bottom — caption + product card with action buttons. Capped at
+          max-w-md and centered so on a wide desktop it stays a phone-shaped
+          column instead of stretching edge-to-edge. */}
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-3 w-[min(28rem,calc(100vw-1.5rem))] z-10">
         {video.title && (
           <p className="text-white text-sm leading-snug mb-3 line-clamp-2 drop-shadow-md max-w-[80%]">
             {video.title}
