@@ -921,7 +921,18 @@ function Step4LiveProgress({ user, merchant, detected, botName, botAvatar, goToD
         </div>
       )}
 
-      <div className="mt-8 flex justify-center">
+      <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+        {allDone && merchant?.shopify_domain && (
+          <a
+            href={`https://${merchant.shopify_domain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/`}
+            target="_blank"
+            rel="noreferrer"
+            className="px-8 py-3 text-base font-semibold rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-800 transition-colors"
+            title="Opens your storefront in a new tab — see what customers see"
+          >
+            See my live feed ↗
+          </a>
+        )}
         <button
           onClick={goToDashboard}
           disabled={!allDone && !error}

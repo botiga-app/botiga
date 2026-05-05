@@ -105,6 +105,98 @@ These don't belong to one pillar — they unblock or power multiple:
 
 ---
 
+## IG Ad Funnel
+
+> Customer taps a sponsored Instagram reel → lands on the merchant's vertical video feed. They've never heard of Botiga and have no context. The 5-second window decides whether they bounce, browse, or buy. This is the single highest-leverage funnel we have: IG ad spend is the dominant discovery channel for fashion/lifestyle merchants, and winning here makes Botiga merchants' ROAS measurably better than any TikTok-style-but-not-shoppable competitor.
+
+> The strategic asset that makes this funnel uniquely winnable: **we know exactly which video the shopper came from** (deep-linked from the ad). Every layer of the experience can anchor on that.
+
+### Buyer journey — what the shopper experiences
+
+> Stories are written from the shopper's POV. Persona = "Maya," a 28-year-old who tapped a sponsored reel on her phone, has never heard of Botiga, and has ~5 seconds of patience.
+
+**B1 · The video I tapped plays first** — `Tier 1 · Next · S`
+> *As Maya arriving from an IG sponsored reel, I want the exact video I tapped on to play immediately, so the transition from ad to shop feels seamless and I don't have to hunt.*
+**Acceptance:** `?v=<video_id>` deep-link scrolls feed to that video on first paint. Source video metadata flows into Concierge as conversational context. SSR pre-renders the right OG tags so the IG preview also looks right.
+
+**B2 · I learn the price is negotiable in 5 seconds** — `Tier 1 · Next · S`
+> *As Maya who's never used Botiga, I want to immediately understand that prices here can be negotiated, so I get what makes this feed different from any other Instagram shop.*
+**Acceptance:** Welcome banner slides up over slide 1 after 1.5s: *"Every item here is negotiable. Tap 🤝 to make an offer — or 💬 ask anything."* Dismissible, auto-fades at 6s. Re-appears as a small `🤝 Negotiable` chip if the user swipes past 3 slides without tapping anything.
+
+**B3 · The price tag tells me there's room to move** — `Tier 1 · Next · S`
+> *As Maya looking at a product card, I want the price line to telegraph that the listed price is a starting point, so I instinctively understand I could pay less.*
+**Acceptance:** Product card shows list price + a smaller "as low as $X" hint computed from `merchant_settings.max_discount_pct` (or per-product rule). Subtle pulse animation on the 🤝 button on slide 1 only; calmer afterwards.
+
+**B4 · The brand looks legit** — `Tier 1 · Next · XS`
+> *As Maya who just tapped an ad and lands on an unfamiliar feed, I want a small brand badge that confirms this is the actual merchant, but I don't want a header that pulls me out of the feed.*
+**Acceptance:** Top-left small pill with merchant logo + name on backdrop blur. Tap → opens merchant homepage in a new tab. No other merchant chrome until the customer engages.
+
+**B5 · There's a bot I can ask** — `Tier 1 · Next · M`
+> *As Maya with a sizing or returns question, I want a familiar chat bubble in the corner, so I can get an answer without leaving the feed.*
+**Acceptance:** Floating concierge bubble bottom-right with the merchant's bot avatar (from `merchant_settings.bot_avatar_url`). After 8s of dwell, soft pulse + "1" badge. Tap opens slide-over chat pre-loaded with the source-video product context — *"Saw you watching the [yellow midi dress]. Want to see styles like it, or shall I help you make an offer?"*. Distinct from Situation 2's tile-between-videos surface — IG-arrival shoppers are too cold for inline interruption; bubble pattern wins.
+
+**B6 · I see other people doing this** — `Tier 2 · Next · M`
+> *As Maya considering an unfamiliar action (negotiating with a bot), I want to see real activity from other shoppers, so the action feels safe and normal — not weird.*
+**Acceptance:** Subtle toast slides in top-center for 4s every 30-45s of scroll. Pulled from real recent `negotiations` table data — *"Maria from Austin just got 15% off the Dayton Bag · 4 minutes ago"*. Hard rule: only real activity, never fabricated. Killswitch in admin.
+
+**B7 · The bot speaks only when it has something useful to say** — `Tier 3 · Backlog · L`
+> *As Maya, I don't want the bot interrupting me randomly, but I do want it to surface help when I'm clearly stuck — so it feels helpful, not pushy.*
+**Acceptance:** Reactive triggers based on session signals. Each fires at most once per session: scrolled 5 with 0 likes → *"Want me to narrow it down?"*; liked 2+ same product → *"Looks like the [Dayton Bag] caught your eye"*; time-on-video > 10s → *"Want a closer look?"*; watched 2x → *"Decided to come back to this one?"*
+
+**B8 · I can take this with me** — `Tier 2 · Next · M`
+> *As Maya about to leave without buying, I want to text or email myself the link, so the impulse buy doesn't have to happen right now and I have a way back.*
+**Acceptance:** Save-the-shop exit captures phone or email on `mouseleave` to top edge, browser back gesture, or tab-blur. Sends follow-up SMS/email with: deep-link to where they were + a soft re-engagement hook ("Sage remembered our conversation"). Reuses existing recovery flow plumbing.
+
+**B9 · There's only one obvious next thing to do** — `Tier 2 · Next · M`
+> *As Maya, I want exactly one clear next action visible at any moment, so I'm not paralyzed by competing CTAs.*
+**Acceptance:** CTA cascade — primary action escalates with engagement. First 5s no CTA (pure content). Welcome banner appears. Then 🤝 pulses on next product card. After 2 likes on same product → bubble pulses with "Want to make an offer?" Etc. Never two competing CTAs visible simultaneously.
+
+### Merchant value — what the seller gets
+
+> Stories from the merchant's POV. Persona = "Rachel," who runs a Shopify store and spends $5K/month on IG ads.
+
+**M1 · My feed lives on my domain, not Botiga's** — `Tier 2 · Next · M`
+> *As Rachel running IG ads, I want the feed URL to be on my own Shopify domain, so the ad-to-shop transition keeps my SEO equity and brand authority — and customers don't see "botiga.ai" in the URL.*
+**Acceptance:** Shopify App Block / theme integration so merchants can drop the feed onto `/pages/shop` or any theme template. Feed renders inside their theme's chrome (header/footer). Path: `https://shop.com/pages/shop?v=<id>`.
+
+**M2 · Botiga-hosted fallback for fast-start merchants** — `Tier 0 · Shipped`
+> *As Rachel who wants to start running IG ads tomorrow without touching theme code, I want a hosted feed URL that's immediately shareable, so I can A/B test before committing to theme integration.*
+**Acceptance:** `/preview/[merchantId]` works as a public, customer-facing feed today. Shareable link, no auth.
+
+**M3 · Custom domain for serious merchants** — `Tier 3 · Later · L`
+> *As an enterprise merchant, I want to host the feed at `shop.<my-domain>.com` so customers never see "myshopify.com" or "botiga.ai" in the URL — the experience feels fully native.*
+**Acceptance:** CNAME setup per merchant. Botiga serves the feed but DNS makes it appear on merchant's subdomain.
+
+**M4 · I can see which IG ads convert** — `Tier 2 · Next · M`
+> *As Rachel spending money on IG ads, I want to see UTM-tracked conversion funnels per ad creative, so I know which video drives the most revenue per dollar — and I can shut off the duds.*
+**Acceptance:** New "IG Ad Funnel" tab in merchant dashboard. Per UTM source/campaign/content row: views → likes → bot engagements → negotiations → purchases → AOV → 30-day repeat rate. Bot-vs-no-bot lift comparison so Rachel can see Botiga's incremental contribution.
+
+**M5 · Customers we don't close still become leads** — `Tier 2 · Next · M (depends on B8)`
+> *As Rachel whose CAC on IG is high, I want even non-converters to be captured as warm leads, so the ad spend isn't wasted on visitors who bounce.*
+**Acceptance:** Save-the-shop captures convert into the merchant's `customers` table with full UTM attribution. Re-engagement via email/SMS at 24h, 3d, 7d intervals. Each touch references the specific video they came in from.
+
+### Infrastructure — what we need under the hood
+
+**I1 · Deep-link routing** — `Tier 1 · Next · S`
+> *As an engineer, I want a single URL pattern that supports `?v=<id>` and `/v/<id>` formats, so IG ads can use either share-friendly or query-friendly links interchangeably.*
+**Acceptance:** Both formats resolve to the same feed slot. SSR picks up the deep-link for OG tag generation (so IG previews and Twitter cards look right when the link is shared).
+
+**I2 · Source video as concierge context** — `Tier 1 · Next · S`
+> *As an engineer, I want the deep-link video ID and its tagged product threaded into every concierge call as system context, so the bot can reference what the shopper came in from.*
+**Acceptance:** `POST /api/concierge/respond` accepts `entry_video_id`. System prompt includes "The shopper arrived from <video title> tagged to <product>" so the very first concierge greeting can anchor on it.
+
+**I3 · Open graph + Twitter card SSR** — `Tier 2 · Backlog · S`
+> *As a merchant sharing the feed link on social media or in IG bios, I want the link preview to show the source video thumbnail + product, so the share looks polished and clickable.*
+**Acceptance:** SSR sets `og:image` to the source video thumbnail, `og:title` to "<product> — negotiate now at <merchant>", `og:description` to a brand-voice teaser pulled from `merchant_settings.brand_value_statements[0]`.
+
+### Sequencing — what to ship first
+
+The first three (B1, B2, B3) plus I1+I2 are ~½ day combined and lift the moat from invisible to obvious for every IG-arrival shopper. B5 (bubble Concierge) is the bigger ship but naturally follows. M4 (attribution dashboard) is what gets merchants to *upgrade* — it's the data they need to justify their ad spend to themselves and their CFO.
+
+**Ship order:** B1 → B2 → B3 → I1 → I2 → B4 → B8 → B5 → M4 → B6 → M1 → B9 → M5 → I3 → B7 → M3.
+
+---
+
 ## Shoppable Video
 
 > Video shopping overlay — customer watches, negotiates, and checks out without leaving the video.
@@ -484,8 +576,9 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 | Feature | Why now | Section |
 |---|---|---|
+| **IG Ad Funnel buyer-side V1** — B1+B2+B3+I1+I2 (deep-link source video, welcome banner, "as low as" price hint, concierge context) | Highest-leverage funnel; solves the "shoppers from IG don't know they can negotiate" problem in ~½ day total. Merchants run IG ads daily — every day this is unfixed is bounced ad spend. | IG Ad Funnel |
 | **Floating video launcher** | Removes the only reason merchants hesitate. Zero homepage changes. Transforms video widget install story from "edit your theme" to "paste one tag." Prerequisite for the concierge. | Shoppable Video |
-| **Concierge V1** — proactive pop-up, 3 intent chips, routes to video/negotiate/search | The product that unifies everything. Differentiates from every competitor. Rep AI proves the category works. V1 just needs: trigger timing, 3 paths, handoff to existing tools. | New |
+| **Concierge V1** — proactive pop-up, 3 intent chips, routes to video/negotiate/search | The product that unifies everything. Differentiates from every competitor. Rep AI proves the category works. V1 just needs: trigger timing, 3 paths, handoff to existing tools. Pairs with IG Ad Funnel B5 (bubble surface). | New |
 | **Product page auto-inject** | Script detects `/products/` URLs, injects video shelf + negotiate button automatically. Merchants never touch a template. Second-lowest friction install after the launcher. | Shoppable Video |
 
 ### Tier 2 — Build soon (conversion + FOMO)
@@ -509,4 +602,4 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 ---
 
-*Last updated: 2026-05-04 — added brand-story auto-write (Pillar 1) + full-price justifications (Pillar 2) as Next-tier items; promoted both into "What to Build Next → Tier 2" since one About Us scrape feeds both. Previously: onboarding wizard (TurboTax-style live progress + bot persona step), Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*
+*Last updated: 2026-05-05 — added IG Ad Funnel section as user stories (Maya the shopper, Rachel the merchant). Buyer-side V1 (deep-link + welcome banner + negotiable price hint) promoted to Tier 1 — the highest-leverage funnel for IG-running merchants. Previously: brand-story auto-write + full-price justifications (Tier 2), onboarding wizard, Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*

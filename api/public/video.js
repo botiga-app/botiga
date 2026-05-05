@@ -395,8 +395,13 @@
       '#_btgv_mute{position:absolute;top:env(safe-area-inset-top,16px);left:16px;width:36px;height:36px;background:rgba(0,0,0,.5);border-radius:50%;border:none;color:#fff;font-size:16px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px)}',
       '._btgv_rail{position:absolute;right:12px;bottom:250px;display:flex;flex-direction:column;align-items:center;gap:18px;z-index:6}',
       '@media(min-width:640px){._btgv_rail{right:calc(50% - 198px)}}',
-      '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s}',
+      '._btgv_rail button{background:rgba(0,0,0,.45);backdrop-filter:blur(8px);border:none;border-radius:50%;width:48px;height:48px;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;transition:transform .15s;will-change:transform}',
       '._btgv_rail button:active{transform:scale(.9)}',
+      // Spring-pop animation for the like button when the customer taps —
+      // gives instant visual feedback before the realtime echo brings the
+      // count + heart particles. Curve is the same one the preview uses.
+      '@keyframes _btgv_like_pop{0%{transform:scale(1)}40%{transform:scale(1.4)}70%{transform:scale(.92)}100%{transform:scale(1.1)}}',
+      '._btgv_rail button._btgv_popping{animation:_btgv_like_pop 500ms cubic-bezier(.34,1.56,.64,1)}',
 
 
       // Product shelf in feed/story — landscape cards
@@ -1847,6 +1852,14 @@
       likeBtn.innerHTML = '<span style="font-size:22px">🤍</span><span>' + fmtCount(likeCount) + '</span>';
       likeBtn.onclick = function (e) {
         e.stopPropagation();
+        // Spring-pop on every tap (even repeat-clicks) for tactile feedback.
+        // Heart particles arrive ~200-500ms later via the realtime echo,
+        // which keeps cross-user behavior consistent.
+        likeBtn.classList.remove('_btgv_popping');
+        // Force reflow so the animation restarts on quick re-taps
+        void likeBtn.offsetWidth;
+        likeBtn.classList.add('_btgv_popping');
+        setTimeout(function () { likeBtn.classList.remove('_btgv_popping'); }, 520);
         if (!likedSet[vid.id]) {
           likedSet[vid.id] = true;
           likeBtn.querySelectorAll('span')[0].textContent = '❤️';
@@ -1885,11 +1898,13 @@
       cmtBtn.onclick = function (e) { e.stopPropagation(); cmtDrawer.open(); };
       rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn);
 
-      // View count — top-right pill like Facebook
+      // View count — top-right pill. Play-triangle is the YouTube/TikTok/
+      // Reels convention for "watched" counts; the previous eye icon read
+      // as creepy / surveillance-y.
       var viewsEl = document.createElement('div');
       viewsEl.className = '_btgv_views';
       var _vc = vid.views_count || 0;
-      viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span>' + fmtCount(_vc) + '</span>';
+      viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(_vc) + '</span>';
 
       slide._btgv_likeBtn = likeBtn;
       slide.appendChild(video); slide.appendChild(grad); slide.appendChild(viewsEl); slide.appendChild(rail);
@@ -2932,7 +2947,7 @@
 
         // Views — top left
         var viewsEl = document.createElement('div'); viewsEl.className = '_btgv_cncg_vtile_views';
-        viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span>' + fmtCount(v.views_count || 0) + '</span>';
+        viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(v.views_count || 0) + '</span>';
         media.appendChild(viewsEl);
 
         // Title overlay — skip filename-style titles (mvi_2462, IMG_1234, etc.)

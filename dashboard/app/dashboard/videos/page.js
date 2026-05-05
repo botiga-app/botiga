@@ -48,14 +48,34 @@ function ShopHero({ shopHandle }) {
 }
 
 // ─── Preview + Share buttons (top of videos page) ───────────────────────────
-// Preview opens the public /preview/[merchantId] page in a new tab so the
-// merchant sees their shoppable feed exactly as customers will. Share copies
-// the same URL to the clipboard so they can send it to anyone.
-function PreviewWithShareButtons({ merchantId }) {
+// Preview + Share both point at the merchant's own storefront URL with a
+// ?btgv=<id> deep-link. The widget on the storefront reads the param and
+// auto-opens the feed at that video. Customers (and merchants) only ever
+// see the merchant's domain — no Botiga URL anywhere in the customer flow.
+//
+// If the merchant hasn't installed the widget yet (no shopify_domain), we
+// hide the buttons and prompt them to install — that's the only way the
+// preview makes sense in this model.
+function PreviewWithShareButtons({ shopifyDomain, latestVideoId }) {
   const [copied, setCopied] = useState(false);
-  const previewUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/preview/${merchantId}`
-    : `/preview/${merchantId}`;
+
+  if (!shopifyDomain) {
+    return (
+      <a
+        href="/dashboard/install"
+        className="text-xs text-gray-500 hover:text-gray-700 italic"
+        title="Install the Botiga widget on your Shopify store to preview the customer feed"
+      >
+        Install widget on your store to preview →
+      </a>
+    );
+  }
+
+  // Strip protocol if accidentally stored with one
+  const cleanDomain = shopifyDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const previewUrl = latestVideoId
+    ? `https://${cleanDomain}/?btgv=${encodeURIComponent(latestVideoId)}`
+    : `https://${cleanDomain}/`;
 
   function share() {
     if (typeof navigator === 'undefined') return;
@@ -72,16 +92,16 @@ function PreviewWithShareButtons({ merchantId }) {
         target="_blank"
         rel="noreferrer"
         className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
-        title="Open the customer-facing preview in a new tab"
+        title="Opens your storefront feed in a new tab — same experience customers will see"
       >
-        <span>👁</span>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
         Preview
       </a>
       <button
         onClick={share}
         className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl text-white transition-opacity whitespace-nowrap hover:opacity-90"
         style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}
-        title="Copy a public preview link you can share with customers"
+        title="Copy your storefront feed link — share on Instagram bio, in ads, anywhere"
       >
         <span>🔗</span>
         {copied ? 'Copied!' : 'Share'}
@@ -1528,9 +1548,9 @@ function VideoDetailDrawer({ video, merchantId, shopifyDomain, onClose, onTagsUp
                   </span>
                   <span className="text-xs text-gray-500">{isActive ? 'Currently live' : 'Currently hidden'}</span>
                 </button>
-                {merchantId && (
+                {shopifyDomain && (
                   <a
-                    href={`/preview/${merchantId}?btgv=${video.id}`}
+                    href={`https://${shopifyDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/?btgv=${encodeURIComponent(video.id)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full flex items-center justify-between text-sm py-2.5 px-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
@@ -2597,7 +2617,10 @@ export default function VideosPage() {
           <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
           <div className="flex gap-2 flex-wrap">
             {merchantId && (
-              <PreviewWithShareButtons merchantId={merchantId} />
+              <PreviewWithShareButtons
+                shopifyDomain={shopifyDomain}
+                latestVideoId={videos[0]?.id}
+              />
             )}
             {merchantId && (
               <OneClickAutoImport
