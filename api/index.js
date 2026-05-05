@@ -123,6 +123,22 @@ app.get('/video.js', (req, res) => {
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
+// Defensive root handler for Shopify install redirects.
+// Shopify's managed install flow can redirect merchants to the App URL
+// after consent — and depending on how the App URL is configured in the
+// Partner Dashboard, the path can resolve to "/" (root) instead of the
+// expected "/api/shopify/auth". When that happens, forward the install
+// query params (hmac, host, shop, id_token, etc.) to the proper handler
+// so OAuth completes regardless of how the App URL got resolved.
+app.get('/', (req, res) => {
+  if (req.query.hmac || req.query.shop || req.query.id_token) {
+    const qs = new URLSearchParams(req.query).toString();
+    return res.redirect(`/api/shopify/auth${qs ? '?' + qs : ''}`);
+  }
+  // No Shopify params — root has no useful content; point at health
+  res.redirect('/health');
+});
+
 // Fallback error handler
 app.use((err, req, res, next) => {
   console.error(err);
