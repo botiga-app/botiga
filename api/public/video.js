@@ -399,9 +399,83 @@
       '._btgv_rail button:active{transform:scale(.9)}',
       // Spring-pop animation for the like button when the customer taps —
       // gives instant visual feedback before the realtime echo brings the
-      // count + heart particles. Curve is the same one the preview uses.
-      '@keyframes _btgv_like_pop{0%{transform:scale(1)}40%{transform:scale(1.4)}70%{transform:scale(.92)}100%{transform:scale(1.1)}}',
+      // count + heart particles. End at scale(1) so the button returns
+      // smoothly instead of snapping back from 1.1.
+      '@keyframes _btgv_like_pop{0%{transform:scale(1)}40%{transform:scale(1.4)}70%{transform:scale(.92)}100%{transform:scale(1)}}',
       '._btgv_rail button._btgv_popping{animation:_btgv_like_pop 500ms cubic-bezier(.34,1.56,.64,1)}',
+      '._btgv_rail button._btgv_popping span:first-child{display:inline-block;animation:_btgv_like_pop 500ms cubic-bezier(.34,1.56,.64,1)}',
+
+      // ─── Top chrome: brand badge (left) + progress bar + views (right) ──
+      '._btgv_topbar{position:absolute;top:env(safe-area-inset-top,12px);left:0;right:0;z-index:8;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;pointer-events:none}',
+      '@media(min-width:640px){._btgv_topbar{max-width:420px;left:50%;transform:translateX(-50%)}}',
+      '._btgv_brand{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.42);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);padding:4px 10px 4px 4px;border-radius:99px;color:#fff;text-decoration:none;cursor:pointer;pointer-events:auto;-webkit-tap-highlight-color:transparent;transition:transform .15s}',
+      '._btgv_brand:active{transform:scale(.96)}',
+      '._btgv_brand_logo{width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.95);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#111;font-weight:700}',
+      '._btgv_brand_logo img{width:100%;height:100%;object-fit:cover}',
+      '._btgv_brand_name{font-size:11.5px;font-weight:700;letter-spacing:.01em;max-width:30vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '._btgv_topright{display:flex;align-items:center;gap:8px;pointer-events:auto}',
+      // Old _btgv_views moves into the topright group; rule already exists
+      '._btgv_progress{position:absolute;top:0;left:0;height:2px;background:rgba(255,255,255,.65);width:0;border-radius:0 2px 2px 0;transition:width .15s linear;pointer-events:none;z-index:9}',
+      '@media(min-width:640px){._btgv_progress{max-width:420px;left:50%;transform:translateX(-50%)}}',
+
+      // ─── Tap layer for double-tap-to-like (Instagram pattern) ──────────
+      '._btgv_taplayer{position:absolute;inset:0;z-index:5;background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}',
+      '@media(min-width:640px){._btgv_taplayer{max-width:420px;left:50%;transform:translateX(-50%);border-radius:14px}}',
+      '@keyframes _btgv_dtheart_burst{0%{transform:translate(-50%,-50%) scale(.3) rotate(-12deg);opacity:0}30%{transform:translate(-50%,-50%) scale(1.4) rotate(8deg);opacity:1}80%{transform:translate(-50%,-50%) scale(1.2) rotate(-4deg);opacity:.9}100%{transform:translate(-50%,-50%) scale(.8) rotate(0deg);opacity:0}}',
+      '._btgv_dtheart{position:absolute;font-size:88px;pointer-events:none;z-index:7;text-shadow:0 4px 24px rgba(247,37,133,.4);animation:_btgv_dtheart_burst 850ms cubic-bezier(.22,.61,.36,1) forwards;will-change:transform,opacity}',
+      // Pause overlay shown briefly when user taps to pause
+      '@keyframes _btgv_pause_fade{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}30%{opacity:.85;transform:translate(-50%,-50%) scale(1)}70%{opacity:.85}100%{opacity:0;transform:translate(-50%,-50%) scale(1.2)}}',
+      '._btgv_pauseicon{position:absolute;top:50%;left:50%;width:72px;height:72px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;pointer-events:none;z-index:7;animation:_btgv_pause_fade 700ms ease-out forwards}',
+
+      // ─── Bottom zone: caption + price pill + primary CTA ────────────────
+      '._btgv_bzone{position:absolute;bottom:0;left:0;right:0;z-index:8;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px);background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.55) 60%,transparent 100%);display:flex;flex-direction:column;gap:8px;pointer-events:none}',
+      '@media(min-width:640px){._btgv_bzone{max-width:420px;left:50%;transform:translateX(-50%);border-radius:0 0 14px 14px}}',
+      '._btgv_bzone>*{pointer-events:auto}',
+      // Caption row: handle + title
+      '._btgv_caprow{display:flex;flex-direction:column;gap:2px}',
+      '._btgv_caphandle{font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:.01em}',
+      '._btgv_captext{font-size:12.5px;color:rgba(255,255,255,.92);line-height:1.32;text-shadow:0 1px 3px rgba(0,0,0,.5);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}',
+      '._btgv_captext._btgv_capexpand{-webkit-line-clamp:unset;display:block}',
+      // Price line: $ now · was-strike · % off · "as low as" hint
+      '._btgv_priceline{display:flex;align-items:center;gap:7px;flex-wrap:wrap}',
+      '._btgv_price_now{color:#fff;font-size:17px;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:-.01em}',
+      '._btgv_price_was{color:rgba(255,255,255,.5);font-size:12px;text-decoration:line-through}',
+      '._btgv_price_disc{background:#ff4d6d;color:#fff;font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:99px;letter-spacing:.03em}',
+      '._btgv_price_aslow{color:rgba(255,255,255,.85);font-size:11px;font-weight:600;padding:2px 7px 2px 5px;border-radius:99px;background:linear-gradient(135deg,rgba(255,193,7,.18),rgba(247,37,133,.18));border:1px solid rgba(255,193,7,.32);display:inline-flex;align-items:center;gap:3px}',
+      // Primary CTA + small inline icon-only buttons
+      '._btgv_ctarow{display:flex;align-items:stretch;gap:7px;margin-top:2px}',
+      '._btgv_cta_neg{flex:1;background:linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%);color:#fff;border:none;border-radius:12px;padding:11px 14px;font-size:13.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 4px 18px rgba(247,37,133,.32);font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,box-shadow .12s}',
+      '._btgv_cta_neg:active{transform:scale(.97);box-shadow:0 2px 10px rgba(247,37,133,.32)}',
+      '._btgv_cta_inline{width:46px;flex-shrink:0;border:none;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;color:#fff;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform .12s,opacity .15s}',
+      '._btgv_cta_inline:active{transform:scale(.94)}',
+      '._btgv_cta_cart{background:rgba(255,255,255,.18);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22)}',
+      '._btgv_cta_buy{background:linear-gradient(135deg,#FF6B35 0%,#F72585 100%);box-shadow:0 4px 14px rgba(247,37,133,.32)}',
+
+      // ─── Multi-product horizontal strip (when 2+ tagged) ────────────────
+      '._btgv_pstrip{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:4px 0 6px;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none}',
+      '._btgv_pstrip::-webkit-scrollbar{display:none}',
+      '._btgv_pstrip_card{flex:0 0 auto;width:148px;background:rgba(255,255,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:7px 9px 9px;display:flex;flex-direction:column;gap:5px;scroll-snap-align:start;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s,border-color .15s}',
+      '._btgv_pstrip_card:active{transform:scale(.97)}',
+      '._btgv_pstrip_card._active{border-color:rgba(247,37,133,.55);background:rgba(247,37,133,.08)}',
+      '._btgv_pstrip_top{display:flex;gap:8px;align-items:center}',
+      '._btgv_pstrip_img{width:36px;height:36px;border-radius:8px;object-fit:cover;background:#222;flex-shrink:0}',
+      '._btgv_pstrip_name{font-size:11px;font-weight:600;color:#fff;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
+      '._btgv_pstrip_price{display:flex;align-items:baseline;gap:5px;font-size:11px}',
+      '._btgv_pstrip_now{color:#fff;font-weight:800}',
+      '._btgv_pstrip_was{color:rgba(255,255,255,.45);text-decoration:line-through;font-size:10px}',
+
+      // ─── Floating concierge bubble ──────────────────────────────────────
+      '._btgv_concbubble{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 220px);right:14px;z-index:11;width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);box-shadow:0 6px 22px rgba(99,102,241,.42);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;-webkit-tap-highlight-color:transparent;transition:transform .15s}',
+      '._btgv_concbubble:active{transform:scale(.92)}',
+      '@media(min-width:640px){._btgv_concbubble{right:calc(50% - 220px)}}',
+      '._btgv_concbubble img{width:100%;height:100%;border-radius:50%;object-fit:cover}',
+      '@keyframes _btgv_concpulse{0%,100%{box-shadow:0 6px 22px rgba(99,102,241,.42)}50%{box-shadow:0 6px 28px rgba(99,102,241,.7),0 0 0 6px rgba(99,102,241,.18)}}',
+      '._btgv_concbubble._btgv_concpulse{animation:_btgv_concpulse 1.6s ease-in-out infinite}',
+      '._btgv_concbadge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff4d6d;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(255,77,109,.4)}',
+
+      // ─── FOMO activity toast ────────────────────────────────────────────
+      '._btgv_fomo{position:absolute;top:calc(env(safe-area-inset-top,12px) + 56px);left:50%;transform:translate(-50%,-12px);z-index:9;background:rgba(0,0,0,.6);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.12);color:#fff;font-size:11.5px;font-weight:600;padding:7px 13px;border-radius:99px;display:flex;align-items:center;gap:6px;opacity:0;transition:opacity .35s ease,transform .35s ease;pointer-events:none;max-width:80vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '._btgv_fomo._btgv_fomovis{opacity:1;transform:translate(-50%,0)}',
 
 
       // Product shelf in feed/story — landscape cards
@@ -648,6 +722,336 @@
       '._btgv_neg_cart_checkout:active{opacity:.85}',
     ].join('');
     document.head.appendChild(s);
+  }
+
+  // ─── New compact bottom zone — caption + price + primary CTA ─────────────
+  // Replaces the old buildProductShelf for the customer-facing feed.
+  // - 1 tagged product → caption / price-pill / primary "Make an offer" CTA
+  // - 2+ tagged products → caption / horizontal product strip + tap-to-switch
+  // Context (merchant + settings) drives the negotiable-price hint.
+  function buildBottomZone(vid, tags, context) {
+    var zone = document.createElement('div');
+    zone.className = '_btgv_bzone';
+
+    // Caption row — brand handle + video title (click to expand)
+    var caprow = document.createElement('div');
+    caprow.className = '_btgv_caprow';
+    if (context.brandHandle || context.brandName) {
+      var handle = document.createElement('div');
+      handle.className = '_btgv_caphandle';
+      handle.textContent = '@' + (context.brandHandle || (context.brandName || '').toLowerCase().replace(/\s+/g, ''));
+      caprow.appendChild(handle);
+    }
+    if (vid.title) {
+      var captext = document.createElement('div');
+      captext.className = '_btgv_captext';
+      captext.textContent = vid.title;
+      captext.onclick = function (e) {
+        e.stopPropagation();
+        captext.classList.toggle('_btgv_capexpand');
+      };
+      caprow.appendChild(captext);
+    }
+    if (caprow.children.length) zone.appendChild(caprow);
+
+    if (!tags || !tags.length) {
+      // No products tagged — show a gentle empty state instead of a void
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:rgba(255,255,255,.55);font-size:11px;padding:6px 0';
+      empty.textContent = 'No products in this video yet';
+      zone.appendChild(empty);
+      return zone;
+    }
+
+    // Multi-product horizontal strip
+    if (tags.length > 1) {
+      var strip = document.createElement('div');
+      strip.className = '_btgv_pstrip';
+      tags.forEach(function (tag, i) {
+        var card = document.createElement('div');
+        card.className = '_btgv_pstrip_card' + (i === 0 ? ' _active' : '');
+        var top = document.createElement('div'); top.className = '_btgv_pstrip_top';
+        if (tag.image_url) {
+          var img = document.createElement('img'); img.className = '_btgv_pstrip_img'; img.src = tag.image_url;
+          top.appendChild(img);
+        }
+        var name = document.createElement('div'); name.className = '_btgv_pstrip_name'; name.textContent = tag.product_name;
+        top.appendChild(name);
+        card.appendChild(top);
+        var pr = parseFloat(tag.price || 0);
+        var was = parseFloat(tag.compare_at_price || 0);
+        if (pr > 0) {
+          var prL = document.createElement('div'); prL.className = '_btgv_pstrip_price';
+          var pn = document.createElement('span'); pn.className = '_btgv_pstrip_now'; pn.textContent = '$' + pr.toFixed(2);
+          prL.appendChild(pn);
+          if (was > pr) {
+            var pw = document.createElement('span'); pw.className = '_btgv_pstrip_was'; pw.textContent = '$' + was.toFixed(2);
+            prL.appendChild(pw);
+          }
+          card.appendChild(prL);
+        }
+        card.onclick = function () {
+          // Switch active card + repaint the price line + CTA below
+          strip.querySelectorAll('._btgv_pstrip_card').forEach(function (el) { el.classList.remove('_active'); });
+          card.classList.add('_active');
+          renderPriceAndCTA(zone, vid, tag, context);
+        };
+        strip.appendChild(card);
+      });
+      zone.appendChild(strip);
+    }
+
+    // Price line + primary CTA — drives off the active tag (first by default)
+    renderPriceAndCTA(zone, vid, tags[0], context);
+
+    return zone;
+  }
+
+  // Renders or replaces the price-line + CTA-row inside an existing zone
+  // for the given active tag. Called on initial build + on strip-card switch.
+  function renderPriceAndCTA(zone, vid, tag, context) {
+    // Strip any existing price-line + cta-row first
+    zone.querySelectorAll('._btgv_priceline, ._btgv_ctarow').forEach(function (el) { el.remove(); });
+
+    var priceLine = document.createElement('div');
+    priceLine.className = '_btgv_priceline';
+    var pr = parseFloat(tag.price || 0);
+    var was = parseFloat(tag.compare_at_price || 0);
+    if (pr > 0) {
+      var now = document.createElement('span'); now.className = '_btgv_price_now'; now.textContent = '$' + pr.toFixed(2);
+      priceLine.appendChild(now);
+      if (was > pr) {
+        var w = document.createElement('span'); w.className = '_btgv_price_was'; w.textContent = '$' + was.toFixed(2);
+        var d = document.createElement('span'); d.className = '_btgv_price_disc'; d.textContent = Math.round((1 - pr / was) * 100) + '% OFF';
+        priceLine.appendChild(w); priceLine.appendChild(d);
+      }
+      // "Most pay $X-Y" hint that telegraphs negotiability — pulls from
+      // merchant_settings.max_discount_pct so the floor matches reality.
+      var maxDisc = context.maxDiscount || 20;
+      var lowEnd = Math.max(1, pr * (1 - maxDisc / 100));
+      var aslow = document.createElement('span');
+      aslow.className = '_btgv_price_aslow';
+      aslow.innerHTML = '💡 most pay $' + Math.round(lowEnd) + '–' + Math.round(pr - 1);
+      priceLine.appendChild(aslow);
+    }
+    zone.appendChild(priceLine);
+
+    // CTA row: primary Negotiate (full-width gradient) + small Cart + Buy icons
+    var ctaRow = document.createElement('div');
+    ctaRow.className = '_btgv_ctarow';
+
+    var negBtn = document.createElement('button');
+    negBtn.className = '_btgv_cta_neg';
+    var savings = was > pr ? was - pr : pr * (context.maxDiscount || 20) / 100;
+    negBtn.innerHTML = '<span style="font-size:16px">🤝</span><span>Make an offer · save up to $' + Math.round(savings) + '</span>';
+    negBtn.onclick = function (e) {
+      e.stopPropagation();
+      track(vid.id, 'negotiate', tag.shopify_product_id);
+      pauseFeedForAction();
+      openNegotiateModal(tag);
+    };
+    ctaRow.appendChild(negBtn);
+
+    var cartBtn = document.createElement('button');
+    cartBtn.className = '_btgv_cta_inline _btgv_cta_cart';
+    cartBtn.innerHTML = '🛒';
+    cartBtn.title = 'Add to cart';
+    cartBtn.onclick = function (e) {
+      e.stopPropagation();
+      track(vid.id, 'add_to_cart', tag.shopify_product_id);
+      pauseFeedForAction();
+      addToCart(tag.shopify_variant_id, function (ok) {
+        fireConfetti();
+        if (ok) {
+          cartBtn.innerHTML = '✓';
+          setTimeout(function () { cartBtn.innerHTML = '🛒'; }, 2200);
+        }
+        resumeFeedAfterAction();
+      });
+    };
+    ctaRow.appendChild(cartBtn);
+
+    var buyBtn = document.createElement('button');
+    buyBtn.className = '_btgv_cta_inline _btgv_cta_buy';
+    buyBtn.innerHTML = '⚡';
+    buyBtn.title = 'Buy now';
+    buyBtn.onclick = function (e) {
+      e.stopPropagation();
+      track(vid.id, 'add_to_cart', tag.shopify_product_id);
+      pauseFeedForAction();
+      addToCart(tag.shopify_variant_id, function (ok) {
+        if (ok) { fireConfetti(); window.location.href = '/checkout'; }
+        else { resumeFeedAfterAction(); }
+      });
+    };
+    ctaRow.appendChild(buyBtn);
+
+    zone.appendChild(ctaRow);
+  }
+
+  // ─── Top bar: brand badge + view count + thin progress bar ──────────────
+  function buildTopBar(vid, context) {
+    var bar = document.createElement('div');
+    bar.className = '_btgv_topbar';
+
+    // Brand badge — opens merchant homepage in a new tab
+    var brand = document.createElement('a');
+    brand.className = '_btgv_brand';
+    brand.href = context.brandUrl || '#';
+    if (context.brandUrl) brand.target = '_blank';
+    brand.rel = 'noopener noreferrer';
+    var logo = document.createElement('div');
+    logo.className = '_btgv_brand_logo';
+    if (context.brandLogo) {
+      var img = document.createElement('img'); img.src = context.brandLogo; img.alt = '';
+      logo.appendChild(img);
+    } else {
+      logo.textContent = (context.brandName || 'B').charAt(0).toUpperCase();
+    }
+    var name = document.createElement('span');
+    name.className = '_btgv_brand_name';
+    name.textContent = context.brandName || 'Shop';
+    brand.appendChild(logo); brand.appendChild(name);
+    bar.appendChild(brand);
+
+    // Top-right: view count pill — already styled via existing _btgv_views.
+    var right = document.createElement('div');
+    right.className = '_btgv_topright';
+    var views = document.createElement('div');
+    views.className = '_btgv_views';
+    views.style.cssText = 'position:static;top:auto;right:auto'; // override absolute positioning
+    var vc = vid.views_count || 0;
+    views.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(vc) + '</span>';
+    right.appendChild(views);
+    bar.appendChild(right);
+    return bar;
+  }
+
+  // ─── Floating concierge bubble — opens chat with source-video context ──
+  function buildConciergeBubbleInFeed(context) {
+    var btn = document.createElement('button');
+    btn.className = '_btgv_concbubble';
+    if (context.botAvatar) {
+      var img = document.createElement('img'); img.src = context.botAvatar; img.alt = '';
+      btn.appendChild(img);
+    } else {
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>';
+    }
+    // Soft pulse after 8s of dwell to invite engagement
+    setTimeout(function () { btn.classList.add('_btgv_concpulse'); }, 8000);
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      btn.classList.remove('_btgv_concpulse');
+      // Open the existing concierge chat surface — already wired via openConcierge
+      try { if (typeof openConcierge === 'function') openConcierge(); } catch (_) {}
+    };
+    return btn;
+  }
+
+  // ─── FOMO toast cycle: fades real recent-activity strings in/out ────────
+  function buildFomoSystem(feedEl, apiKey) {
+    var toast = document.createElement('div');
+    toast.className = '_btgv_fomo';
+    feedEl.appendChild(toast);
+
+    var messages = [];
+    var idx = 0;
+    var timer = null;
+
+    function show(msg) {
+      toast.textContent = msg;
+      toast.classList.add('_btgv_fomovis');
+      setTimeout(function () { toast.classList.remove('_btgv_fomovis'); }, 4200);
+    }
+
+    function cycle() {
+      if (!messages.length) return;
+      show(messages[idx % messages.length]);
+      idx++;
+    }
+
+    // Pull real activity (anonymized recent deals/sales) on mount
+    fetch(API_BASE + '/api/widget/recent-activity?k=' + encodeURIComponent(apiKey))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (d && Array.isArray(d.messages) && d.messages.length) {
+          messages = d.messages;
+          // First toast at 6s in (let the user start watching first)
+          setTimeout(cycle, 6000);
+          // Then every ~38s
+          timer = setInterval(cycle, 38000);
+        }
+      })
+      .catch(function () {});
+
+    return {
+      destroy: function () {
+        if (timer) clearInterval(timer);
+        toast.remove();
+      },
+    };
+  }
+
+  // ─── Double-tap to like + heart burst at tap point (Insta pattern) ──────
+  // Also handles single tap → pause/play. We wait 320ms after a tap to see
+  // if a second tap comes; if not, treat as single tap (pause/play with a
+  // brief icon overlay). If a second tap arrives within the window, like.
+  function attachDoubleTapToLike(slideEl, onLike) {
+    var lastTapAt = 0;
+    var lastTapX = 0;
+    var lastTapY = 0;
+    var pendingSingle = null;
+    slideEl.addEventListener('click', function (e) {
+      // Don't intercept clicks on rail/CTA/etc — only direct video taps
+      if (e.target.closest('._btgv_rail, ._btgv_bzone, ._btgv_topbar, ._btgv_pshelf, ._btgv_concbubble, ._btgv_brand')) return;
+      var now = Date.now();
+      if (now - lastTapAt < 320 && Math.abs(e.clientX - lastTapX) < 40 && Math.abs(e.clientY - lastTapY) < 40) {
+        // Double tap — cancel any pending single-tap pause + fire like burst
+        if (pendingSingle) { clearTimeout(pendingSingle); pendingSingle = null; }
+        spawnDoubleTapHeart(slideEl, e.clientX, e.clientY);
+        if (typeof onLike === 'function') onLike();
+        lastTapAt = 0;
+        return;
+      }
+      lastTapAt = now;
+      lastTapX = e.clientX;
+      lastTapY = e.clientY;
+      // Schedule pause/play — cancelled if a second tap arrives in 320ms
+      pendingSingle = setTimeout(function () {
+        pendingSingle = null;
+        var v = slideEl.querySelector('video');
+        if (!v) return;
+        if (v.paused) {
+          v.play().catch(function () {});
+        } else {
+          v.pause();
+          // Show a play-icon overlay briefly so the customer sees the pause
+          var ico = document.createElement('div');
+          ico.className = '_btgv_pauseicon';
+          ico.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+          slideEl.appendChild(ico);
+          ico.addEventListener('animationend', function () { ico.remove(); });
+        }
+      }, 320);
+    });
+  }
+
+  function spawnDoubleTapHeart(slideEl, clientX, clientY) {
+    var rect = slideEl.getBoundingClientRect();
+    var x = clientX - rect.left;
+    var y = clientY - rect.top;
+    var heart = document.createElement('div');
+    heart.className = '_btgv_dtheart';
+    heart.textContent = '❤';
+    heart.style.color = '#F72585';
+    heart.style.left = x + 'px';
+    heart.style.top = y + 'px';
+    slideEl.appendChild(heart);
+    heart.addEventListener('animationend', function () { heart.remove(); });
+    // Also spawn a few smaller floating hearts for richness
+    if (typeof spawnHeart === 'function') {
+      try { spawnHeart(); } catch (_) {}
+    }
   }
 
   // ─── Product shelf for feed/story overlay ────────────────────────────────────
@@ -1808,19 +2212,58 @@
     closeBtn.onclick = function () { closeFeed(); };
     feedEl.appendChild(closeBtn);
 
-    var muted = false;
-    var muteBtn = document.createElement('button');
-    muteBtn.id = '_btgv_mute'; muteBtn.textContent = '🔊';
-    muteBtn.onclick = function () {
-      muted = !muted;
-      muteBtn.textContent = muted ? '🔇' : '🔊';
-      feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) { v.muted = muted; });
+    // Build context once: brand info + bot avatar + max-discount-pct from
+    // /widget/config (cached by rtGetConfig). Used by every slide for the
+    // top brand badge, the "as low as" price hint, and the concierge bubble.
+    var feedContext = {
+      brandName: (_rtCfg && _rtCfg.brand_name) || null,
+      brandLogo: (_rtCfg && _rtCfg.brand_logo) || null,
+      brandHandle: (_rtCfg && _rtCfg.brand_handle) || null,
+      brandUrl: (_rtCfg && _rtCfg.brand_url) || null,
+      botAvatar: (_rtCfg && _rtCfg.bot_avatar_url) || null,
+      maxDiscount: (_rtCfg && _rtCfg.max_discount_pct) != null ? _rtCfg.max_discount_pct : 20,
     };
-    feedEl.appendChild(muteBtn);
+
+    var muted = false;
 
     var scroll = document.createElement('div');
     scroll.id = '_btgv_scroll';
     feedEl.appendChild(scroll);
+
+    // Floating concierge bubble — feed-level, not per-slide
+    var concBubble = buildConciergeBubbleInFeed(feedContext);
+    feedEl.appendChild(concBubble);
+
+    // FOMO activity toast — feed-level, cycles real recent activity.
+    // Stored on feedEl so closeFeed() can clean up the interval.
+    var fomo = buildFomoSystem(feedEl, API_KEY);
+    feedEl._fomo = fomo;
+
+    // If rtGetConfig hasn't completed yet (fast page load), fetch it now
+    // and patch the in-flight context so the brand badge + price hint
+    // appear once data lands. Idempotent — rtGetConfig caches.
+    if (!_rtCfg) {
+      rtGetConfig(function (cfg) {
+        if (!feedEl || !cfg) return;
+        feedContext.brandName = cfg.brand_name || feedContext.brandName;
+        feedContext.brandLogo = cfg.brand_logo || feedContext.brandLogo;
+        feedContext.brandHandle = cfg.brand_handle || feedContext.brandHandle;
+        feedContext.brandUrl = cfg.brand_url || feedContext.brandUrl;
+        feedContext.botAvatar = cfg.bot_avatar_url || feedContext.botAvatar;
+        feedContext.maxDiscount = cfg.max_discount_pct != null ? cfg.max_discount_pct : feedContext.maxDiscount;
+        // Repaint top-bars + bubble + price hints with the fresh context
+        feedEl.querySelectorAll('._btgv_topbar').forEach(function (b) { b.remove(); });
+        feedEl.querySelectorAll('._btgv_bzone').forEach(function (b) { b.remove(); });
+        feedEl.querySelectorAll('._btgv_concbubble').forEach(function (b) { b.remove(); });
+        feedEl.querySelectorAll('._btgv_slide').forEach(function (slide, idx) {
+          var v = vids[idx];
+          if (!v || v._type === 'product') return;
+          slide.appendChild(buildTopBar(v, feedContext));
+          slide.appendChild(buildBottomZone(v, v.video_product_tags || [], feedContext));
+        });
+        feedEl.appendChild(buildConciergeBubbleInFeed(feedContext));
+      });
+    }
 
     vids.forEach(function (item, i) {
       // Product card slide
@@ -1846,12 +2289,21 @@
 
       var grad = document.createElement('div'); grad.className = '_btgv_grad';
 
+      // Thin video progress bar (top edge) — updates as video plays
+      var progress = document.createElement('div'); progress.className = '_btgv_progress';
+      video.addEventListener('timeupdate', function () {
+        if (!video.duration) return;
+        progress.style.width = ((video.currentTime / video.duration) * 100) + '%';
+      });
+
+      // Top bar: brand badge + view count pill
+      var topbar = buildTopBar(vid, feedContext);
+
       var rail = document.createElement('div'); rail.className = '_btgv_rail';
       var likeCount = vid.likes_count || 0;
       var likeBtn = document.createElement('button');
       likeBtn.innerHTML = '<span style="font-size:22px">🤍</span><span>' + fmtCount(likeCount) + '</span>';
-      likeBtn.onclick = function (e) {
-        e.stopPropagation();
+      function fireLike() {
         // Spring-pop on every tap (even repeat-clicks) for tactile feedback.
         // Heart particles arrive ~200-500ms later via the realtime echo,
         // which keeps cross-user behavior consistent.
@@ -1867,7 +2319,9 @@
           likeBtn.querySelectorAll('span')[1].textContent = fmtCount(likeCount);
           track(vid.id, 'like');
         }
-      };
+      }
+      likeBtn.onclick = function (e) { e.stopPropagation(); fireLike(); };
+
       var shareBtn = document.createElement('button');
       shareBtn.innerHTML = '<span style="font-size:20px">↗️</span><span>Share</span>';
       shareBtn.onclick = function (e) {
@@ -1896,20 +2350,29 @@
       slide.appendChild(cmtDrawer);
 
       cmtBtn.onclick = function (e) { e.stopPropagation(); cmtDrawer.open(); };
-      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn);
 
-      // View count — top-right pill. Play-triangle is the YouTube/TikTok/
-      // Reels convention for "watched" counts; the previous eye icon read
-      // as creepy / surveillance-y.
-      var viewsEl = document.createElement('div');
-      viewsEl.className = '_btgv_views';
-      var _vc = vid.views_count || 0;
-      viewsEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(_vc) + '</span>';
+      // Mute toggle in the rail (replaces the global #_btgv_mute button)
+      var muteBtn = document.createElement('button');
+      muteBtn.innerHTML = '<span style="font-size:18px">' + (muted ? '🔇' : '🔊') + '</span>';
+      muteBtn.onclick = function (e) {
+        e.stopPropagation();
+        muted = !muted;
+        feedEl.querySelectorAll('._btgv_rail button:last-child span').forEach(function (s) { s.textContent = muted ? '🔇' : '🔊'; });
+        feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) { v.muted = muted; });
+      };
+      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(muteBtn);
 
       slide._btgv_likeBtn = likeBtn;
-      slide.appendChild(video); slide.appendChild(grad); slide.appendChild(viewsEl); slide.appendChild(rail);
+      slide.appendChild(video);
+      slide.appendChild(grad);
+      slide.appendChild(progress);
+      slide.appendChild(topbar);
+      slide.appendChild(rail);
       var tags = vid.video_product_tags || [];
-      if (tags.length) slide.appendChild(buildProductShelf(tags, vid.id));
+      slide.appendChild(buildBottomZone(vid, tags, feedContext));
+
+      // Double-tap-to-like (Instagram pattern) — heart bursts at tap point.
+      attachDoubleTapToLike(slide, fireLike);
 
       scroll.appendChild(slide);
     });
@@ -1926,24 +2389,38 @@
           // Update view badge
           var vEl = slideEl.querySelector('._btgv_views span');
           if (vEl && d.views_count != null) { item.views_count = d.views_count; vEl.textContent = fmtCount(d.views_count); }
-          // Update like count — spawn hearts + pop animation if increased
-          var likeSpan = slideEl.querySelector('._btgv_rail button:first-child span:last-child');
+          // Update like count — spawn hearts + pop animation if increased.
+          // Trigger the spring-pop on the like button itself (not just the
+          // count text) so cross-user likes also do the satisfying bounce.
+          var likeBtn = slideEl._btgv_likeBtn;
+          var likeSpan = likeBtn ? likeBtn.querySelectorAll('span')[1] : null;
           if (likeSpan && d.likes_count != null) {
             var prevLikes = item._polledLikes;
             if (prevLikes != null && d.likes_count > prevLikes) {
               spawnHeart();
-              likeSpan.style.transition = 'transform .15s ease';
-              likeSpan.style.transform = 'scale(1.4)';
-              setTimeout(function () { likeSpan.style.transform = 'scale(1)'; }, 200);
+              likeBtn.classList.remove('_btgv_popping');
+              void likeBtn.offsetWidth;
+              likeBtn.classList.add('_btgv_popping');
+              setTimeout(function () { likeBtn.classList.remove('_btgv_popping'); }, 520);
             }
             item._polledLikes = d.likes_count;
             likeSpan.textContent = fmtCount(d.likes_count);
           }
-          // Update comment button count
+          // Update comment button count — comment button is 2nd in rail
           var cmtSpan = slideEl.querySelector('._btgv_rail button:nth-child(2) span:last-child');
           if (cmtSpan && d.comments_count != null) { cmtSpan.textContent = fmtCount(d.comments_count); }
         })
         .catch(function () {});
+    }
+
+    // Aggressive preload throttling: only the active slide + 1 ahead get
+    // the video src set. Slides further away keep preload="none". This
+    // prevents the storefront from juggling 12 parallel video downloads
+    // and stuttering on slower connections.
+    function ensureVideoLoaded(slide) {
+      if (!slide) return;
+      var v = slide.querySelector('video');
+      if (v && v.dataset.src && !v.src) v.src = v.dataset.src;
     }
 
     var io = new IntersectionObserver(function (entries) {
@@ -1953,13 +2430,21 @@
         var v = entry.target.querySelector('video');
         if (entry.isIntersecting) {
           if (v) {
-            if (v.dataset.src && !v.src) { v.src = v.dataset.src; }
+            ensureVideoLoaded(entry.target);
+            // Preload the next slide so scroll-down feels instant
+            ensureVideoLoaded(scroll.children[idx + 1]);
             v.play().catch(function () {});
           }
+          // Pause every other video — defensive against fast scroll where
+          // multiple slides are momentarily intersecting.
+          scroll.querySelectorAll('._btgv_slide video').forEach(function (otherV) {
+            if (otherV !== v) otherV.pause();
+          });
           if (item && item._type !== 'product') {
             pushDeepLink(item.id);
             track(item.id, 'view');
-            // Update view badge immediately (optimistic)
+            // Update view badge immediately (optimistic) — element lives
+            // inside the new top-bar via _btgv_views span
             var vEl = entry.target.querySelector('._btgv_views span');
             if (vEl) { item.views_count = (item.views_count || 0) + 1; vEl.textContent = fmtCount(item.views_count); }
             // Fast-poll this slide every 3s for live counts from other users
@@ -1995,6 +2480,7 @@
     clearInterval(pollTimer); pollTimer = null;
     rtDisconnect();
     popDeepLink();
+    if (feedEl._fomo && typeof feedEl._fomo.destroy === 'function') feedEl._fomo.destroy();
     feedEl.classList.remove('open');
     feedEl.querySelectorAll('video').forEach(function (v) { v.pause(); v.src = ''; });
     setTimeout(function () { if (feedEl) { feedEl.remove(); feedEl = null; } }, 280);

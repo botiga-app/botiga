@@ -1446,11 +1446,17 @@ router.post('/widget/order', widgetCors, async (req, res) => {
 router.get('/widget/config', widgetCors, async (req, res) => {
   const { k: apiKey } = req.query;
   if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
-  const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+  // Fetch brand fields too — the new feed surface uses name/logo/domain
+  // for the top-left brand badge + merchant-domain links.
+  const { data: merchant } = await supabase
+    .from('merchants')
+    .select('id, name, logo_url, shopify_domain, ig_handle, website_url')
+    .eq('api_key', apiKey)
+    .single();
   if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
   const { data: settings } = await supabase
     .from('merchant_settings')
-    .select('bot_name, bot_greeting, bot_avatar_url, bot_personality')
+    .select('bot_name, bot_greeting, bot_avatar_url, bot_personality, max_discount_pct')
     .eq('merchant_id', merchant.id)
     .single();
   res.json({
@@ -1461,7 +1467,80 @@ router.get('/widget/config', widgetCors, async (req, res) => {
     bot_greeting: settings?.bot_greeting || null,
     bot_avatar_url: settings?.bot_avatar_url || null,
     bot_personality: settings?.bot_personality || 'salesy',
+    max_discount_pct: settings?.max_discount_pct ?? 20,
+    // Brand fields for the new feed top-bar
+    brand_name: merchant.name || null,
+    brand_logo: merchant.logo_url || null,
+    brand_handle: merchant.ig_handle || null,
+    brand_url: merchant.website_url || (merchant.shopify_domain ? `https://${merchant.shopify_domain}` : null),
   });
 });
+
+// ─── Widget: recent activity for FOMO toasts ────────────────────────────────
+// Pulls the latest closed deals + sales for this merchant and formats them
+// as toast-friendly strings. No PII — first names + city only, anonymized.
+// Returns an empty list if there's no real activity (we never fabricate).
+router.get('/widget/recent-activity', widgetCors, async (req, res) => {
+  try {
+    const { k: apiKey } = req.query;
+    if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+    const { data: merchant } = await supabase.from('merchants').select('id').eq('api_key', apiKey).single();
+    if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+
+    // Last 10 won negotiations from the past 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: deals } = await supabase
+      .from('negotiations')
+      .select('product_name, deal_price, list_price, customer_email, deal_at, created_at')
+      .eq('merchant_id', merchant.id)
+      .eq('status', 'won')
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    const messages = [];
+    for (const d of deals || []) {
+      if (!d.product_name || !d.deal_price || !d.list_price) continue;
+      const saved = Math.round(d.list_price - d.deal_price);
+      const pct = Math.round((saved / d.list_price) * 100);
+      const name = (d.customer_email || '').split('@')[0].split('.')[0];
+      const firstName = name ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : 'Someone';
+      const ago = relativeTime(d.deal_at || d.created_at);
+      // Variant strings — pick one based on deal char
+      if (saved >= 5) {
+        messages.push(`✨ ${firstName} just got ${pct}% off ${truncate(d.product_name, 28)} · ${ago}`);
+      } else {
+        messages.push(`🛍️ ${firstName} just bought ${truncate(d.product_name, 28)} · ${ago}`);
+      }
+    }
+
+    // Add a couple of aggregate "live" messages if we have at least 3 deals
+    if (deals && deals.length >= 3) {
+      messages.push(`🤝 ${deals.length} customer${deals.length === 1 ? '' : 's'} negotiated this week`);
+    }
+
+    res.json({ messages });
+  } catch (err) {
+    console.error('[widget/recent-activity] error:', err.message);
+    res.json({ messages: [] }); // never block the feed UI on FOMO failures
+  }
+});
+
+function truncate(s, n) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function relativeTime(iso) {
+  if (!iso) return 'just now';
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
 
 module.exports = router;
