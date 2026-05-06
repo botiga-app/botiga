@@ -70,6 +70,20 @@ async function fetchProductImage(productUrl) {
 }
 
 async function strikeDeal({ negotiation, dealPrice, merchantSettings, shopifyDomain, shopifyAccessToken, messages, merchantId, productImage }) {
+  // ── FLOOR GUARD — sacred constraint ──
+  // No deal can close below the merchant's stored floor. Even if a caller
+  // passes a lower dealPrice (bug, hallucination, race condition), bump
+  // it back up to the floor and log loudly so we catch the regression.
+  // The floor was calculated at negotiation start and stored in
+  // negotiations.floor_price — it's the source of truth.
+  if (negotiation.floor_price != null && dealPrice < negotiation.floor_price) {
+    console.error(
+      `[strikeDeal] FLOOR VIOLATION blocked: dealPrice=${dealPrice} < floor=${negotiation.floor_price} ` +
+      `for negotiation ${negotiation.id}. Bumping to floor.`
+    );
+    dealPrice = Math.ceil(negotiation.floor_price);
+  }
+
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48h — link valid 2 days
 
   // Resolve product image: widget → DB → fetch from Shopify product JSON

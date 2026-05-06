@@ -53,8 +53,16 @@ class PricingEngine {
     // Minimum meaningful drop per step — at least 2% of list price or $2, whichever is larger
     const minDrop = Math.max(2, Math.round(list * 0.02));
 
-    // If spread can't support 6 meaningful steps, use fewer
-    const maxSteps = Math.min(6, Math.floor(usableSpread / minDrop));
+    // Tier maximum ladder steps by price tier — fewer steps on cheaper
+    // items so the negotiation feels decisive, more on expensive items
+    // where there's more room to dance:
+    //   - under $50:   3 steps (quick haggle, low stakes)
+    //   - $50–$200:    5 steps (medium dance)
+    //   - $200+:       6 steps (full ladder)
+    const stepCapByPrice = list < 50 ? 3 : list < 200 ? 5 : 6;
+
+    // If spread can't support that many meaningful steps, use fewer
+    const maxSteps = Math.min(stepCapByPrice, Math.floor(usableSpread / minDrop));
     if (maxSteps < 2) {
       // Spread too small for multiple steps — single opening offer at obfuscated floor
       // (bot opens at best price immediately, still a real negotiation for acceptance)
