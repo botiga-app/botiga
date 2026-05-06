@@ -53,9 +53,15 @@ function interactionCount(messages) {
 // Derive lead_tier when the row pre-dates migration 033 or never had
 // it computed. Mirrors the in-flow classifier in negotiation.js so
 // existing data shows up the same way as new data.
+//
+// 'won' deals with no recovered_at are treated as hot — the deal is
+// locked in but the customer hasn't checked out yet. That's the most
+// urgent moment for a merchant nudge ("your deal at $90 is still here").
+// Once recovered_at is set the deal converted → not a lead.
 function deriveLeadTier(neg) {
   if (neg.lead_tier) return neg.lead_tier;
   if (neg.status === 'human_escalated' || neg.status === 'won_abandoned') return 'hot';
+  if (neg.status === 'won' && !neg.recovered_at) return 'hot';
   const hasContact = !!(neg.customer_email || neg.customer_whatsapp);
   if (!hasContact) return null;
   const interactions = interactionCount(neg.messages || []);
@@ -92,6 +98,8 @@ function shapeLead(neg) {
     abandoned_at: neg.abandoned_at,
     merchant_contacted_at: neg.merchant_contacted_at,
     created_at: neg.created_at,
+    recovered_at: neg.recovered_at,
+    deal_expires_at: neg.deal_expires_at,
   };
 }
 
@@ -140,14 +148,18 @@ router.get('/leads/:merchantId', async (req, res) => {
   // Pull anything that COULD be a lead: contact captured, special status,
   // or an existing lead_tier. We compute the tier on-the-fly via
   // deriveLeadTier so legacy rows (pre-033) that never had lead_tier
-  // populated still surface here. Won deals are excluded — they're closed
-  // unless the won-abandoned cron has flipped them.
+  // populated still surface here.
+  //
+  // Won deals are INCLUDED unless the customer has already checked out
+  // (recovered_at IS NOT NULL). A fresh won deal with no recovery is the
+  // highest-leverage moment for a merchant nudge — deal locked in,
+  // customer just needs the final click.
   const { data: rows, error } = await supabase
     .from('negotiations')
-    .select('id, merchant_id, product_name, product_url, list_price, floor_price, deal_price, status, current_step, lead_tier, lead_status, customer_email, customer_whatsapp, customer_name, messages, last_customer_message_at, updated_at, escalated_at, abandoned_at, merchant_contacted_at, created_at')
+    .select('id, merchant_id, product_name, product_url, list_price, floor_price, deal_price, status, current_step, lead_tier, lead_status, customer_email, customer_whatsapp, customer_name, messages, last_customer_message_at, updated_at, escalated_at, abandoned_at, merchant_contacted_at, created_at, recovered_at, deal_expires_at')
     .eq('merchant_id', merchantId)
-    .neq('status', 'won')
-    .or('lead_tier.not.is.null,status.eq.human_escalated,status.eq.won_abandoned,status.eq.cold_lead,customer_email.not.is.null,customer_whatsapp.not.is.null')
+    .is('recovered_at', null)
+    .or('lead_tier.not.is.null,status.eq.human_escalated,status.eq.won,status.eq.won_abandoned,status.eq.cold_lead,customer_email.not.is.null,customer_whatsapp.not.is.null')
     .neq('lead_status', 'dismissed')
     .order('updated_at', { ascending: false })
     .limit(500);

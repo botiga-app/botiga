@@ -13,9 +13,10 @@ const TIER_BADGE = {
 
 const STATUS_LABEL = {
   human_escalated: 'Reached floor — go close it',
+  won:             'Deal locked — awaiting checkout',
   won_abandoned:   'Won deal — never checked out',
   cold_lead:       'Captured on arrival',
-  active:          'Active',
+  active:          'Active negotiation',
 };
 
 function timeAgo(iso) {
