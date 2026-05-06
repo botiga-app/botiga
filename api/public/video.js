@@ -3237,32 +3237,40 @@
     }, 1000);
   }
 
-  // ── Page-context Willow openers — 3 variants per page type, lots of emojis ──
-  var _WILLOW_OPENERS = {
-    home: [
-      { intro: "Hey, I'm Willow 👋 your shopping concierge ✨", hook: "🔥 Today's drop:" },
-      { intro: "Hi! ✨ I'm Willow — I know every product in here and can negotiate any price.", hook: "💎 Today's hottest pick:" },
-      { intro: "Hey there 👋 Willow here, your shopping bestie 🛍️", hook: "🎁 Drop of the day:" },
-    ],
-    product: [
-      { intro: "Spotted you on this one 👀 I'm Willow, your shopping concierge ✨", hook: "🔓 I can probably do better than that price for you:" },
-      { intro: "Hey! 👋 I'm Willow — I see you're checking this out.", hook: "💸 Let me get you a number you'll like:" },
-      { intro: "Curious about this? 🤔 I'm Willow, here to help you score it for less.", hook: "🤝 Real talk on price:" },
-    ],
-    collection: [
-      { intro: "Browsing this collection? 🔥 I'm Willow, your shopping concierge ✨", hook: "💎 Hottest in here today:" },
-      { intro: "Hey 👋 Willow here. Great taste — this collection is fire 🔥", hook: "🎁 Pick of the bunch:" },
-      { intro: "Loving the vibe? 😍 I'm Willow, I know every piece in this collection.", hook: "🔓 Today's standout:" },
-    ],
-    cart: [
-      { intro: "Big bag energy 🛍️ I'm Willow — let me knock the total down for you ✨", hook: "💸 Try this one first:" },
-      { intro: "Hold up! 🤝 Willow here. I can probably get you a deal before checkout.", hook: "🔥 Best move right now:" },
-      { intro: "Ready to checkout? 🛒 Wait — I'm Willow, let me save you some 💸", hook: "🎁 Quick win:" },
-    ],
-  };
+  // ── Page-context openers — 3 variants per page type, lots of emojis ──
+  // Bot identity uses BOT_NAME (defaults "Botiga", overridden by
+  // merchant_settings.bot_name or data-bot-name attribute). Hardcoding
+  // a name here would conflict with merchants whose store name happens
+  // to match the default.
+  function _willowOpenerPool(pageType) {
+    var name = BOT_NAME || 'your concierge';
+    var pools = {
+      home: [
+        { intro: "Hey, I'm " + name + " 👋 your shopping concierge ✨", hook: "🔥 Today's drop:" },
+        { intro: "Hi! ✨ I'm " + name + " — I know every product in here and can negotiate any price.", hook: "💎 Today's hottest pick:" },
+        { intro: "Hey there 👋 " + name + " here, your shopping bestie 🛍️", hook: "🎁 Drop of the day:" },
+      ],
+      product: [
+        { intro: "Spotted you on this one 👀 I'm " + name + ", your shopping concierge ✨", hook: "🔓 I can probably do better than that price for you:" },
+        { intro: "Hey! 👋 I'm " + name + " — I see you're checking this out.", hook: "💸 Let me get you a number you'll like:" },
+        { intro: "Curious about this? 🤔 I'm " + name + ", here to help you score it for less.", hook: "🤝 Real talk on price:" },
+      ],
+      collection: [
+        { intro: "Browsing this collection? 🔥 I'm " + name + ", your shopping concierge ✨", hook: "💎 Hottest in here today:" },
+        { intro: "Hey 👋 " + name + " here. Great taste — this collection is fire 🔥", hook: "🎁 Pick of the bunch:" },
+        { intro: "Loving the vibe? 😍 I'm " + name + ", I know every piece in this collection.", hook: "🔓 Today's standout:" },
+      ],
+      cart: [
+        { intro: "Big bag energy 🛍️ I'm " + name + " — let me knock the total down for you ✨", hook: "💸 Try this one first:" },
+        { intro: "Hold up! 🤝 " + name + " here. I can probably get you a deal before checkout.", hook: "🔥 Best move right now:" },
+        { intro: "Ready to checkout? 🛒 Wait — I'm " + name + ", let me save you some 💸", hook: "🎁 Quick win:" },
+      ],
+    };
+    return pools[pageType] || pools.home;
+  }
 
   function _pickWillowOpener(pageType) {
-    var pool = _WILLOW_OPENERS[pageType] || _WILLOW_OPENERS.home;
+    var pool = _willowOpenerPool(pageType);
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
