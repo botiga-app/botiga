@@ -421,6 +421,10 @@ function normalizeInstagramPosts(raw) {
 }
 
 // ─── Instagram: import selected posts ────────────────────────────────────────
+// Per-post insert + dedupe by (merchant_id, source_url). Without this,
+// re-clicking Import on the same selection ballooned the feed with
+// duplicate cards. Same pattern as firstIgPull (onboarding) and
+// auto-import-latest below — keep them in sync if you change one.
 router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async (req, res) => {
   const { merchantId } = req.params;
   const { posts, source = 'instagram' } = req.body;
@@ -429,28 +433,62 @@ router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async 
     return res.status(400).json({ error: 'posts array required' });
   }
 
-  // s3_url is the playable media URL — only set for actual videos. For
-  // photos we leave it null and rely on thumbnail_url, which the widget +
-  // drawer fall back to when there's no video to play.
-  const toInsert = posts.map(post => ({
-    merchant_id: merchantId,
-    title: post.caption ? post.caption.slice(0, 80) : null,
-    s3_key: null,
-    s3_url: post.video_url || null,
-    thumbnail_url: post.thumbnail_url || null,
-    source,
-    source_url: post.post_url || null,
-    status: 'active',
-    sort_order: 0,
-  }));
+  const imported = [];
+  let skipped = 0;
+  let failed = 0;
+  let lastError = null;
 
-  const { data, error } = await supabase
-    .from('videos')
-    .insert(toInsert)
-    .select('*, video_product_tags(*)');
+  for (const post of posts) {
+    const sourceUrl = post.post_url || null;
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ imported: data.length, videos: data });
+    // Skip if we've already imported this exact post for this merchant.
+    // We dedupe on source_url rather than video_url — IG signs video URLs
+    // with a per-fetch token, so the same reel returns a different URL
+    // every time and would slip through a video_url-based check.
+    if (sourceUrl) {
+      const { data: existing } = await supabase
+        .from('videos')
+        .select('id')
+        .eq('merchant_id', merchantId)
+        .eq('source_url', sourceUrl)
+        .maybeSingle();
+      if (existing) { skipped++; continue; }
+    }
+
+    // s3_url is the playable media URL — only set for actual videos. For
+    // photos we leave it null and rely on thumbnail_url, which the widget
+    // + drawer fall back to when there's no video to play.
+    const { data, error } = await supabase
+      .from('videos')
+      .insert({
+        merchant_id: merchantId,
+        title: post.caption ? post.caption.slice(0, 80) : null,
+        s3_key: null,
+        s3_url: post.video_url || null,
+        thumbnail_url: post.thumbnail_url || null,
+        source,
+        source_url: sourceUrl,
+        status: 'active',
+        sort_order: 0,
+      })
+      .select('*, video_product_tags(*)')
+      .single();
+
+    if (error) {
+      failed++;
+      lastError = error.code || error.message;
+      continue;
+    }
+    imported.push(data);
+  }
+
+  res.json({
+    imported: imported.length,
+    skipped_duplicates: skipped,
+    failed,
+    last_error: lastError,
+    videos: imported,
+  });
 });
 
 // Auto-tag tick for a specific merchant — processes up to chunk_size unanalyzed

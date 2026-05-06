@@ -310,12 +310,17 @@ function InstagramImporter({ merchantId, defaultHandle, onImported }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const importedVideos = data.videos || [];
+      const skipped = data.skipped_duplicates || 0;
       onImported(importedVideos);
       // Kick off auto-tagging in the background — keep the modal open with
       // a progress indicator so the merchant sees their videos getting tagged.
       // Doesn't block import success: if autotag fails, videos still appear.
       if (importedVideos.length > 0) {
         await runAutoTagLoop(importedVideos.length);
+      } else if (skipped > 0) {
+        // All selected posts were already imported — tell the merchant
+        // instead of silently doing nothing.
+        alert(`All ${skipped} selected ${skipped === 1 ? 'post is' : 'posts are'} already in your feed.`);
       }
       onImported([]); // trigger parent refetch so newly tagged products show
       setOpen(false);
