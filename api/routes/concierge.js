@@ -218,6 +218,63 @@ router.get('/concierge/thread/:session_id', widgetCors, settingsLimiter, validat
   });
 });
 
+// ── CONCIERGE LOG ─────────────────────────────────────────────────────────
+// Lightweight "fire-and-forget" mirror of every message into the server
+// thread. video.js's storefront concierge has its own client-side logic
+// (collection curation, deal flow, order lookup) that doesn't go through
+// the LLM here, but the leads dashboard still needs to see the full
+// transcript. So the widget POSTS each user/bot turn to this endpoint.
+router.post('/concierge/log', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {
+  const merchantId = req.merchant.id;
+  const {
+    session_id,
+    role,                  // 'user' | 'assistant'
+    content,
+    page_context = null,
+  } = req.body || {};
+
+  if (!session_id || !role || !content) {
+    return res.status(400).json({ error: 'session_id, role, content required' });
+  }
+  if (!['user', 'assistant'].includes(role)) {
+    return res.status(400).json({ error: 'invalid role' });
+  }
+
+  try {
+    const thread = await getOrCreateThread({ merchantId, sessionId: session_id });
+    const messages = thread.messages || [];
+    const nowIso = new Date().toISOString();
+    const turn = {
+      role,
+      content: String(content).slice(0, 4000),  // cap to avoid runaway DB writes
+      created_at: nowIso,
+    };
+
+    const updates = {
+      messages: [...messages, turn],
+      updated_at: nowIso,
+    };
+    if (page_context?.page_type) updates.last_page_type = page_context.page_type;
+    if (page_context?.product_url) updates.last_product_url = page_context.product_url;
+
+    // Recompute lead_tier as the conversation grows so the dashboard
+    // surfaces engaged threads even before contact is captured.
+    const userMsgCount = updates.messages.filter(m => m.role === 'user').length;
+    const haveContact = !!(thread.customer_email || thread.customer_whatsapp);
+    if (haveContact) {
+      if (userMsgCount >= 6) updates.lead_tier = 'hot';
+      else if (userMsgCount >= 3) updates.lead_tier = 'warm';
+      else if (userMsgCount >= 1) updates.lead_tier = 'cold';
+    }
+
+    await supabase.from('concierge_threads').update(updates).eq('id', thread.id);
+    res.json({ ok: true, thread_id: thread.id });
+  } catch (err) {
+    console.error('[concierge/log] error:', err.message);
+    res.status(500).json({ error: 'log failed' });
+  }
+});
+
 // Surfaces today's headline deal so the widget can show a "🔥 hot deal"
 // teaser inline with the chat opener even before the LLM round-trips.
 router.get('/concierge/featured-deal', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {

@@ -3769,7 +3769,185 @@
     }, 550);
   }
 
-  // ── Deals — product cards with Add to Cart + Negotiate ──────────────────────
+  // ── Collection scoring — feature collections surface first ──────────────────
+  // Patterns ranked by recency/marketability. Higher score = surfaced first
+  // as a suggestion tile. Anything matching → "feature" collection.
+  // The score doubles as the tile sort key.
+  var _COLLECTION_RULES = [
+    { score: 100, rx: /\b(new|new[\s-]*arrival|just[\s-]*in|fresh)\b/i,                   label: '✨ New' },
+    { score:  95, rx: /\b(best[\s-]*seller|bestseller|trending|popular|hot)\b/i,         label: '🔥 Best Sellers' },
+    { score:  90, rx: /\b(featured|spotlight|staff[\s-]*pick|editor)\b/i,                 label: '⭐ Featured' },
+    { score:  85, rx: /\b(sale|clearance|deal|markdown|outlet)\b/i,                       label: '💰 On Sale' },
+    { score:  80, rx: /\b(summer|spring|fall|autumn|winter|holiday|seasonal)\b/i,         label: '🌞 Seasonal' },
+    { score:  60, rx: /\b(limited|exclusive)\b/i,                                          label: '✨ Limited' },
+  ];
+
+  // Score a collection by handle + title. Returns { score, label } or null.
+  function _scoreCollection(col) {
+    var hay = ((col.handle || '') + ' ' + (col.title || '')).toLowerCase();
+    for (var i = 0; i < _COLLECTION_RULES.length; i++) {
+      if (_COLLECTION_RULES[i].rx.test(hay)) return { score: _COLLECTION_RULES[i].score, label: _COLLECTION_RULES[i].label };
+    }
+    return null;
+  }
+
+  function _normalizeColProduct(p) {
+    var v = p.variants && p.variants[0];
+    if (!v) return null;
+    // Shopify /collections/{h}/products.json sets v.available — false means out of stock
+    var available = v.available !== false;
+    return {
+      shopify_product_id: String(p.id),
+      product_name: p.title,
+      handle: p.handle,
+      image_url: (p.images && p.images[0] && p.images[0].src) || '',
+      price: v.price,
+      compare_at_price: v.compare_at_price || '0',
+      variant_id: v.id,
+      created_at: p.created_at || p.published_at || null,
+      available: available,
+      tags: p.tags || '',
+    };
+  }
+
+  // Pull /products.json + /collections.json + each feature collection's products,
+  // de-dupe, score, and return the merged list with provenance attached.
+  function _fetchCollectionDealsCatalog(cb) {
+    if (_cncgEl && _cncgEl._cncgCatalog) { cb(_cncgEl._cncgCatalog); return; }
+
+    Promise.all([
+      fetch('/collections.json?limit=50').then(function (r) { return r.ok ? r.json() : { collections: [] }; }).catch(function () { return { collections: [] }; }),
+      fetch('/products.json?limit=250').then(function (r) { return r.ok ? r.json() : { products: [] }; }).catch(function () { return { products: [] }; }),
+    ]).then(function (results) {
+      var collectionsRaw = (results[0].collections || []).filter(function (c) { return c.handle !== 'all'; });
+      var allProducts = (results[1].products || []).map(_normalizeColProduct).filter(Boolean);
+
+      // Score collections
+      var featureCols = [];
+      collectionsRaw.forEach(function (col) {
+        var hit = _scoreCollection(col);
+        if (hit) featureCols.push(Object.assign({}, col, { _score: hit.score, _tile_label: hit.label }));
+      });
+      featureCols.sort(function (a, b) { return b._score - a._score; });
+
+      // For each feature collection, pull its products in parallel (cap 8)
+      var topFeatureCols = featureCols.slice(0, 8);
+      var colFetches = topFeatureCols.map(function (col) {
+        return fetch('/collections/' + col.handle + '/products.json?limit=12')
+          .then(function (r) { return r.ok ? r.json() : { products: [] }; })
+          .then(function (d) {
+            return {
+              col: col,
+              products: (d.products || []).map(_normalizeColProduct).filter(Boolean),
+            };
+          })
+          .catch(function () { return { col: col, products: [] }; });
+      });
+
+      Promise.all(colFetches).then(function (cols) {
+        // Build merged catalog with provenance:
+        //   - first pass: feature-collection products carry collection_score & collection_label
+        //   - second pass: remaining /products.json items fill the tail
+        var byId = {};
+        var ordered = [];
+
+        cols.forEach(function (entry) {
+          (entry.products || []).forEach(function (p) {
+            if (byId[p.shopify_product_id]) return;
+            byId[p.shopify_product_id] = true;
+            ordered.push(Object.assign({}, p, {
+              collection_handle: entry.col.handle,
+              collection_title: entry.col.title,
+              collection_label: entry.col._tile_label,
+              collection_score: entry.col._score,
+            }));
+          });
+        });
+
+        // Tail — products not in any feature collection
+        allProducts.forEach(function (p) {
+          if (byId[p.shopify_product_id]) return;
+          byId[p.shopify_product_id] = true;
+          ordered.push(p);
+        });
+
+        var collections_list = topFeatureCols.map(function (col) {
+          var match = cols.find(function (e) { return e.col.handle === col.handle; });
+          return {
+            handle: col.handle,
+            title: col.title,
+            label: col._tile_label,
+            score: col._score,
+            count: match ? match.products.length : 0,
+            image: col.image && col.image.src ? col.image.src : null,
+          };
+        }).filter(function (c) { return c.count > 0; });
+
+        var catalog = { products: ordered, feature_collections: collections_list };
+        if (_cncgEl) _cncgEl._cncgCatalog = catalog;
+        cb(catalog);
+      });
+    });
+  }
+
+  function _renderCollectionTiles(msgs, collections) {
+    if (!collections || !collections.length) return;
+    var bar = document.createElement('div');
+    bar.className = '_btgv_cncg_chips';
+    bar.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;';
+    collections.forEach(function (col) {
+      var chip = document.createElement('button');
+      chip.className = '_btgv_cncg_chip';
+      chip.style.cssText = 'background:#f3f0ff;color:#5b21b6;border:1px solid #e9d5ff;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;';
+      chip.textContent = col.label + ' · ' + col.count;
+      chip.onclick = function () { _cncgShowColProductsByHandle(msgs, col); };
+      bar.appendChild(chip);
+    });
+    msgs.appendChild(bar);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function _cncgShowColProductsByHandle(msgs, col) {
+    _cncgAddUser(msgs, col.label);
+    var typing = _cncgTyping(msgs);
+    fetch('/collections/' + col.handle + '/products.json?limit=20')
+      .then(function (r) { return r.ok ? r.json() : { products: [] }; })
+      .then(function (data) {
+        typing.remove();
+        var normalized = (data.products || []).map(_normalizeColProduct).filter(Boolean);
+        // In-stock first, recent first, on-sale boost
+        normalized.sort(_dealRanker);
+        if (!normalized.length) {
+          _cncgAddBot(msgs, "Hmm — nothing in this collection right now. Try another?");
+          _cncgBackChip(msgs); return;
+        }
+        _cncgAddBot(msgs, col.title + " — here's what's in stock right now ✨");
+        _cncgRenderProducts(msgs, normalized.slice(0, 12), { showNegotiate: true });
+        _cncgBackChip(msgs);
+      })
+      .catch(function () {
+        typing.remove();
+        _cncgAddBot(msgs, "Couldn't load that collection. Try another!");
+        _cncgBackChip(msgs);
+      });
+  }
+
+  // Sort: in-stock > on-sale boost > recent > collection-score boost > price desc
+  function _dealRanker(a, b) {
+    if (a.available !== b.available) return a.available ? -1 : 1;
+    var saleA = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
+    var saleB = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
+    if (saleA !== saleB) return saleB - saleA;
+    var colA = a.collection_score || 0;
+    var colB = b.collection_score || 0;
+    if (colA !== colB) return colB - colA;
+    if (a.created_at && b.created_at && a.created_at !== b.created_at) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    return parseFloat(b.price || 0) - parseFloat(a.price || 0);
+  }
+
+  // ── Deals — collection-driven curation + suggestion tiles ───────────────────
   function _cncgDeals(msgs) {
     // If products are already in view, negotiate the first one directly — no discovery needed
     if (_cncgEl && _cncgEl._lastShownProducts && _cncgEl._lastShownProducts.length) {
@@ -3781,116 +3959,44 @@
     }
 
     var _allDealPhrases = [
-      'Scanning the full catalog…',
-      'Finding the best prices just for you…',
-      'Checking what\'s dealworthy right now…',
-      'Handpicking the top offers…',
-      'Almost there — making sure these are worth your time…',
-      'Running the numbers on every item…',
-      'Comparing prices across the whole store…',
+      'Pulling collections — new, best sellers, sale…',
+      'Finding what\'s in stock right now…',
+      'Sorting through what\'s fresh and dealworthy…',
       'Pulling out the hidden gems…',
-      'Sorting through everything so you don\'t have to…',
-      'Looking for the best value for your money…',
-      'Checking which items have the most room to negotiate…',
-      'Filtering out anything that isn\'t worth your time…',
-      'Finding deals that actually make sense…',
-      'Cross-referencing prices — almost done…',
-      'Making sure these picks are genuinely good…',
-      'Hunting down the items with the best margins…',
-      'Shortlisting only the dealworthy ones…',
-      'Doing the homework so you can just shop…',
-      'This one\'s worth the wait — nearly there…',
+      'Lining up the best 20 picks…',
       'Locking in your personalized picks…',
     ];
-    // Pick 5 at random so the sequence feels fresh each time
     var shuffled = _allDealPhrases.slice().sort(function () { return Math.random() - 0.5; });
-    var dealPhrases = shuffled.slice(0, 5);
-    var typing = _cncgTyping(msgs, dealPhrases);
+    var typing = _cncgTyping(msgs, shuffled.slice(0, 3));
 
-    // Ensure full Shopify catalog is loaded, then build product list
-    function ensureShopifyProducts(cb) {
-      if (_cncgEl && _cncgEl._shopifyProducts) { cb(_cncgEl._shopifyProducts); return; }
-      fetch('/products.json?limit=150')
-        .then(function (r) { return r.ok ? r.json() : { products: [] }; })
-        .then(function (d) {
-          if (_cncgEl) _cncgEl._shopifyProducts = d.products || [];
-          cb(_cncgEl ? _cncgEl._shopifyProducts : []);
-        }).catch(function () { cb([]); });
-    }
-
-    function gatherProducts(shopifyProducts) {
-      var seen = {}, products = [];
-      // Build a handle lookup by product ID from Shopify catalog
-      var handleById = {};
-      (shopifyProducts || []).forEach(function (sp) { handleById[String(sp.id)] = sp.handle; });
-
-      // Video-tagged products first — enrich handle from Shopify catalog if missing
-      var feedItems = _cncgEl._feedItems || [];
-      feedItems.forEach(function (v) {
-        if (v._type !== 'product' && v.video_product_tags) {
-          v.video_product_tags.forEach(function (t) {
-            if (!seen[t.shopify_product_id]) {
-              seen[t.shopify_product_id] = true;
-              var enriched = Object.assign({}, t);
-              if (!enriched.handle) enriched.handle = handleById[String(t.shopify_product_id)] || '';
-              products.push(enriched);
-            }
-          });
-        }
-      });
-
-      // Add remaining Shopify products not yet in the list
-      (shopifyProducts || []).forEach(function (p) {
-        var v = p.variants && p.variants[0];
-        if (!v) return;
-        var sid = String(p.id);
-        if (!seen[sid]) {
-          seen[sid] = true;
-          products.push({
-            shopify_product_id: sid,
-            product_name: p.title,
-            price: v.price,
-            compare_at_price: v.compare_at_price || '0',
-            handle: p.handle,
-            image_url: (p.images && p.images[0] && p.images[0].src) || '',
-            variant_id: v.id,
-          });
-        }
-      });
-
-      return products;
-    }
-
-    // Wait the full curation delay (or until products load, whichever is later)
-    var elapsed = 0, interval = 50, target = 3200;
+    var elapsed = 0, interval = 50, target = 2400;
     var waitTimer = setInterval(function () { elapsed += interval; }, interval);
 
-    ensureShopifyProducts(function (shopifyProducts) {
+    _fetchCollectionDealsCatalog(function (catalog) {
       var remaining = Math.max(0, target - elapsed);
       clearInterval(waitTimer);
       setTimeout(function () {
         typing.remove();
-        var products = gatherProducts(shopifyProducts);
 
-        if (!products.length) {
+        var inStock = (catalog.products || []).filter(function (p) { return p.available !== false; });
+        // If nothing reports availability, fall back to whole catalog
+        var pool = inStock.length ? inStock : (catalog.products || []);
+
+        if (!pool.length) {
           _cncgAddBot(msgs, "I couldn't pull the product list right now — try browsing by collection instead!");
           var ws = _chipWatchShop(), find = _chipFind();
-          _cncgAddChips(msgs, _buildChips(msgs, [
-            { label: ws.label, fn: ws.fn },
-            { label: find.label, fn: find.fn },
-          ]));
+          _cncgAddChips(msgs, _buildChips(msgs, [{ label: ws.label, fn: ws.fn }, { label: find.label, fn: find.fn }]));
           return;
         }
 
-        products.sort(function (a, b) {
-          var discA = parseFloat(a.compare_at_price || 0) > parseFloat(a.price || 0) ? 1 : 0;
-          var discB = parseFloat(b.compare_at_price || 0) > parseFloat(b.price || 0) ? 1 : 0;
-          if (discB !== discA) return discB - discA;
-          return parseFloat(b.price || 0) - parseFloat(a.price || 0);
-        });
+        pool.sort(_dealRanker);
+        var top = pool.slice(0, 24);
 
-        _cncgAddBot(msgs, "I've handpicked these just for you — every one is dealworthy. Tap \"Offer\" on any and I'll get you the best price I can. 🤝");
-        _cncgRenderProducts(msgs, products.slice(0, 8), { showNegotiate: true });
+        _cncgAddBot(msgs, "I've handpicked these from your store's collections — fresh, in stock, dealworthy. Tap \"Offer\" on any to negotiate. 🤝");
+        if (catalog.feature_collections && catalog.feature_collections.length) {
+          _renderCollectionTiles(msgs, catalog.feature_collections);
+        }
+        _cncgRenderProducts(msgs, top, { showNegotiate: true });
         _cncgBackChip(msgs);
       }, remaining);
     });
@@ -4055,6 +4161,43 @@
       data.msgs.push({ r: role, t: text });
       localStorage.setItem(_CHAT_KEY, JSON.stringify(data));
     } catch (e) {}
+
+    // Mirror to the server-side thread so /dashboard/leads sees the
+    // full conversation. Fire-and-forget — never block the UI.
+    try {
+      var sessionId = _getOrInitSessionId();
+      var ctx = _getPageContext();
+      var pageContext = {
+        page_type: ctx.type,
+        product_url: ctx.type === 'product' ? window.location.href : null,
+      };
+      fetch(API_BASE + '/api/concierge/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({
+          session_id: sessionId,
+          role: role === 'b' ? 'assistant' : 'user',
+          content: text,
+          page_context: pageContext,
+        }),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // Reuses the n.js localStorage session if present; otherwise mints one.
+  // This way the same session_id is shared across n.js + video.js so the
+  // leads dashboard sees one continuous concierge thread per browser.
+  function _getOrInitSessionId() {
+    try {
+      var raw = localStorage.getItem('_botiga_session');
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.session_id) return s.session_id;
+      }
+    } catch (e) {}
+    var id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    try { localStorage.setItem('_botiga_session', JSON.stringify({ session_id: id, ts: Date.now() })); } catch (e) {}
+    return id;
   }
 
   function _cncgGetMsgHistory() {
