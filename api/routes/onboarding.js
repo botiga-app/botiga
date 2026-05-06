@@ -11,6 +11,7 @@ const router = express.Router();
 const supabase = require('../lib/supabase');
 const { dashboardCors } = require('../middleware/cors');
 const { detectStore } = require('../services/storeDetect');
+const { importIgMedia } = require('../services/videoStorage');
 
 router.use('/onboarding', dashboardCors);
 
@@ -298,14 +299,27 @@ async function firstIgPull(merchantId, handle, limit) {
       .maybeSingle();
     if (existing) continue;
 
+    // Mirror IG media to our own S3 so the URLs don't expire after ~24h.
+    // IG signs CDN URLs with an `oe=` token; once it expires the video
+    // 403s and the storefront feed shows a black box. Re-uploading at
+    // import time gives us a permanent URL.
+    const mirrored = await importIgMedia({
+      videoUrl: post.video_url,
+      thumbnailUrl: post.thumbnail_url,
+      merchantId,
+    });
+
     const { error: insErr } = await supabase
       .from('videos')
       .insert({
         merchant_id: merchantId,
         title: post.caption || null,
-        s3_key: null,
-        s3_url: post.video_url || null,                  // null for photos — widget falls back to thumbnail
-        thumbnail_url: post.thumbnail_url,
+        s3_key: mirrored.s3_key,
+        // Prefer mirrored S3 URL; fall back to original on upload failure
+        // so the customer at least gets a chance to see the video before
+        // the IG token expires.
+        s3_url: mirrored.s3_url || post.video_url || null,
+        thumbnail_url: mirrored.thumbnail_s3_url || post.thumbnail_url,
         source: 'instagram',
         source_url: post.stable_id,
         status: 'active',

@@ -7,6 +7,7 @@ const supabase = require('../lib/supabase');
 const { validateApiKey } = require('../middleware/auth');
 const { widgetCors, dashboardCors } = require('../middleware/cors');
 const { analyzeAndTag } = require('../services/videoAutoTag');
+const { importIgMedia } = require('../services/videoStorage');
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -455,17 +456,24 @@ router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async 
       if (existing) { skipped++; continue; }
     }
 
-    // s3_url is the playable media URL — only set for actual videos. For
-    // photos we leave it null and rely on thumbnail_url, which the widget
-    // + drawer fall back to when there's no video to play.
+    // Mirror IG media to our S3 so URLs don't expire (IG signs CDN URLs
+    // with an `oe=` token that lasts ~24h). On upload failure we fall
+    // back to the original URL — better one broken-after-24h video
+    // than a failed import.
+    const mirrored = await importIgMedia({
+      videoUrl: post.video_url,
+      thumbnailUrl: post.thumbnail_url,
+      merchantId,
+    });
+
     const { data, error } = await supabase
       .from('videos')
       .insert({
         merchant_id: merchantId,
         title: post.caption ? post.caption.slice(0, 80) : null,
-        s3_key: null,
-        s3_url: post.video_url || null,
-        thumbnail_url: post.thumbnail_url || null,
+        s3_key: mirrored.s3_key,
+        s3_url: mirrored.s3_url || post.video_url || null,
+        thumbnail_url: mirrored.thumbnail_s3_url || post.thumbnail_url || null,
         source,
         source_url: sourceUrl,
         status: 'active',
@@ -488,6 +496,119 @@ router.post('/merchants/:merchantId/videos/import-social', dashboardCors, async 
     failed,
     last_error: lastError,
     videos: imported,
+  });
+});
+
+// ─── Re-mirror existing IG videos to our S3 ──────────────────────────────────
+// One-shot maintenance endpoint: walks every video for a merchant where
+// s3_url still points to IG's CDN (i.e. wasn't migrated to our bucket
+// during import) and re-fetches the post + uploads to S3. Re-fetches by
+// shortcode are used because the original signed URL has likely expired
+// already.
+//
+// Tick-style: takes chunk_size at a time (default 3, max 5) and returns
+// has_more so the dashboard can poll until done. Vercel's 60s ceiling
+// makes a one-shot loop unsafe for catalogs >5–10 videos.
+router.post('/merchants/:merchantId/videos/remirror-tick', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const chunkSize = Math.min(parseInt(req.body?.chunk_size, 10) || 3, 5);
+
+  // Find IG-imported rows whose s3_url still hits *.fbcdn.net or *.cdninstagram.com
+  // (i.e. the URL we never mirrored). Newly-imported rows after the
+  // S3 mirror went live will have s3_url on our own bucket, so they're
+  // skipped automatically.
+  const { data: stale, error } = await supabase
+    .from('videos')
+    .select('id, s3_url, thumbnail_url, source_url, s3_key')
+    .eq('merchant_id', merchantId)
+    .eq('source', 'instagram')
+    .or('s3_url.ilike.%fbcdn.net%,s3_url.ilike.%cdninstagram.com%,thumbnail_url.ilike.%fbcdn.net%,thumbnail_url.ilike.%cdninstagram.com%')
+    .is('s3_key', null)
+    .limit(chunkSize);
+
+  if (error) return res.status(500).json({ error: error.message });
+  if (!stale || stale.length === 0) {
+    return res.json({ processed: 0, mirrored: 0, failed: 0, has_more: false });
+  }
+
+  // Fetch fresh IG metadata via shortcode → re-resolve current signed URL
+  // → mirror to S3. We pull each post individually rather than doing a
+  // bulk feed pull since older posts may not be in the recent-feed window.
+  let mirrored = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (const v of stale) {
+    let videoUrl = null;
+    let thumbnailUrl = null;
+
+    // source_url is "https://www.instagram.com/p/{shortcode}/"
+    const m = (v.source_url || '').match(/\/p\/([^/?#]+)/);
+    if (m && process.env.RAPIDAPI_KEY) {
+      const shortcode = m[1];
+      try {
+        const r = await fetch(`https://instagram120.p.rapidapi.com/api/instagram/post?shortcode=${shortcode}`, {
+          headers: {
+            'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+            'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+          },
+        });
+        if (r.ok) {
+          const d = await r.json();
+          const item = d?.result || d?.data || d;
+          videoUrl = item.video_url || item.video_versions?.[0]?.url || null;
+          thumbnailUrl = item.thumbnail_url || item.display_url || item.image_versions2?.candidates?.[0]?.url || null;
+        }
+      } catch {}
+    }
+
+    // If shortcode re-fetch failed, try the existing URLs as a last resort —
+    // they might still be in the IG cache window.
+    if (!videoUrl) videoUrl = (v.s3_url && /fbcdn|cdninstagram/.test(v.s3_url)) ? v.s3_url : null;
+    if (!thumbnailUrl) thumbnailUrl = (v.thumbnail_url && /fbcdn|cdninstagram/.test(v.thumbnail_url)) ? v.thumbnail_url : null;
+
+    if (!videoUrl && !thumbnailUrl) {
+      failed++;
+      errors.push(v.id + ': no fresh URL');
+      continue;
+    }
+
+    const result = await importIgMedia({ videoUrl, thumbnailUrl, merchantId });
+    if (!result.s3_url && !result.thumbnail_s3_url) {
+      failed++;
+      errors.push(v.id + ': ' + (result.video_failed || result.thumbnail_failed || 'unknown'));
+      continue;
+    }
+
+    const updates = { updated_at: new Date().toISOString() };
+    if (result.s3_url) { updates.s3_url = result.s3_url; updates.s3_key = result.s3_key; }
+    if (result.thumbnail_s3_url) updates.thumbnail_url = result.thumbnail_s3_url;
+
+    const { error: upErr } = await supabase.from('videos').update(updates).eq('id', v.id);
+    if (upErr) {
+      failed++;
+      errors.push(v.id + ': db ' + upErr.message);
+      continue;
+    }
+    mirrored++;
+  }
+
+  // Probe for more — if any rows left, dashboard should keep ticking.
+  const { count: remaining } = await supabase
+    .from('videos')
+    .select('id', { count: 'exact', head: true })
+    .eq('merchant_id', merchantId)
+    .eq('source', 'instagram')
+    .or('s3_url.ilike.%fbcdn.net%,s3_url.ilike.%cdninstagram.com%,thumbnail_url.ilike.%fbcdn.net%,thumbnail_url.ilike.%cdninstagram.com%')
+    .is('s3_key', null);
+
+  res.json({
+    processed: stale.length,
+    mirrored,
+    failed,
+    errors: errors.slice(0, 10),
+    remaining: remaining ?? 0,
+    has_more: (remaining ?? 0) > 0,
   });
 });
 
@@ -853,7 +974,8 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
   if (!posts.length) return res.json({ imported: 0, video_ids: [], message: 'No reels found for this handle.' });
 
   // Insert (skip dupes by stable_id — IG shortcode or post id, NOT
-  // signed video_url which IG re-signs on every fetch).
+  // signed video_url which IG re-signs on every fetch). Mirror media
+  // to our S3 inside the loop so the saved URL is permanent.
   const inserted = [];
   for (const post of posts) {
     const { data: existing } = await supabase
@@ -864,14 +986,20 @@ router.post('/merchants/:merchantId/videos/auto-import-latest', dashboardCors, a
       .maybeSingle();
     if (existing) continue;
 
+    const mirrored = await importIgMedia({
+      videoUrl: post.video_url,
+      thumbnailUrl: post.thumbnail_url,
+      merchantId,
+    });
+
     const { data, error } = await supabase
       .from('videos')
       .insert({
         merchant_id: merchantId,
         title: post.caption || null,
-        s3_key: null,
-        s3_url: post.video_url || null,                  // null for photos — widget shows thumbnail instead
-        thumbnail_url: post.thumbnail_url,
+        s3_key: mirrored.s3_key,
+        s3_url: mirrored.s3_url || post.video_url || null,
+        thumbnail_url: mirrored.thumbnail_s3_url || post.thumbnail_url,
         source: 'instagram',
         source_url: post.stable_id,                      // stable across fetches
         status: 'active',
