@@ -1870,7 +1870,16 @@
     return drawer;
   }
 
-  function buildProductSlide(tag) {
+  // Product-card slide. Same look as a video slide so the feed feels
+  // consistent: brand badge top-left, right rail (heart/share/save/ask),
+  // bottom zone with price + "Make an offer · usually $X-Y" + cart + buy.
+  // Hearts on products are session-local (no real "post" to like, but UI
+  // consistency wins). Comments and mute are skipped — products have no
+  // comment thread and no audio.
+  function buildProductSlide(tag, feedContext) {
+    feedContext = feedContext || {};
+    var productId = tag.shopify_product_id || tag._videoId || ('p_' + Math.random().toString(36).slice(2, 10));
+
     var slide = document.createElement('div');
     slide.className = '_btgv_slide';
     slide.style.background = '#111';
@@ -1882,53 +1891,123 @@
     }
     var grad = document.createElement('div'); grad.className = '_btgv_grad'; slide.appendChild(grad);
 
-    var panel = document.createElement('div'); panel.className = '_btgv_ppanel';
+    // Top bar: brand badge (no view count for products — they have no posts data)
+    var topbar = buildTopBar({ views_count: 0 }, feedContext);
+    slide.appendChild(topbar);
 
-    var badge = document.createElement('div'); badge.className = '_btgv_pbadge'; badge.textContent = '✨ Shop Now';
-    panel.appendChild(badge);
+    // Right rail — heart, share, save, ask (skip comment + mute since
+    // products don't have a thread or audio).
+    var rail = document.createElement('div'); rail.className = '_btgv_rail';
 
-    var nm = document.createElement('div'); nm.className = '_btgv_pname'; nm.textContent = tag.product_name || '';
-    panel.appendChild(nm);
-
-    var price = parseFloat(tag.price || 0);
-    var was = parseFloat(tag.compare_at_price || 0);
-    var prRow = document.createElement('div'); prRow.className = '_btgv_pprrow';
-    if (price > 0) {
-      var ps = document.createElement('div'); ps.className = '_btgv_pprice'; ps.textContent = '$' + price.toFixed(2);
-      prRow.appendChild(ps);
-      if (was > price) {
-        var ws = document.createElement('div'); ws.className = '_btgv_pwas'; ws.textContent = '$' + was.toFixed(2);
-        var ds = document.createElement('div'); ds.className = '_btgv_pdiscbadge'; ds.textContent = Math.round((1 - price / was) * 100) + '% off';
-        prRow.appendChild(ws); prRow.appendChild(ds);
-      }
-    }
-    panel.appendChild(prRow);
-
-    var acts = document.createElement('div'); acts.className = '_btgv_pacts';
-    function pbtn(cls, icon, lbl, fn) {
-      var btn = document.createElement('button');
-      btn.className = '_btgv_pbtn ' + cls;
-      btn.innerHTML = '<span style="font-size:18px">' + icon + '</span><span>' + lbl + '</span>';
-      btn.onclick = function (e) { e.stopPropagation(); fn(btn); };
-      return btn;
-    }
-    acts.appendChild(pbtn('_btgv_pbtn_cart', '🛒', 'Cart', function (btn) {
-      track(tag._videoId || '', 'add_to_cart', tag.shopify_product_id);
-      addToCart(tag.shopify_variant_id, function (ok) {
-        fireConfetti();
-        if (ok) { btn.querySelector('span:last-child').textContent = 'Added!'; setTimeout(function () { btn.querySelector('span:last-child').textContent = 'Cart'; }, 2500); }
+    // Heart — session-local counter, same animation as video slides.
+    var likeBtn = document.createElement('button');
+    likeBtn.style.position = 'relative';
+    var likeCount = 0;
+    var liked = false;
+    likeBtn.innerHTML = '<span style="font-size:22px">🤍</span><span>' + likeCount + '</span>';
+    function explodeHeartsP(btn) {
+      var dirs = [
+        { x: -36, y: -42 }, { x: 0, y: -50 }, { x: 36, y: -42 },
+        { x: -42, y: -10 }, { x: 42, y: -10 },
+      ];
+      var glyphs = ['❤', '❤', '💖', '💕', '🧡'];
+      dirs.forEach(function (d, i) {
+        var h = document.createElement('span');
+        h.className = '_btgv_lh';
+        h.textContent = glyphs[i % glyphs.length];
+        h.style.color = i === 1 ? '#F72585' : '#fff';
+        h.style.setProperty('--lhx', d.x + 'px');
+        h.style.setProperty('--lhy', d.y + 'px');
+        btn.appendChild(h);
+        h.addEventListener('animationend', function () { h.remove(); });
       });
-    }));
-    acts.appendChild(pbtn('_btgv_pbtn_buy', '⚡', 'Buy Now', function () {
-      track(tag._videoId || '', 'add_to_cart', tag.shopify_product_id);
-      addToCart(tag.shopify_variant_id, function (ok) { if (ok) { fireConfetti(); window.location.href = '/checkout'; } });
-    }));
-    acts.appendChild(pbtn('_btgv_pbtn_neg', '🤝', 'Negotiate', function () {
-      track(tag._videoId || '', 'negotiate', tag.shopify_product_id);
-      openNegotiateModal(tag);
-    }));
-    panel.appendChild(acts);
-    slide.appendChild(panel);
+    }
+    likeBtn.onclick = function (e) {
+      e.stopPropagation();
+      likeBtn.classList.remove('_btgv_popping');
+      void likeBtn.offsetWidth;
+      likeBtn.classList.add('_btgv_popping');
+      setTimeout(function () { likeBtn.classList.remove('_btgv_popping'); }, 520);
+      explodeHeartsP(likeBtn);
+      if (!liked) {
+        liked = true;
+        likeCount++;
+        likeBtn.querySelectorAll('span')[0].textContent = '❤️';
+        likeBtn.querySelectorAll('span')[1].textContent = String(likeCount);
+        track(productId, 'like', tag.shopify_product_id);
+      }
+    };
+    rail.appendChild(likeBtn);
+
+    // Share — copies / native-shares the current page URL
+    var shareBtn = document.createElement('button');
+    shareBtn.innerHTML = '<span style="font-size:20px">↗️</span><span>Share</span>';
+    shareBtn.onclick = function (e) {
+      e.stopPropagation();
+      track(productId, 'share', tag.shopify_product_id);
+      var shareUrlStr = window.location.href;
+      if (navigator.share) navigator.share({ url: shareUrlStr }).catch(function () {});
+      else { try { navigator.clipboard.writeText(shareUrlStr); } catch (_) {} }
+    };
+    rail.appendChild(shareBtn);
+
+    // Save — bookmark to localStorage, same key namespace as videos
+    var savedSetP = (function () {
+      try {
+        var raw = localStorage.getItem('_btgv_saves_' + API_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (_) { return {}; }
+    })();
+    var saveBtn = document.createElement('button');
+    var saveKey = 'p:' + productId;
+    var isSaved = !!savedSetP[saveKey];
+    saveBtn.innerHTML = '<span style="font-size:20px">' + (isSaved ? '🔖' : '📑') + '</span><span>' + (isSaved ? 'Saved' : 'Save') + '</span>';
+    saveBtn.onclick = function (e) {
+      e.stopPropagation();
+      savedSetP[saveKey] = !savedSetP[saveKey];
+      try { localStorage.setItem('_btgv_saves_' + API_KEY, JSON.stringify(savedSetP)); } catch (_) {}
+      var nowSaved = !!savedSetP[saveKey];
+      saveBtn.innerHTML = '<span style="font-size:20px">' + (nowSaved ? '🔖' : '📑') + '</span><span>' + (nowSaved ? 'Saved' : 'Save') + '</span>';
+      saveBtn.classList.remove('_btgv_popping');
+      void saveBtn.offsetWidth;
+      saveBtn.classList.add('_btgv_popping');
+      setTimeout(function () { saveBtn.classList.remove('_btgv_popping'); }, 520);
+    };
+    rail.appendChild(saveBtn);
+
+    // Ask — opens concierge with this product as context
+    var askBtn = document.createElement('button');
+    askBtn.style.position = 'relative';
+    var askInner = '';
+    if (feedContext.botAvatar) {
+      askInner = '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,.12)"><img src="' + feedContext.botAvatar + '" alt="" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;display:block"/></span>';
+    } else {
+      askInner = '<span style="font-size:20px">💬</span>';
+    }
+    askBtn.innerHTML = askInner + '<span>Ask</span>';
+    askBtn.onclick = function (e) {
+      e.stopPropagation();
+      if (typeof openConcierge === 'function') {
+        if (_cncgEl) {
+          _cncgEl._lastShownProducts = [tag];
+        }
+        openConcierge();
+      }
+    };
+    rail.appendChild(askBtn);
+
+    slide.appendChild(rail);
+
+    // Bottom zone — reuse the same builder as video slides so the price
+    // line + "Make an offer · usually $X-Y" CTA + cart + buy buttons look
+    // identical to a tagged-video slide.
+    var bottom = buildBottomZone(
+      { id: productId, title: tag.product_name || '', video_product_tags: [tag] },
+      [tag],
+      feedContext
+    );
+    slide.appendChild(bottom);
+
     return slide;
   }
 
@@ -2365,7 +2444,7 @@
     vids.forEach(function (item, i) {
       // Product card slide
       if (item._type === 'product') {
-        scroll.appendChild(buildProductSlide(item));
+        scroll.appendChild(buildProductSlide(item, feedContext));
         return;
       }
 
