@@ -6,7 +6,19 @@
     return s[s.length - 1];
   })();
 
-  var API_KEY = script.getAttribute('data-key') || '';
+  // Accept the API key from any of three locations so the same script
+  // works whether merchants paste manually or we auto-install via the
+  // Shopify Script Tags API (which can't set custom attributes — only
+  // src — so ?k=<key> in the URL is the only viable path):
+  //   1. ?k=<key> URL parameter on the script src   (preferred)
+  //   2. data-key="<key>" attribute                  (legacy)
+  //   3. data-k="<key>" attribute                    (matches n.js convention)
+  var API_KEY = (function () {
+    if (script.src) {
+      try { var k = new URL(script.src).searchParams.get('k'); if (k) return k; } catch (_) {}
+    }
+    return script.getAttribute('data-key') || script.getAttribute('data-k') || '';
+  })();
   // Derive API base in priority order: data-api / data-key attribute →
   // infer from the script's own src URL → hardcoded fallback. The middle
   // step is critical for the auto-install path: Shopify Script Tags API
