@@ -54,7 +54,7 @@
   var BOT_GREETING = script.getAttribute('data-greeting') || "Hi! 👋 What can I help you find today?";
   var BOT_PERSONALITY = script.getAttribute('data-bot-personality') || 'salesy';
   var BOT_AVATAR = script.getAttribute('data-bot-avatar') || null;
-  var AUTO_OPEN_DELAY = script.hasAttribute('data-auto-open') ? parseInt(script.getAttribute('data-auto-open'), 10) : 2000;
+  var AUTO_OPEN_DELAY = script.hasAttribute('data-auto-open') ? parseInt(script.getAttribute('data-auto-open'), 10) : 3000;
 
   if (!API_KEY) return;
 
@@ -2831,8 +2831,14 @@
     document.body.appendChild(launcherEl);
     buildConcierge(feedItems, cols);
 
-    // Auto-open: immediately for deal celebrations, 800ms for product nego pages, 2s default
+    // Auto-open: immediately for deal celebrations, 800ms for product nego pages,
+    // 3s default for first-time visitors (one auto-open per session — once it fires,
+    // the gate stays set even if the customer closes the chat, so we don't re-pop).
     var _autoDelay = AUTO_OPEN_DELAY;
+    var _AUTOOPEN_GATE = '_btgv_autoopen_fired_' + API_KEY;
+    var _autoOpenAlreadyFired = false;
+    try { _autoOpenAlreadyFired = !!sessionStorage.getItem(_AUTOOPEN_GATE); } catch (e) {}
+
     if (_btgCartDeals && _btgCartDeals.length) {
       _autoDelay = 600; // open promptly to show deal celebration
     } else {
@@ -2840,9 +2846,17 @@
         if (new URL(window.location.href).searchParams.get('btg_neg') === '1') _autoDelay = Math.min(_autoDelay, 800);
       } catch (e) {}
     }
+
+    // Returning visitors who've already been auto-opened this session get to
+    // browse uninterrupted — they can still tap the bubble.
+    if (_autoOpenAlreadyFired) _autoDelay = -1;
+
     if (_autoDelay >= 0) {
       setTimeout(function () {
-        if (!_cncgOpen) openConcierge();
+        if (!_cncgOpen) {
+          try { sessionStorage.setItem(_AUTOOPEN_GATE, '1'); } catch (e) {}
+          openConcierge();
+        }
       }, _autoDelay);
     }
   }
@@ -2961,6 +2975,19 @@
     _cncgEl._inp = inp; _cncgEl._sendBtn = sendBtn;
 
     document.body.appendChild(_cncgEl);
+
+    // Rehydrate server thread so we know if this is a returning visitor.
+    // Decides whether the chat shows the first-time intro+capture flow or
+    // jumps straight to the warm "welcome back" greeting.
+    try {
+      var sessId = _getOrInitSessionId();
+      fetch(API_BASE + '/api/concierge/thread/' + encodeURIComponent(sessId) + '?k=' + encodeURIComponent(API_KEY))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (_cncgEl && d) _cncgEl._thread = d;
+        })
+        .catch(function () {});
+    } catch (e) {}
 
     // Eagerly load Shopify catalog so handle resolution works for ALL product clicks
     // (not just after the user runs the "Get me a deal" flow)
@@ -3210,6 +3237,234 @@
     }, 1000);
   }
 
+  // ── Page-context Willow openers — 3 variants per page type, lots of emojis ──
+  var _WILLOW_OPENERS = {
+    home: [
+      { intro: "Hey, I'm Willow 👋 your shopping concierge ✨", hook: "🔥 Today's drop:" },
+      { intro: "Hi! ✨ I'm Willow — I know every product in here and can negotiate any price.", hook: "💎 Today's hottest pick:" },
+      { intro: "Hey there 👋 Willow here, your shopping bestie 🛍️", hook: "🎁 Drop of the day:" },
+    ],
+    product: [
+      { intro: "Spotted you on this one 👀 I'm Willow, your shopping concierge ✨", hook: "🔓 I can probably do better than that price for you:" },
+      { intro: "Hey! 👋 I'm Willow — I see you're checking this out.", hook: "💸 Let me get you a number you'll like:" },
+      { intro: "Curious about this? 🤔 I'm Willow, here to help you score it for less.", hook: "🤝 Real talk on price:" },
+    ],
+    collection: [
+      { intro: "Browsing this collection? 🔥 I'm Willow, your shopping concierge ✨", hook: "💎 Hottest in here today:" },
+      { intro: "Hey 👋 Willow here. Great taste — this collection is fire 🔥", hook: "🎁 Pick of the bunch:" },
+      { intro: "Loving the vibe? 😍 I'm Willow, I know every piece in this collection.", hook: "🔓 Today's standout:" },
+    ],
+    cart: [
+      { intro: "Big bag energy 🛍️ I'm Willow — let me knock the total down for you ✨", hook: "💸 Try this one first:" },
+      { intro: "Hold up! 🤝 Willow here. I can probably get you a deal before checkout.", hook: "🔥 Best move right now:" },
+      { intro: "Ready to checkout? 🛒 Wait — I'm Willow, let me save you some 💸", hook: "🎁 Quick win:" },
+    ],
+  };
+
+  function _pickWillowOpener(pageType) {
+    var pool = _WILLOW_OPENERS[pageType] || _WILLOW_OPENERS.home;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Pick the deepest discount product from the catalog as Willow's hook.
+  // Falls back to the first Shopify product if no compare_at_price set
+  // (better than a generic message — Willow always names something).
+  function _pickWillowDealProduct(cb) {
+    _fetchCollectionDealsCatalog(function (catalog) {
+      var pool = (catalog.products || []).filter(function (p) { return p.available !== false; });
+      if (!pool.length) pool = catalog.products || [];
+
+      var withDiscount = pool.filter(function (p) {
+        var price = parseFloat(p.price);
+        var compareAt = parseFloat(p.compare_at_price);
+        return Number.isFinite(price) && Number.isFinite(compareAt) && compareAt > price;
+      });
+
+      if (withDiscount.length) {
+        withDiscount.sort(function (a, b) {
+          var spreadA = parseFloat(a.compare_at_price) - parseFloat(a.price);
+          var spreadB = parseFloat(b.compare_at_price) - parseFloat(b.price);
+          return spreadB - spreadA;
+        });
+        cb(withDiscount[0]);
+        return;
+      }
+
+      // No on-sale items — use highest collection score (new / featured / best-seller)
+      pool.sort(function (a, b) { return (b.collection_score || 0) - (a.collection_score || 0); });
+      cb(pool[0] || null);
+    });
+  }
+
+  // ── Email capture tile with blurred-price reveal ────────────────────────────
+  // Renders a styled inline card in the chat. After successful email submit,
+  // animates the blurred number → real number, then offers Negotiate (uses
+  // the existing per-product negotiation flow — no duplication).
+  function _renderWillowDealTile(msgs, deal, hookLine) {
+    if (!deal) return null;
+
+    var tile = document.createElement('div');
+    tile.className = '_btgv_willow_deal_tile';
+    tile.style.cssText = 'background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#fff;border-radius:14px;padding:14px;margin:8px 0;box-shadow:0 6px 20px rgba(0,0,0,0.18);font-family:inherit;';
+
+    var hook = document.createElement('div');
+    hook.style.cssText = 'font-size:12px;color:#c7d2fe;font-weight:600;letter-spacing:0.3px;margin-bottom:10px;';
+    hook.textContent = hookLine || '🔓 Today\'s drop';
+    tile.appendChild(hook);
+
+    var card = document.createElement('div');
+    card.style.cssText = 'display:flex;gap:12px;align-items:center;';
+    if (deal.image_url) {
+      var img = document.createElement('img');
+      img.src = deal.image_url; img.alt = '';
+      img.style.cssText = 'width:64px;height:64px;border-radius:10px;object-fit:cover;flex-shrink:0;';
+      card.appendChild(img);
+    }
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;';
+
+    var name = document.createElement('div');
+    name.style.cssText = 'font-size:13px;font-weight:700;line-height:1.3;margin-bottom:4px;';
+    name.textContent = deal.product_name || deal.title || 'Today\'s pick';
+    info.appendChild(name);
+
+    var priceRow = document.createElement('div');
+    priceRow.style.cssText = 'display:flex;align-items:baseline;gap:8px;font-size:14px;';
+
+    var compareAt = parseFloat(deal.compare_at_price);
+    var price = parseFloat(deal.price);
+    if (Number.isFinite(compareAt) && compareAt > price) {
+      var was = document.createElement('span');
+      was.style.cssText = 'color:#94a3b8;text-decoration:line-through;font-size:13px;';
+      was.textContent = '$' + Math.round(compareAt);
+      priceRow.appendChild(was);
+    }
+    var priceNow = document.createElement('span');
+    priceNow.className = '_btgv_willow_price';
+    priceNow.style.cssText = 'font-size:18px;font-weight:800;color:#fff;filter:blur(8px);transition:filter 0.6s cubic-bezier(.34,1.56,.64,1);user-select:none;';
+    priceNow.textContent = '$' + Math.round(price);
+    priceRow.appendChild(priceNow);
+    info.appendChild(priceRow);
+
+    var lockHint = document.createElement('div');
+    lockHint.className = '_btgv_willow_lock_hint';
+    lockHint.style.cssText = 'font-size:11px;color:#a5b4fc;margin-top:4px;';
+    lockHint.textContent = '🔒 Locked — drop email below';
+    info.appendChild(lockHint);
+
+    card.appendChild(info);
+    tile.appendChild(card);
+
+    var form = document.createElement('div');
+    form.className = '_btgv_willow_form';
+    form.style.cssText = 'display:flex;gap:6px;margin-top:12px;';
+    var input = document.createElement('input');
+    input.type = 'email';
+    input.placeholder = '📧 you@email.com';
+    input.autocomplete = 'email';
+    input.style.cssText = 'flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:8px 12px;font-size:13px;color:#fff;outline:none;font-family:inherit;';
+    var btn = document.createElement('button');
+    btn.textContent = 'Unlock 🔓';
+    btn.style.cssText = 'background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;';
+    form.appendChild(input);
+    form.appendChild(btn);
+    tile.appendChild(form);
+
+    var skip = document.createElement('button');
+    skip.textContent = 'skip and just browse →';
+    skip.style.cssText = 'background:none;border:none;color:#94a3b8;font-size:11px;margin-top:8px;cursor:pointer;font-family:inherit;display:block;';
+    tile.appendChild(skip);
+
+    msgs.appendChild(tile);
+    msgs.scrollTop = msgs.scrollHeight;
+    setTimeout(function () { try { input.focus(); } catch (e) {} }, 100);
+
+    function unlock(email) {
+      var sessionId = _getOrInitSessionId();
+      try {
+        fetch(API_BASE + '/api/concierge/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({
+            session_id: sessionId,
+            source: 'concierge_arrival',
+            capture_step: 'contact',
+            email: email,
+            product_url: deal.handle ? (window.location.origin + '/products/' + deal.handle) : window.location.href,
+            product_name: deal.product_name || deal.title || null,
+            list_price: Number.isFinite(parseFloat(deal.price)) ? parseFloat(deal.price) : null,
+          }),
+        });
+      } catch (e) {}
+
+      // Mirror as a user message so the dashboard transcript shows it
+      _cncgSaveMsg('u', '📧 ' + email);
+      _cncgSaveMsg('b', "Unlocked! 🔓");
+
+      // Animate the blur off
+      priceNow.style.filter = 'blur(0)';
+      lockHint.textContent = '✓ Unlocked just for you ✨';
+      lockHint.style.color = '#86efac';
+      form.style.display = 'none';
+      skip.style.display = 'none';
+
+      setTimeout(function () {
+        _cncgAddBot(msgs, '$' + Math.round(price) + ' yours if you want it 🎁 Want me to push for even better?');
+      }, 700);
+      setTimeout(function () {
+        _cncgAddChips(msgs, _buildChips(msgs, [
+          { label: '🤝 Negotiate this →', fn: function () { _navProductInNewTab(deal, true); } },
+          { label: '🛍️ Show me more', fn: function () { _cncgDeals(msgs); } },
+          { label: '🔍 Help me find something', fn: function () { _cncgFind(msgs); } },
+        ]));
+      }, 1200);
+    }
+
+    btn.addEventListener('click', function () {
+      var email = (input.value || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        input.style.borderColor = '#ef4444';
+        return;
+      }
+      unlock(email);
+    });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
+
+    skip.addEventListener('click', function () {
+      tile.style.transition = 'opacity 0.3s, transform 0.3s';
+      tile.style.opacity = '0';
+      tile.style.transform = 'translateY(-6px)';
+      setTimeout(function () { try { tile.remove(); } catch (e) {} }, 320);
+      setTimeout(function () {
+        _cncgAddBot(msgs, "No worries — I'm right here when you change your mind 😊");
+        _cncgMainMenu(msgs);
+      }, 380);
+    });
+
+    return tile;
+  }
+
+  // ── First-time Willow opener — 3 turns, typing-paced ────────────────────────
+  function _runWillowFirstTimeOpener(msgs, ctx) {
+    var opener = _pickWillowOpener(ctx.type);
+
+    // Turn 1: warm intro
+    setTimeout(function () { _cncgAddBot(msgs, opener.intro); }, 350);
+
+    // Turn 2: deal hook + tile
+    setTimeout(function () {
+      _pickWillowDealProduct(function (deal) {
+        if (!deal) {
+          // Catalog empty — fall back to existing greeting flow
+          _cncgAddBot(msgs, "Take a look around — tap me whenever you want a deal ✨");
+          _cncgMainMenu(msgs);
+          return;
+        }
+        _renderWillowDealTile(msgs, deal, opener.hook);
+      });
+    }, 1400);
+  }
+
   function openConcierge() {
     if (!_cncgEl) return;
     _cncgOpen = true;
@@ -3234,23 +3489,44 @@
       }
 
       var ctx = _getPageContext();
-      var hasHistory = _cncgGetMsgHistory().length > 0;
       var openingDeals = (typeof _btgvGetDeals === 'function') ? _btgvGetDeals() : [];
-      setTimeout(function () {
-        var greet = _buildContextGreeting(ctx);
-        _cncgAddBot(msgs, greet);
-      }, 300);
-      setTimeout(function () {
-        if (openingDeals.length) {
-          // Conversation continues toward checkout — lead with the two real next moves
+
+      // ── Returning visitor detection ─────────────────────────────────────────
+      // Server thread is the source of truth (localStorage gets cleared, the
+      // thread is durable). A visitor is "returning" if we have prior
+      // captured email OR existing thread messages from a past session.
+      var thread = _cncgEl._thread || null;
+      var hasCapturedEmail = !!(thread && thread.contact && thread.contact.email);
+      var hasPriorThread = !!(thread && thread.exists && thread.messages && thread.messages.length > 0);
+      var isReturning = hasCapturedEmail || hasPriorThread || _cncgGetMsgHistory().length > 0;
+
+      // Active deals always take priority (existing behavior)
+      if (openingDeals.length) {
+        setTimeout(function () { _cncgAddBot(msgs, _buildContextGreeting(ctx)); }, 300);
+        setTimeout(function () {
           _cncgAddChips(msgs, _buildChips(msgs, [
             { label: '⚡ Checkout', fn: function () { _cncgCelebrateAndGo(_cncgPickCheckoutDest()); }},
             { label: '🛍️ Keep shopping', fn: function () { _cncgShowMoreOptions(); }}
           ]));
-        } else {
-          _cncgMainMenu(msgs);
-        }
-      }, hasHistory ? 900 : 1100);
+        }, 1100);
+        return;
+      }
+
+      if (isReturning) {
+        // Warm welcome-back — name if captured
+        var name = thread && thread.contact && thread.contact.name ? thread.contact.name : null;
+        var welcome = name
+          ? 'Welcome back, ' + name + '! 👋✨ Ready to find something?'
+          : (hasCapturedEmail
+              ? "Welcome back 👋✨ Today's deals are ready when you are."
+              : _buildContextGreeting(ctx));
+        setTimeout(function () { _cncgAddBot(msgs, welcome); }, 300);
+        setTimeout(function () { _cncgMainMenu(msgs); }, 1000);
+        return;
+      }
+
+      // First-time visitor → three-turn opener with email capture
+      _runWillowFirstTimeOpener(msgs, ctx);
     }
   }
 

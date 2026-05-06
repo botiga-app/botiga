@@ -16,6 +16,7 @@
 
 const supabase = require('../lib/supabase');
 const { trackNegotiationEvent } = require('../lib/posthog');
+const { sendOfferEmail } = require('./email');
 
 // Window: customer hasn't messaged in 5–10 minutes after bot's last reply.
 // We use a 7-minute floor (sweet spot of "they're definitely not coming
@@ -30,7 +31,7 @@ async function escalateStaleFloors() {
   // captured contact — without it the merchant has no way to follow up.
   const { data: stale, error } = await supabase
     .from('negotiations')
-    .select('id, merchant_id, product_name, list_price, floor_price, bot_last_offered_price, customer_email, customer_whatsapp, customer_name, messages')
+    .select('id, merchant_id, product_name, product_url, product_image, list_price, floor_price, bot_last_offered_price, customer_email, customer_whatsapp, customer_name, messages')
     .eq('status', 'active')
     .gte('current_step', 5)
     .lt('updated_at', cutoff)
@@ -89,6 +90,24 @@ async function escalateStaleFloors() {
       event: 'negotiation_escalated',
       properties: { idle_minutes: ESCALATION_IDLE_MINUTES, best_offer: bestOffer },
     });
+
+    // Send the customer a "your offer is still on the table" email so they
+    // can come back and pick up where they left off. Phone contact is left
+    // for the merchant to follow up — we don't have an SMS template here.
+    if (neg.customer_email) {
+      try {
+        await sendOfferEmail({
+          to: neg.customer_email,
+          productName: neg.product_name,
+          offerPrice: neg.bot_last_offered_price || Math.ceil(neg.floor_price),
+          listPrice: neg.list_price,
+          productUrl: neg.product_url,
+          productImage: neg.product_image,
+        });
+      } catch (e) {
+        console.warn('[leadEscalation] sendOfferEmail failed for', neg.id, e.message);
+      }
+    }
 
     count++;
   }

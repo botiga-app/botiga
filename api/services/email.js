@@ -119,4 +119,87 @@ async function sendDealEmail({ to, productName, dealPrice, listPrice, discountCo
   }
 }
 
-module.exports = { sendDealEmail };
+// Send-back when a negotiation stalls — "your offer is still on the table".
+// Used when the cron flips a row to human_escalated (customer reached
+// floor + went idle) so the customer gets a personal nudge with the
+// bot's best price and a link to come back and accept.
+async function sendOfferEmail({ to, productName, offerPrice, listPrice, productUrl, productImage }) {
+  if (!to) return;
+  if (!brevo && !resend && !nodemailerTransport) {
+    console.warn('[Email] No email provider configured.');
+    return;
+  }
+
+  const saved = Math.max(0, Math.round((listPrice || 0) - (offerPrice || 0)));
+  const savedPct = listPrice ? Math.round((saved / listPrice) * 100) : 0;
+  const subject = `Your $${offerPrice} offer on ${productName} is still here`;
+  const imgBlock = productImage
+    ? `<div style="text-align:center;padding:24px 36px 0;"><img src="${productImage}" alt="${productName}" style="max-width:100%;max-height:260px;object-fit:contain;border-radius:8px;" /></div>`
+    : '';
+  // Append a query param so the widget knows to reopen the negotiation
+  // for this product if they tap the link.
+  const ctaUrl = (() => {
+    if (!productUrl) return '#';
+    try {
+      const u = new URL(productUrl);
+      u.searchParams.set('btg_neg', '1');
+      return u.toString();
+    } catch {
+      return productUrl;
+    }
+  })();
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg,#0f172a,#1e1b4b);padding:32px 36px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">🤝</div>
+      <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Your offer is still on the table</div>
+      <div style="color:#c7d2fe;font-size:13px;margin-top:6px;">$${offerPrice} on ${productName} — come back when you're ready</div>
+    </div>
+    ${imgBlock}
+    <div style="padding:28px 36px;">
+      <div style="font-size:13px;color:#888;margin-bottom:4px;">${productName}</div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">
+        <span style="font-size:36px;font-weight:800;color:#111;">$${offerPrice}</span>
+        ${listPrice ? `<span style="font-size:16px;color:#bbb;text-decoration:line-through;">$${Math.round(listPrice)}</span>` : ''}
+      </div>
+      ${savedPct > 0 ? `<div style="display:inline-block;background:#f0fdf4;color:#166534;font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:20px;">${savedPct}% off — saved just for you</div>` : ''}
+      <p style="font-size:14px;color:#333;line-height:1.5;margin:0 0 20px;">No pressure — your spot is held. Tap below to pick up where you left off.</p>
+      <a href="${ctaUrl}" style="display:block;background:#7c3aed;color:#fff;text-align:center;padding:16px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:-0.2px;">Grab it at $${offerPrice} →</a>
+    </div>
+    <div style="border-top:1px solid #f0f0f0;padding:20px 36px;text-align:center;">
+      <div style="font-size:11px;color:#ccc;">Powered by <a href="https://botiga.ai" style="color:#ccc;">botiga.ai</a></div>
+    </div>
+  </div>
+</body>
+</html>`.trim();
+
+  try {
+    if (brevo) {
+      const SibApiV3Sdk = require('@getbrevo/brevo');
+      const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+      sendSmtpEmail.subject = subject;
+      sendSmtpEmail.htmlContent = html;
+      sendSmtpEmail.sender = { name: FROM_NAME, email: FROM };
+      sendSmtpEmail.to = [{ email: to }];
+      await brevo.sendTransacEmail(sendSmtpEmail);
+    } else if (resend) {
+      await resend.emails.send({ from: `${FROM_NAME} <${FROM}>`, to, subject, html });
+    } else if (nodemailerTransport) {
+      await nodemailerTransport.sendMail({
+        from: `${FROM_NAME} <${FROM}>`,
+        to, subject, html,
+        replyTo: process.env.REPLY_TO_EMAIL || FROM,
+      });
+    }
+    console.log('[Email] Offer email sent to', to);
+  } catch (err) {
+    console.error('[Email] Failed to send offer email:', err.message);
+  }
+}
+
+module.exports = { sendDealEmail, sendOfferEmail };
