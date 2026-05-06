@@ -57,6 +57,8 @@ if (corsMod) app.options('*', corsMod.widgetCors);
 
 // Routes — wrap each so a single failing require() doesn't kill the whole API
 safeMount('/api', 'routes/negotiate', () => require('./routes/negotiate'));
+safeMount('/api', 'routes/concierge', () => require('./routes/concierge'));
+safeMount('/api', 'routes/leads', () => require('./routes/leads'));
 safeMount('/api', 'routes/draft-order', () => require('./routes/draft-order'));
 safeMount('/api', 'routes/merchants', () => require('./routes/merchants'));
 safeMount('/api', 'routes/deals', () => require('./routes/deals'));

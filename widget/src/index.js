@@ -591,6 +591,97 @@
     return { host, getNegId: () => getNegId() };
   }
 
+  // ── SITE-ARRIVAL CAPTURE ────────────────────────────────────────────────────
+  // After the customer has been on the page for ~14s with no exit-intent or
+  // negotiation engagement, we pop a soft bottom-right toast offering a
+  // value-hook reveal in exchange for their email. We ask for ONE thing
+  // (email) — never both email and phone in the same prompt. If the
+  // customer engages later, the negotiation flow may ask for their NAME
+  // as a second-touch ask; never piles questions onto the customer.
+  //
+  // POSTS to /api/concierge/capture which logs in lead_captures and either
+  // merges into the active negotiation or creates a 'cold_lead' stub row.
+  function setupArrivalCapture(productInfo) {
+    const SEEN_KEY = '_botiga_arrival_seen';
+    try { if (sessionStorage.getItem(SEEN_KEY)) return; } catch (_) {}
+
+    // Don't pop if we already have contact captured this session
+    const existing = getSession();
+    if (existing.email || existing.phone) return;
+
+    setTimeout(() => {
+      // Bail if customer engaged with the negotiation button — they're
+      // already in the funnel, no need for a parallel capture pop.
+      if (document.querySelector('#_botiga_chat_host, #_botiga_modal_host')) return;
+      try { sessionStorage.setItem(SEEN_KEY, '1'); } catch (_) {}
+
+      const host = document.createElement('div');
+      host.id = '_botiga_arrival_host';
+      host.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:2147483645;font-family:system-ui,-apple-system,sans-serif;';
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = `
+        <style>
+          .card { background: #111; color: #fff; border-radius: 14px; padding: 16px 18px 14px; width: 280px; box-shadow: 0 8px 28px rgba(0,0,0,0.35); transform: translateY(20px); opacity: 0; transition: all .35s cubic-bezier(.34,1.56,.64,1); }
+          .card.in { transform: translateY(0); opacity: 1; }
+          .hook { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 4px; letter-spacing: -0.2px; }
+          .sub  { font-size: 12px; color: #9ca3af; margin-bottom: 12px; line-height: 1.4; }
+          input { width: 100%; box-sizing: border-box; background: #1e1e1e; border: 1px solid #333; border-radius: 9px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
+          input:focus { border-color: #16a34a; }
+          .row { display: flex; gap: 8px; margin-top: 10px; }
+          .save { flex: 1; padding: 10px; background: #16a34a; color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+          .skip { background: none; border: none; color: #6b7280; font-size: 12px; cursor: pointer; padding: 0 6px; font-family: inherit; }
+          .done { font-size: 13px; color: #d1d5db; padding: 4px 0; }
+        </style>
+        <div class="card" id="card">
+          <div class="hook">🔒 I've got a special price on this</div>
+          <div class="sub">Drop your email — I'll unlock it for you.</div>
+          <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
+          <div class="row">
+            <button class="save" id="save">Unlock my price</button>
+            <button class="skip" id="skip">No thanks</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(host);
+      const card = shadow.getElementById('card');
+      requestAnimationFrame(() => card.classList.add('in'));
+
+      const dismiss = () => {
+        card.classList.remove('in');
+        setTimeout(() => host.remove(), 350);
+      };
+      shadow.getElementById('skip').addEventListener('click', dismiss);
+
+      shadow.getElementById('save').addEventListener('click', async () => {
+        const email = shadow.getElementById('email').value.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          shadow.getElementById('email').style.borderColor = '#ef4444';
+          return;
+        }
+        const sess = getSession();
+        const session_id = sess.session_id || (Math.random().toString(36).slice(2) + Date.now().toString(36));
+        saveSession({ session_id, email });
+        try {
+          await fetch(`${API_BASE}/api/concierge/capture`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, ...API_HEADERS },
+            body: JSON.stringify({
+              session_id,
+              source: 'concierge_arrival',
+              capture_step: 'contact',
+              email,
+              product_url: window.location.href,
+              product_name: productInfo?.name || document.title,
+              list_price: productInfo?.price || null,
+            }),
+          });
+        } catch (_) {}
+        card.innerHTML = '<div class="done">✅ Saved — your price is unlocked. Look for the chat button below.</div>';
+        setTimeout(dismiss, 2400);
+      });
+    }, 14000);
+  }
+
   // ── EXIT INTENT ──────────────────────────────────────────────────────────────
   function setupExitIntent(getNegId) {
     let triggered = false;
@@ -801,6 +892,8 @@
         }
 
         if (effectiveSettings.recovery_enabled) setupExitIntent(getNegId);
+        // Site-arrival concierge — soft email-only ask after dwell
+        setupArrivalCapture(productInfo);
       })
       .catch(() => {
         // On rules fetch failure, fall back to showing button with global settings

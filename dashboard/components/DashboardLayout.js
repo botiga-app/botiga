@@ -15,6 +15,7 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Concierge bot', icon: '💬', section: 'Setup' },
   { href: '/dashboard/rules', label: 'Negotiation bot', icon: '🤝', section: 'Setup' },
   { href: '/dashboard/videos', label: 'Video bot', icon: '🎬', section: 'Setup' },
+  { href: '/dashboard/leads', label: 'Leads', icon: '🔥', section: 'Activity' },
   { href: '/dashboard/negotiations', label: 'Negotiations', icon: '📋', section: 'Activity' },
   { href: '/dashboard/comments', label: 'Comments', icon: '💭', section: 'Activity' },
   { href: '/dashboard/recovery', label: 'Recovery', icon: '🔄', section: 'Activity' },

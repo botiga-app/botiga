@@ -11,6 +11,7 @@ const { upsertNegotiatedItem } = require('./draftOrder');
 const { sendDealEmail } = require('./email');
 const { sendDealSms } = require('./sms');
 const { resolveProductRules } = require('./rules');
+const { detectDiscoveryIntent, searchProducts } = require('./productSearch');
 
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
   let discountCode = null;
@@ -342,11 +343,17 @@ async function processNegotiation({
   const brandStatements = merchantSettings.brand_value_statements || [];
   const usedStatements = messages.filter(m => m.brand_statement).map(m => m.brand_statement);
 
-  // ── CONTACT DETECTION — save phone/email if customer shared it ──────────────
+  // ── CONTACT + NAME DETECTION — save anything the customer shares ───────────
+  // The bot asks for ONE contact channel only (email by default). A second
+  // ask later in the conversation requests their NAME, not the other channel.
+  // Piling on questions kills conversion — we capture whatever the customer
+  // happens to type and stop asking once any one is in.
   const contactUpdates = {};
   if (customerMessage) {
     const phoneMatch = customerMessage.match(/(?:\+?[\d\s\-().]{7,20})/);
     const emailMatch = customerMessage.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+    const nameMatch = customerMessage.match(/(?:i['’]m|my name is|this is|call me)\s+([A-Z][a-zA-Z]{1,30})/i);
+
     if (phoneMatch && !negotiation.customer_whatsapp) {
       const cleaned = phoneMatch[0].replace(/[\s\-().]/g, '');
       if (cleaned.length >= 7) contactUpdates.customer_whatsapp = cleaned;
@@ -354,19 +361,25 @@ async function processNegotiation({
     if (emailMatch && !negotiation.customer_email) {
       contactUpdates.customer_email = emailMatch[0];
     }
+    if (nameMatch && !negotiation.customer_name) {
+      contactUpdates.customer_name = nameMatch[1];
+    }
     if (Object.keys(contactUpdates).length > 0) {
       await supabase.from('negotiations').update(contactUpdates).eq('id', negotiation.id);
     }
   }
 
-  // Whether bot has already asked for contact this negotiation
   const hasContact = !!(negotiation.customer_whatsapp || negotiation.customer_email || contactUpdates.customer_whatsapp || contactUpdates.customer_email);
-  // Count how many times we've already asked
+  const hasName = !!(negotiation.customer_name || contactUpdates.customer_name);
   const timesAskedContact = messages.filter(m => m.role === 'assistant' && m.asked_contact).length;
-  // Ask on step 1 (second bot message, first customer reply) and once more on step 4 if still no contact
-  // Never ask more than twice total
+  const timesAskedName = messages.filter(m => m.role === 'assistant' && m.asked_name).length;
   const currentStepForLead = negotiation.current_step || 0;
+  // First pass: ask for contact in opening. If still no contact at step 1+,
+  // give it one more shot — but never more than twice total.
   const needsLeadCapture = !hasContact && timesAskedContact < 2 && (timesAskedContact === 0 || currentStepForLead >= 1);
+  // Once contact is in, the next "would-have-been-contact" ask becomes a
+  // name ask. One ask only — never both contact and name in the same turn.
+  const needsNameCapture = !needsLeadCapture && hasContact && !hasName && timesAskedName === 0 && currentStepForLead >= 2;
 
   // ── OPENING MOVE ────────────────────────────────────────────────────────────
   if (isOpening) {
@@ -397,6 +410,70 @@ async function processNegotiation({
     }).eq('id', negotiation.id);
 
     return { negotiationId: negotiation.id, reply, status: 'active', dealPrice: null, checkoutUrl: null, discountCode: null, brokerFee: null, expiresAt: null, needsLeadCapture: !hasContactAlready, offeredPrice: nextPrice };
+  }
+
+  // ── DISCOVERY SHORT-CIRCUIT ────────────────────────────────────────────────
+  // The widget chat lives on a single product page, but customers often type
+  // discovery queries like "any yellow dresses for Mother's Day under $60".
+  // Without this branch, parseCustomerOffer mistakes "$60" for a counter-
+  // offer on the current product and the bot hallucinates other items.
+  // We pre-filter the merchant's catalog (live /products.json, cached 1h)
+  // and feed deterministic results to the LLM. The negotiation step is NOT
+  // advanced — this turn is a side conversation about the catalog.
+  if (detectDiscoveryIntent(customerMessage)) {
+    const merchantRow = { id: merchantId, source_url: null, shopify_domain: shopifyDomain };
+    let matches = [];
+    try {
+      matches = await searchProducts(merchantRow, customerMessage, { limit: 5 });
+    } catch (e) {
+      console.warn('[negotiation] productSearch failed:', e.message);
+    }
+
+    const lastBotMessages = messages.filter(m => m.role === 'assistant').slice(-2).map(m => m.content);
+    const discoveryPrompt = require('./llm').buildDiscoveryPrompt({
+      tone: merchantSettings.tone,
+      productName: negotiation.product_name,
+      currentPrice: botLastPrice,
+      query: customerMessage,
+      matches,
+      shopifyDomain,
+      lastBotMessages,
+    });
+
+    const { reply } = await callLLM({
+      systemPrompt: discoveryPrompt,
+      messages,
+      customerMessage,
+      negotiationId: negotiation.id,
+      merchantId,
+      nextPrice: botLastPrice,        // not used for substitution — discovery prompt has no price requirement
+      brandStatement: null,
+      isOpening: false,
+      tone: merchantSettings.tone,
+      isDiscovery: true,
+    });
+
+    const updatedMessages = [
+      ...messages,
+      { role: 'user', content: customerMessage },
+      { role: 'assistant', content: reply, was_discovery: true },
+    ];
+
+    await supabase.from('negotiations').update({
+      messages: updatedMessages,
+      updated_at: new Date().toISOString(),
+    }).eq('id', negotiation.id);
+
+    return {
+      negotiationId: negotiation.id,
+      reply,
+      status: 'active',
+      dealPrice: null,
+      checkoutUrl: null,
+      discountCode: null,
+      brokerFee: null,
+      expiresAt: null,
+    };
   }
 
   // ── STEP 1: ACCEPTANCE CHECK (before anything else, no LLM) ────────────────
@@ -458,8 +535,13 @@ async function processNegotiation({
   }
 
   // ── PARALLEL: insights extraction + LLM call ───────────────────────────────
-  const botRepliesAlready = messages.filter(m => m.role === 'assistant').length;
-  const isEscalating = isFinalOffer && botRepliesAlready >= 5;
+  // The bot NEVER closes first. We removed automatic human-escalation:
+  // previously after step 5 + 5 bot replies the negotiation flipped to
+  // 'human_escalated' and the bot effectively walked away. The customer
+  // should always be the one who decides to leave. At the floor we hold
+  // the line warmly with varied phrasing — see FLOOR_HOLD_DIRECTION in
+  // llm.js. The floor guards in PricingEngine + strikeDeal make sure no
+  // offer ever closes below floor.
   const lastBotMessages = messages.filter(m => m.role === 'assistant').slice(-2).map(m => m.content);
   const latestInsight = customerInsights.slice(-1)[0]?.insight || null;
   const brandStatement = pickBrandStatement(brandStatements, nextStep, usedStatements);
@@ -468,8 +550,8 @@ async function processNegotiation({
     tone: merchantSettings.tone, productName: negotiation.product_name,
     nextPrice, brandStatement,
     customerInsight: latestInsight,
-    stepIndex: nextStep, isOpening: false, isLowball, isEscalating, lastBotMessages,
-    needsLeadCapture: needsLeadCapture && !isEscalating,
+    stepIndex: nextStep, isOpening: false, isLowball, isFinalOffer, lastBotMessages,
+    needsLeadCapture, needsNameCapture,
     productContext: productContext || null
   });
 
@@ -491,23 +573,31 @@ async function processNegotiation({
     updatedInsights = [...customerInsights, { text: insightResult.insight, category: insightResult.category, message_index: messages.length }];
   }
 
+  const nowIso = new Date().toISOString();
   const updatedMessages = [
     ...messages,
     { role: 'user', content: customerMessage },
-    { role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: needsLeadCapture || undefined, was_lowball: isLowball || undefined }
+    { role: 'assistant', content: reply, brand_statement: brandStatement, asked_contact: needsLeadCapture || undefined, asked_name: needsNameCapture || undefined, was_lowball: isLowball || undefined }
   ];
 
   // ── STEP 4: PERSIST ─────────────────────────────────────────────────────────
-  let status = isEscalating ? 'human_escalated' : isFinalOffer ? 'final_offer' : 'active';
+  // Status stays 'active' — the bot never closes first. The cron sweep
+  // (escalate-stale-floors) is what flips status to 'human_escalated' when
+  // a customer reaches floor and goes idle 5–10min without accepting.
+  // The bot's voice never changes; only the merchant-facing flag does.
+  const status = 'active';
 
-  if (isEscalating) {
-    await supabase.from('admin_alerts').insert({
-      merchant_id: merchantId,
-      type: 'human_escalation',
-      message: `Customer needs human follow-up on ${negotiation.product_name}. Their best offer: ${customerOffer ? '$' + customerOffer : 'unknown'}. Bot floor: $${floorPrice}. Contact: ${negotiation.customer_whatsapp || negotiation.customer_email || 'none captured'}`,
-      severity: 'warning'
-    });
-    await trackNegotiationEvent({ merchantId, negotiationId: negotiation.id, event: 'negotiation_escalated', properties: { message_count: updatedMessages.length } });
+  // ── LEAD TIER — surfaces this row to /dashboard/leads if non-null ──────────
+  // Hot:  reached floor + has contact (customer is qualified, deal stalled)
+  // Warm: 3+ exchanges + has contact (engaged, didn't reach floor)
+  // Cold: has contact but minimal engagement (or pre-negotiation capture)
+  const customerMsgCount = updatedMessages.filter(m => m.role === 'user').length;
+  const hasContactNow = !!(negotiation.customer_email || negotiation.customer_whatsapp || contactUpdates.customer_email || contactUpdates.customer_whatsapp);
+  let leadTier = null;
+  if (hasContactNow) {
+    if (isFinalOffer) leadTier = 'hot';
+    else if (customerMsgCount >= 3) leadTier = 'warm';
+    else leadTier = 'cold';
   }
 
   await supabase.from('negotiations').update({
@@ -517,7 +607,10 @@ async function processNegotiation({
     bot_last_offered_price: nextPrice,
     customer_insights: updatedInsights,
     status,
-    updated_at: new Date().toISOString()
+    lead_tier: leadTier,
+    last_customer_message_at: nowIso,
+    last_bot_message_at: nowIso,
+    updated_at: nowIso
   }).eq('id', negotiation.id);
 
   // Log training row

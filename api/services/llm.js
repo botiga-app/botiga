@@ -16,8 +16,12 @@ const TONE_VOICE = {
   generous:     'You genuinely want them to have it. Deal-focused, warm, rooting for them.',
 };
 
-// Human escalation message — in the merchant's tone, never reveals floor
-const ESCALATION_DIRECTION = `You've genuinely given everything you can. You're not going to reveal any limit or number. Instead, warmly hand off to your human team — frame it as them potentially having more flexibility than you, not as a dead end. Keep it warm, in character, and leave the door wide open. 2 sentences max.`;
+// Floor-hold direction — used when the bot has reached its best price.
+// The bot NEVER closes first. It holds the line warmly, repeats the
+// floor price with fresh phrasing, and leaves the door wide open for
+// the customer to accept. Never reveal any limit or hand off — the
+// customer is the only one who can end the conversation.
+const FLOOR_HOLD_DIRECTION = `You're at your best price. Hold the line warmly — repeat the price with fresh phrasing each turn, never the same opener twice. Don't say "last offer", "can't go lower", "final price" or hand off to anyone. Pair the price with a real reason this is a great deal — craftsmanship, materials, the moment, something specific. Stay open and inviting; the customer can take it whenever they're ready. One short sentence.`;
 
 // Per-step concrete instruction — what the bot is doing emotionally at each step
 // These change what the LLM writes, not just how it starts
@@ -37,20 +41,22 @@ const STEP_DIRECTION = [
   // Step 5
   `Near final. Pair your price with a specific product reason (craftsmanship, shipping, materials). Almost there energy — make them feel the deal is within reach.`,
 
-  // Step 6 (floor)
-  `This is genuinely your last offer. Warm, not dramatic. Suggest that your team might be able to help if they need more — frame it as passing them to someone with more flexibility, not as a dead end.`,
+  // Step 6 (floor) — handled by FLOOR_HOLD_DIRECTION when isFinalOffer=true
+  FLOOR_HOLD_DIRECTION,
 ];
 
 const LOWBALL_DIRECTION = `Their offer was way off. Hold your position warmly — do not drop your price, do not lecture them. Acknowledge it briefly with lightness or humour, then nudge them toward something closer to your price without being pushy. One sentence.`;
 
-// Phrase pool per step — force variety in openings
+// Phrase pool per step — force variety in openings.
+// Step 5 (floor) phrases never imply "this is the end" — bot holds warmly
+// and lets the customer choose to accept whenever they're ready.
 const OPENERS = [
   ['Okay, so —', 'Here\'s the thing —', 'So listen —', 'Alright —', 'Between us —'],
   ['I hear you —', 'Fair enough —', 'Okay so', 'Alright,', 'Right, so —'],
   ['Getting real here —', 'Honestly,', 'Look,', 'Not gonna lie,', 'I\'ll be straight —'],
   ['Pushing hard for you:', 'Real talk —', 'Almost there —', 'You\'re testing me here —', 'Okay last push:'],
   ['This one took some doing:', 'Nearly there —', 'I went back and forth on this:', 'Okay, last real move:', 'Here\'s what I can do:'],
-  ['Genuinely, this is it.', 'My team would kill me but —', 'Last card:', 'Okay, final answer:', 'This is everything:'],
+  ['Honestly, this is the spot —', 'Genuinely a great price here —', 'Real talk:', 'Between us:', 'Look — at this point:'],
 ];
 
 function pickOpener(stepIndex, lastBotMessages) {
@@ -61,10 +67,14 @@ function pickOpener(stepIndex, lastBotMessages) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isEscalating, lastBotMessages, needsLeadCapture, productContext }) {
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isFinalOffer, isEscalating, lastBotMessages, needsLeadCapture, needsNameCapture, productContext }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const priceStr = `$${nextPrice}`;
-  const direction = isLowball ? LOWBALL_DIRECTION : isEscalating ? ESCALATION_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
+  // isEscalating kept as backwards-compat alias for old callers (marketplace
+  // routes still pass it). Both flags now route to FLOOR_HOLD_DIRECTION —
+  // the bot never hands off, never closes first.
+  const atFloor = !!(isFinalOffer || isEscalating);
+  const direction = isLowball ? LOWBALL_DIRECTION : atFloor ? FLOOR_HOLD_DIRECTION : STEP_DIRECTION[Math.min(stepIndex, 5)];
   const opener = isOpening ? null : pickOpener(stepIndex, lastBotMessages);
 
   const prevMessages = (lastBotMessages || []).slice(-2);
@@ -89,7 +99,8 @@ You MUST include "${priceStr}" in your reply. Do not write any other price.
 
 Brand reason to use naturally (do not quote verbatim): "${brandStatement || 'real quality and craftsmanship'}"
 ${customerInsight ? `Customer mentioned: "${customerInsight}" — acknowledge this warmly if natural.` : ''}
-${needsLeadCapture && !isLowball ? `Weave in a natural ask for their phone or email at the end — like "What's your WhatsApp in case we get disconnected?" or "Drop me your email so I can hold this for you?" — phrase it your own way, keep it light.` : ''}
+${needsLeadCapture && !isLowball ? `Weave in a natural ONE-CHANNEL ask at the end — email by default, like "Drop me your email so I can hold this for you?". Pick ONE channel only (email OR phone, not both). Phrase it your way, keep it light.` : ''}
+${needsNameCapture && !isLowball ? `You already have their contact. Now ask their NAME naturally at the end — like "What should I call you?" or "Who am I helping today?". One quick line, never a follow-up form.` : ''}
 ${opener ? `Start your reply with: "${opener}" — then continue naturally in your own voice.` : ''}
 ${prevMessages.length ? `\nYour previous messages — do NOT repeat their structure, phrasing, or opening:\n${prevMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}` : ''}
 
@@ -137,7 +148,43 @@ function estimateCost(provider, i, o) {
   return (i * 0.000000075) + (o * 0.0000003);
 }
 
-async function callLLM({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextPrice, brandStatement, isOpening, tone }) {
+// Builds a discovery system prompt — used when the customer asks about
+// the catalog rather than negotiating the current product. The bot
+// becomes a helpful concierge for one turn: it can mention specific
+// matched products by name + price + handle, and gently bring the
+// conversation back to the current item.
+function buildDiscoveryPrompt({ tone, productName, currentPrice, query, matches, shopifyDomain, lastBotMessages }) {
+  const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
+  const origin = shopifyDomain ? `https://${shopifyDomain}` : '';
+  const matchLines = (matches || []).map(m => {
+    const url = origin && m.handle ? `${origin}/products/${m.handle}` : '';
+    const tagBits = (m.tags || []).slice(0, 3).join(', ');
+    return `- ${m.title} — $${m.price}${tagBits ? ` (${tagBits})` : ''}${url ? ` ${url}` : ''}`;
+  }).join('\n');
+
+  const prevMessages = (lastBotMessages || []).slice(-2);
+  const noMatches = !matches || matches.length === 0;
+
+  return `You are a sales assistant for a boutique. The customer is currently looking at "${productName}" (your current offer: $${currentPrice}), but they just asked a discovery question about the wider catalog.
+Voice: ${voice}
+
+Customer's question: "${query}"
+
+${noMatches
+  ? `No matching products were found in the catalog. Be honest — say you don't see anything matching their description right now, and offer to keep them in mind. Then warmly bring it back to "${productName}" at $${currentPrice}.`
+  : `Catalog matches you may reference (these are the ONLY products you may mention by name — do not invent any others):\n${matchLines}\n\nMention 1–3 of these by name with their prices. Be specific and useful — short list, not a sales pitch. After listing them, offer to keep talking about "${productName}" or send them to one of the matches if it's a better fit.`}
+${prevMessages.length ? `\nYour previous messages — do NOT repeat their structure or opening:\n${prevMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}` : ''}
+
+RULES — every one is hard:
+- 3 sentences MAX. Brief and useful.
+- ONLY reference products from the catalog list above. NEVER invent products, prices, or descriptions.
+- NEVER make up a price. If you mention a product, use the exact price from the list.
+- NEVER say: "I appreciate", "Certainly", "Absolutely", "Of course", "Great question", "Happy to help"
+- No bullet points. No formal language. Sound like a real human texting.
+- One emoji max. Zero is fine.`.trim();
+}
+
+async function callLLM({ systemPrompt, messages, customerMessage, negotiationId, merchantId, nextPrice, brandStatement, isOpening, tone, isDiscovery }) {
   const userMessage = isOpening
     ? '[Customer just opened the chat. Make your warm opening offer now.]'
     : customerMessage;
@@ -184,7 +231,8 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
       }
 
       const latencyMs = Date.now() - startTime;
-      const reply = validateAndFixPrice(rawReply.trim(), nextPrice);
+      // Discovery turns mention catalog prices — don't rewrite them to nextPrice.
+      const reply = isDiscovery ? rawReply.trim() : validateAndFixPrice(rawReply.trim(), nextPrice);
       await logLLMTrace({ negotiationId, merchantId, provider, model, inputTokens, outputTokens, latencyMs, costUsd: estimateCost(provider, inputTokens, outputTokens), prompt: systemPrompt, response: rawReply });
 
       return { reply, provider, latencyMs };
@@ -196,4 +244,4 @@ async function callLLM({ systemPrompt, messages, customerMessage, negotiationId,
   return { reply: fallbackReply(nextPrice, brandStatement, isOpening, tone), provider: 'fallback', latencyMs: 0 };
 }
 
-module.exports = { callLLM, buildSystemPrompt };
+module.exports = { callLLM, buildSystemPrompt, buildDiscoveryPrompt };
