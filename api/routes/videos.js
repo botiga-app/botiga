@@ -569,7 +569,7 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
     if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
 
     const videoSelect = `id, title, s3_url, thumbnail_url, duration_seconds, width, height,
-      status, views_count, likes_count, shares_count,
+      status, views_count, likes_count, shares_count, sort_order, created_at,
       video_product_tags(id, shopify_product_id, shopify_variant_id, product_name,
                          product_handle, price, compare_at_price, image_url)`;
 
@@ -600,16 +600,27 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
       // If widget has no items or error, fall through to all-videos fallback
     }
 
-    // Fallback: all active videos for merchant
-    const { data: videos } = await supabase
+    // Fallback: all active videos for merchant. Order: explicit sort_order
+    // first, then real videos (s3_url present) before photo posts, then
+    // newest first within each group. Merchants told us the playable
+    // reels feel more alive than static photos and should anchor the top
+    // of the feed.
+    const { data: videosRaw } = await supabase
       .from('videos')
       .select(videoSelect)
       .eq('merchant_id', merchant.id)
-      .eq('status', 'active')
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: false });
+      .eq('status', 'active');
 
-    res.json(videos || []);
+    const videos = (videosRaw || []).slice().sort((a, b) => {
+      const so = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+      if (so !== 0) return so;
+      const aHas = a.s3_url ? 1 : 0;
+      const bHas = b.s3_url ? 1 : 0;
+      if (aHas !== bHas) return bHas - aHas; // playable videos first
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+    res.json(videos);
   } catch (err) {
     console.error('[widget/videos] error:', err.message);
     res.status(500).json({ error: 'Failed to fetch videos' });

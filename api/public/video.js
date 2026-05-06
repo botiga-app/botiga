@@ -295,7 +295,24 @@
     fetch('/cart/add.js', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: [{ id: parseInt(variantId, 10), quantity: 1 }] })
-    }).then(function (r) { if (cb) cb(r.ok); }).catch(function () { if (cb) cb(false); });
+    })
+      .then(function (r) {
+        var ok = r.ok;
+        if (ok) {
+          // Most Shopify themes (and the standard cart drawer apps like
+          // Cart Drawer, Slide Cart, etc.) listen for one of these events
+          // to refresh their cart count badge. We fire all the common
+          // names so the theme picks up the change without a page reload.
+          ['cart:updated', 'cart:refresh', 'cart:update', 'theme:cart:add'].forEach(function (evt) {
+            try { document.dispatchEvent(new CustomEvent(evt, { detail: { variantId: variantId, quantity: 1 } })); } catch (_) {}
+          });
+          // Also refetch /cart.js so any theme observing fetch responses
+          // (Online Store 2.0 patterns) sees the new cart state.
+          fetch('/cart.js').catch(function () {});
+        }
+        if (cb) cb(ok);
+      })
+      .catch(function () { if (cb) cb(false); });
   }
 
   // ─── Feed pause/resume — keep the video focused while user is acting on it ──
@@ -935,12 +952,18 @@
     zone.appendChild(ctaRow);
   }
 
-  // ─── Top bar: brand badge + view count + thin progress bar ──────────────
+  // ─── Top bar: brand badge + view count grouped on the left,
+  // close button stays at top-right (handled by global #_btgv_close) ──
   function buildTopBar(vid, context) {
     var bar = document.createElement('div');
     bar.className = '_btgv_topbar';
 
-    // Brand badge — opens merchant homepage in a new tab
+    // Left group: brand badge + view count (kept tight together per
+    // merchant feedback — easier to scan than splitting them across
+    // opposite ends of the screen).
+    var left = document.createElement('div');
+    left.style.cssText = 'display:flex;align-items:center;gap:8px;pointer-events:auto';
+
     var brand = document.createElement('a');
     brand.className = '_btgv_brand';
     brand.href = context.brandUrl || '#';
@@ -949,27 +972,32 @@
     var logo = document.createElement('div');
     logo.className = '_btgv_brand_logo';
     if (context.brandLogo) {
-      var img = document.createElement('img'); img.src = context.brandLogo; img.alt = '';
+      var img = document.createElement('img');
+      img.src = context.brandLogo;
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
       logo.appendChild(img);
     } else {
-      logo.textContent = (context.brandName || 'B').charAt(0).toUpperCase();
+      logo.textContent = (context.brandName || 'Shop').charAt(0).toUpperCase();
     }
-    var name = document.createElement('span');
-    name.className = '_btgv_brand_name';
-    name.textContent = context.brandName || 'Shop';
-    brand.appendChild(logo); brand.appendChild(name);
-    bar.appendChild(brand);
+    var nameEl = document.createElement('span');
+    nameEl.className = '_btgv_brand_name';
+    nameEl.textContent = context.brandName || 'Shop';
+    brand.appendChild(logo); brand.appendChild(nameEl);
+    left.appendChild(brand);
 
-    // Top-right: view count pill — already styled via existing _btgv_views.
-    var right = document.createElement('div');
-    right.className = '_btgv_topright';
-    var views = document.createElement('div');
-    views.className = '_btgv_views';
-    views.style.cssText = 'position:static;top:auto;right:auto'; // override absolute positioning
+    // View count pill — sits right next to the brand badge so it reads
+    // as part of the same identity unit. Empty pill if 0 views (no UI noise).
     var vc = vid.views_count || 0;
-    views.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(vc) + '</span>';
-    right.appendChild(views);
-    bar.appendChild(right);
+    if (vc > 0) {
+      var views = document.createElement('div');
+      views.className = '_btgv_views';
+      views.style.cssText = 'position:static;top:auto;right:auto';
+      views.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>' + fmtCount(vc) + '</span>';
+      left.appendChild(views);
+    }
+
+    bar.appendChild(left);
     return bar;
   }
 
@@ -2296,9 +2324,10 @@
     scroll.id = '_btgv_scroll';
     feedEl.appendChild(scroll);
 
-    // Floating concierge bubble — feed-level, not per-slide
-    var concBubble = buildConciergeBubbleInFeed(feedContext);
-    feedEl.appendChild(concBubble);
+    // Concierge moved into the per-slide right rail (last item, below mute).
+    // The previous floating bottom-left bubble was hard to reach on mobile
+    // and conflicted with other UI. See the rail-build code in the slide
+    // loop below for the actual button.
 
     // FOMO activity toast — feed-level, cycles real recent activity.
     // Stored on feedEl so closeFeed() can clean up the interval.
@@ -2320,14 +2349,16 @@
         // Repaint top-bars + bubble + price hints with the fresh context
         feedEl.querySelectorAll('._btgv_topbar').forEach(function (b) { b.remove(); });
         feedEl.querySelectorAll('._btgv_bzone').forEach(function (b) { b.remove(); });
-        feedEl.querySelectorAll('._btgv_concbubble').forEach(function (b) { b.remove(); });
         feedEl.querySelectorAll('._btgv_slide').forEach(function (slide, idx) {
           var v = vids[idx];
           if (!v || v._type === 'product') return;
           slide.appendChild(buildTopBar(v, feedContext));
           slide.appendChild(buildBottomZone(v, v.video_product_tags || [], feedContext));
         });
-        feedEl.appendChild(buildConciergeBubbleInFeed(feedContext));
+        // Concierge avatar lives in each slide's rail now — a deep-link
+        // arrival doesn't currently rebuild the rail, so we leave existing
+        // rails intact. Future click still triggers rtGetConfig before the
+        // chat opens.
       });
     }
 
@@ -2361,16 +2392,17 @@
           else closeFeed();
         };
       } else if (vid.thumbnail_url) {
-        // Fall back to thumbnail-as-image for photo posts. We still keep
-        // the same _btgv_slide structure so the rail/topbar/bottom-zone
-        // layouts work unchanged. Use a div with background-image so
-        // ResponsiveCSS object-cover-equivalent styling applies cleanly.
+        // Photo posts: render the IG thumbnail as <img>. Use object-fit:
+        // contain so landscape/square product photos aren't cropped to
+        // show only half the outfit — the customer needs to see the
+        // whole product. Letterbox bars on the sides of non-9:16 sources
+        // are an acceptable trade for product visibility.
         video = document.createElement('img');
         video.src = vid.thumbnail_url;
         video.alt = vid.title || '';
-        video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        video.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#000;';
         video.loading = 'lazy';
-        video.referrerPolicy = 'no-referrer'; // Instagram CDN sometimes refuses non-IG referrers
+        video.referrerPolicy = 'no-referrer'; // Instagram CDN refuses non-IG referrers sometimes
       } else {
         // No s3_url AND no thumbnail — render a soft placeholder so the
         // slide isn't pure black.
@@ -2510,10 +2542,33 @@
       muteBtn.onclick = function (e) {
         e.stopPropagation();
         muted = !muted;
-        feedEl.querySelectorAll('._btgv_rail button:last-child span').forEach(function (s) { s.textContent = muted ? '🔇' : '🔊'; });
+        // Update only the mute button on this slide; other slides update on their own next tap
+        muteBtn.querySelectorAll('span').forEach(function (s) { s.textContent = muted ? '🔇' : '🔊'; });
         feedEl.querySelectorAll('._btgv_slide video').forEach(function (v) { v.muted = muted; });
       };
-      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(saveBtn); rail.appendChild(muteBtn);
+
+      // Concierge bot button — last in the rail (below mute) per merchant
+      // request. Replaces the floating bottom-left bubble which was hard to
+      // reach + conflicted with the mute icon. Avatar uses bot_avatar_url
+      // from settings if available, else a generic chat icon.
+      var concBtn = document.createElement('button');
+      concBtn.style.position = 'relative';
+      var concInner = '';
+      if (feedContext.botAvatar) {
+        concInner = '<span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,.12)"><img src="' + feedContext.botAvatar + '" alt="" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;display:block"/></span>';
+      } else {
+        concInner = '<span style="font-size:20px">💬</span>';
+      }
+      concBtn.innerHTML = concInner + '<span>Ask</span>';
+      concBtn.onclick = function (e) {
+        e.stopPropagation();
+        // Pause the active video so the chat audio (if any) isn't fighting it
+        var activeV = feedEl.querySelector('._btgv_slide video');
+        if (activeV && !activeV.paused) { try { activeV.pause(); } catch (_) {} }
+        try { if (typeof openConcierge === 'function') openConcierge(); } catch (_) {}
+      };
+
+      rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(saveBtn); rail.appendChild(muteBtn); rail.appendChild(concBtn);
 
       slide._btgv_likeBtn = likeBtn;
       slide.appendChild(video);
