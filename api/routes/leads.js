@@ -145,44 +145,116 @@ router.get('/leads/:merchantId', async (req, res) => {
 
   const { plan, hot: hotCap, warm: warmCap, cold: coldCap } = getLimits(merchant);
 
-  // Pull anything that COULD be a lead: contact captured, special status,
-  // or an existing lead_tier. We compute the tier on-the-fly via
-  // deriveLeadTier so legacy rows (pre-033) that never had lead_tier
-  // populated still surface here.
-  //
-  // Won deals are INCLUDED unless the customer has already checked out
-  // (recovered_at IS NOT NULL). A fresh won deal with no recovery is the
-  // highest-leverage moment for a merchant nudge — deal locked in,
-  // customer just needs the final click.
-  const { data: rows, error } = await supabase
+  // Two-step pull from negotiations:
+  //   1. anything with contact captured (and not recovered)
+  //   2. anything in a special status (cold_lead/human_escalated/won/won_abandoned)
+  // We do these as separate queries instead of one big .or() with
+  // not.is.null clauses, because the multi-table .or() form has been
+  // unreliable across postgrest versions and silently 500s. Two simple
+  // queries deduped client-side is more robust.
+  let allNegRows = [];
+  let queryErrors = [];
+
+  async function safeQuery(label, fn) {
+    try {
+      const { data, error } = await fn();
+      if (error) {
+        console.warn(`[leads] ${label} failed: ${error.message}`);
+        queryErrors.push(`${label}: ${error.message}`);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      console.warn(`[leads] ${label} threw: ${e.message}`);
+      queryErrors.push(`${label}: ${e.message}`);
+      return [];
+    }
+  }
+
+  const NEG_COLS = 'id, merchant_id, product_name, product_url, list_price, floor_price, deal_price, status, current_step, lead_tier, lead_status, customer_email, customer_whatsapp, customer_name, messages, last_customer_message_at, updated_at, escalated_at, abandoned_at, merchant_contacted_at, created_at, recovered_at, deal_expires_at';
+
+  // 1. Negotiations with email captured
+  const negsWithEmail = await safeQuery('negs.email', () => supabase
     .from('negotiations')
-    .select('id, merchant_id, product_name, product_url, list_price, floor_price, deal_price, status, current_step, lead_tier, lead_status, customer_email, customer_whatsapp, customer_name, messages, last_customer_message_at, updated_at, escalated_at, abandoned_at, merchant_contacted_at, created_at, recovered_at, deal_expires_at')
+    .select(NEG_COLS)
     .eq('merchant_id', merchantId)
     .is('recovered_at', null)
-    .or('lead_tier.not.is.null,status.eq.human_escalated,status.eq.won,status.eq.won_abandoned,status.eq.cold_lead,customer_email.not.is.null,customer_whatsapp.not.is.null')
+    .not('customer_email', 'is', null)
     .neq('lead_status', 'dismissed')
     .order('updated_at', { ascending: false })
-    .limit(500);
+    .limit(300));
 
-  if (error) {
-    console.error('[leads] query failed:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-
-  // Concierge threads are leads in their own right — even before they've
-  // attached to a product negotiation. Fetch in parallel with negotiations.
-  const { data: threadRows, error: tErr } = await supabase
-    .from('concierge_threads')
-    .select('id, merchant_id, customer_email, customer_whatsapp, customer_name, messages, last_product_url, last_page_type, lead_tier, lead_status, merchant_contacted_at, created_at, updated_at')
+  // 2. Negotiations with phone captured
+  const negsWithPhone = await safeQuery('negs.phone', () => supabase
+    .from('negotiations')
+    .select(NEG_COLS)
     .eq('merchant_id', merchantId)
-    .or('lead_tier.not.is.null,customer_email.not.is.null,customer_whatsapp.not.is.null')
+    .is('recovered_at', null)
+    .not('customer_whatsapp', 'is', null)
     .neq('lead_status', 'dismissed')
     .order('updated_at', { ascending: false })
-    .limit(200);
+    .limit(300));
 
-  if (tErr) {
-    console.warn('[leads] concierge_threads query failed (non-fatal):', tErr.message);
-  }
+  // 3. Negotiations in special status (covers `won` even if no contact yet)
+  const negsWithSpecialStatus = await safeQuery('negs.status', () => supabase
+    .from('negotiations')
+    .select(NEG_COLS)
+    .eq('merchant_id', merchantId)
+    .is('recovered_at', null)
+    .in('status', ['cold_lead', 'human_escalated', 'won', 'won_abandoned'])
+    .neq('lead_status', 'dismissed')
+    .order('updated_at', { ascending: false })
+    .limit(300));
+
+  // 4. Negotiations with lead_tier already set
+  const negsWithTier = await safeQuery('negs.tier', () => supabase
+    .from('negotiations')
+    .select(NEG_COLS)
+    .eq('merchant_id', merchantId)
+    .is('recovered_at', null)
+    .not('lead_tier', 'is', null)
+    .neq('lead_status', 'dismissed')
+    .order('updated_at', { ascending: false })
+    .limit(300));
+
+  // De-dupe by id
+  const negsById = new Map();
+  [...negsWithEmail, ...negsWithPhone, ...negsWithSpecialStatus, ...negsWithTier]
+    .forEach(n => { if (!negsById.has(n.id)) negsById.set(n.id, n); });
+  allNegRows = Array.from(negsById.values());
+
+  // 5. Concierge threads (separate table — may not exist if migration 034
+  // hasn't run; safeQuery swallows that). Two queries deduped, same
+  // pattern as negotiations.
+  const THREAD_COLS = 'id, merchant_id, customer_email, customer_whatsapp, customer_name, messages, last_product_url, last_page_type, lead_tier, lead_status, merchant_contacted_at, created_at, updated_at';
+  const threadsWithEmail = await safeQuery('threads.email', () => supabase
+    .from('concierge_threads')
+    .select(THREAD_COLS)
+    .eq('merchant_id', merchantId)
+    .not('customer_email', 'is', null)
+    .neq('lead_status', 'dismissed')
+    .order('updated_at', { ascending: false })
+    .limit(100));
+
+  const threadsWithTier = await safeQuery('threads.tier', () => supabase
+    .from('concierge_threads')
+    .select(THREAD_COLS)
+    .eq('merchant_id', merchantId)
+    .not('lead_tier', 'is', null)
+    .neq('lead_status', 'dismissed')
+    .order('updated_at', { ascending: false })
+    .limit(100));
+
+  const threadsById = new Map();
+  [...threadsWithEmail, ...threadsWithTier].forEach(t => {
+    if (!threadsById.has(t.id)) threadsById.set(t.id, t);
+  });
+  const allThreadRows = Array.from(threadsById.values());
+
+  // Use the legacy variable names below for minimal-diff downstream.
+  const rows = allNegRows;
+  const threadRows = allThreadRows;
+  const error = null;
 
   // Filter out negotiations that don't actually qualify as leads — i.e.
   // post-deriveLeadTier, lead_tier is still null (means no contact AND
@@ -217,6 +289,9 @@ router.get('/leads/:merchantId', async (req, res) => {
     },
     counts: { hot: hot.length, warm: warm.length, cold: cold.length },
     total_earnable: Math.round(totalEarnable),
+    debug_query_errors: queryErrors.length ? queryErrors : undefined,
+    debug_raw_neg_count: rows.length,
+    debug_raw_thread_count: threadRows.length,
     hot,
     warm,
     cold,

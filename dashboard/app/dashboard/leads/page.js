@@ -171,18 +171,30 @@ export default function LeadsPage() {
   const [data, setData] = useState(null);
   const [merchantId, setMerchantId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const supabase = createClient();
 
   async function load(id) {
-    const res = await fetch(`${API}/api/leads/${id}`);
-    if (res.ok) setData(await res.json());
-    setLoading(false);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/api/leads/${id}`);
+      const text = await res.text();
+      if (!res.ok) {
+        setError(`API returned ${res.status}: ${text.slice(0, 500)}`);
+        return;
+      }
+      setData(JSON.parse(text));
+    } catch (e) {
+      setError(`Network/parse error: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setLoading(false); return; }
       setMerchantId(user.id);
       await load(user.id);
     })();
@@ -200,6 +212,18 @@ export default function LeadsPage() {
   if (loading) {
     return <div className="p-8 text-sm text-gray-400">Loading leads…</div>;
   }
+  if (error) {
+    return (
+      <div className="p-8">
+        <h2 className="text-lg font-bold text-red-700 mb-2">Leads API failed</h2>
+        <pre className="text-xs bg-red-50 border border-red-200 p-3 rounded text-red-900 whitespace-pre-wrap break-all">{error}</pre>
+        <p className="text-xs text-gray-500 mt-3">API URL: {API}/api/leads/{merchantId || '<no-merchant>'}</p>
+        <button onClick={() => merchantId && load(merchantId)} className="mt-3 text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white">
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (!data) {
     return <div className="p-8 text-sm text-gray-400">No leads yet.</div>;
   }
@@ -212,6 +236,15 @@ export default function LeadsPage() {
         <div>
           <h2 className="text-xl font-bold text-gray-900">Leads</h2>
           <p className="text-sm text-gray-500">Customers your bot couldn't quite close — go win them back.</p>
+          {(data.debug_raw_neg_count !== undefined || data.debug_raw_thread_count !== undefined) && (
+            <p className="text-[10px] text-gray-300 mt-1">
+              Pulled {data.debug_raw_neg_count ?? '?'} negotiations + {data.debug_raw_thread_count ?? '?'} threads.
+              {data.debug_query_errors && <span className="text-red-400"> · {data.debug_query_errors.length} query errors (see console)</span>}
+            </p>
+          )}
+          {data.debug_query_errors && (
+            <pre className="text-[10px] text-red-700 bg-red-50 border border-red-200 p-2 rounded mt-1 max-w-md whitespace-pre-wrap break-all">{data.debug_query_errors.join('\n')}</pre>
+          )}
         </div>
         <div className="text-right">
           <div className="text-xs text-gray-400 uppercase tracking-wider">You could earn</div>
