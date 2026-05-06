@@ -16,8 +16,9 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../lib/supabase');
 const { validateApiKey } = require('../middleware/auth');
-const { settingsLimiter } = require('../middleware/rateLimit');
+const { settingsLimiter, negotiationLimiter } = require('../middleware/rateLimit');
 const { widgetCors } = require('../middleware/cors');
+const { handleConciergeTurn, pickFeaturedDeal, getOrCreateThread } = require('../services/concierge');
 
 router.post('/concierge/capture', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {
   const merchantId = req.merchant.id;
@@ -121,6 +122,119 @@ router.post('/concierge/capture', widgetCors, settingsLimiter, validateApiKey, a
   }
 
   return res.json({ ok: true, negotiation_id: created.id, mode: 'created' });
+});
+
+// ── CONCIERGE CHAT ─────────────────────────────────────────────────────────
+// Cross-page Willow conversation. Each call appends to a single thread row
+// per (merchant, session_id). Triggers: 'user' (customer typed) or
+// 'greet' / 'page_change' / 'idle' / 'cart_entry' (proactive). The widget
+// is responsible for throttling client-side; the server enforces the
+// hard caps too (max 4 proactive, no closer than 60s between proactives).
+
+async function loadMerchantContext(merchantId) {
+  const [{ data: merchant }, { data: settings }] = await Promise.all([
+    supabase.from('merchants').select('id, source_url, shopify_domain').eq('id', merchantId).maybeSingle(),
+    supabase.from('merchant_settings').select('tone, bot_name, brand_value_statements').eq('merchant_id', merchantId).maybeSingle(),
+  ]);
+  return { merchant, settings };
+}
+
+router.post('/concierge/message', widgetCors, negotiationLimiter, validateApiKey, async (req, res) => {
+  const merchantId = req.merchant.id;
+  const {
+    session_id,
+    customer_message,
+    trigger = 'user',
+    page_context = null,    // { page_type, product_name, product_url, list_price, collection_title, collection_url }
+  } = req.body || {};
+
+  if (!session_id) return res.status(400).json({ error: 'session_id required' });
+  if (trigger === 'user' && !customer_message) {
+    return res.status(400).json({ error: 'customer_message required for user trigger' });
+  }
+  if (!['user', 'greet', 'page_change', 'idle', 'cart_entry'].includes(trigger)) {
+    return res.status(400).json({ error: 'invalid trigger' });
+  }
+
+  try {
+    const { merchant, settings } = await loadMerchantContext(merchantId);
+    if (!merchant) return res.status(404).json({ error: 'merchant not found' });
+
+    const result = await handleConciergeTurn({
+      merchantId,
+      sessionId: session_id,
+      customerMessage: customer_message || null,
+      trigger,
+      pageContext: page_context,
+      merchantSettings: settings || {},
+      shopifyDomain: merchant.shopify_domain || null,
+      merchant,
+    });
+
+    res.json({
+      reply: result.reply,
+      thread_id: result.thread_id,
+      suppressed: !!result.suppressed,
+      scripted: !!result.scripted,
+      contact_captured: !!result.contact_captured,
+      name_captured: !!result.name_captured,
+      featured_deal: result.featured_deal || null,
+      matches: result.matches || [],
+    });
+  } catch (err) {
+    console.error('[concierge/message] error:', err.message);
+    res.status(500).json({ error: 'concierge unavailable', detail: err.message });
+  }
+});
+
+// Resume an in-flight thread on page load — widget hits this so the
+// chat surface can rehydrate without round-tripping the full message
+// list through localStorage on every nav.
+router.get('/concierge/thread/:session_id', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {
+  const merchantId = req.merchant.id;
+  const { data, error } = await supabase
+    .from('concierge_threads')
+    .select('id, messages, customer_email, customer_whatsapp, customer_name, last_page_type, last_product_url, lead_tier, proactive_count, last_proactive_at, created_at, updated_at')
+    .eq('merchant_id', merchantId)
+    .eq('session_id', req.params.session_id)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.json({ exists: false });
+
+  res.json({
+    exists: true,
+    thread_id: data.id,
+    messages: data.messages || [],
+    contact: {
+      email: data.customer_email,
+      phone: data.customer_whatsapp,
+      name: data.customer_name,
+    },
+    last_page_type: data.last_page_type,
+    proactive_count: data.proactive_count || 0,
+    last_proactive_at: data.last_proactive_at,
+    lead_tier: data.lead_tier,
+  });
+});
+
+// Surfaces today's headline deal so the widget can show a "🔥 hot deal"
+// teaser inline with the chat opener even before the LLM round-trips.
+router.get('/concierge/featured-deal', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {
+  try {
+    const { data: merchant } = await supabase
+      .from('merchants')
+      .select('id, source_url, shopify_domain')
+      .eq('id', req.merchant.id)
+      .maybeSingle();
+    if (!merchant) return res.status(404).json({ error: 'merchant not found' });
+
+    const deal = await pickFeaturedDeal(merchant);
+    res.json({ deal });
+  } catch (err) {
+    console.error('[concierge/featured-deal] error:', err.message);
+    res.status(500).json({ error: 'unavailable' });
+  }
 });
 
 module.exports = router;

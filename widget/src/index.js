@@ -591,95 +591,290 @@
     return { host, getNegId: () => getNegId() };
   }
 
-  // ── SITE-ARRIVAL CAPTURE ────────────────────────────────────────────────────
-  // After the customer has been on the page for ~14s with no exit-intent or
-  // negotiation engagement, we pop a soft bottom-right toast offering a
-  // value-hook reveal in exchange for their email. We ask for ONE thing
-  // (email) — never both email and phone in the same prompt. If the
-  // customer engages later, the negotiation flow may ask for their NAME
-  // as a second-touch ask; never piles questions onto the customer.
+  // ── CONCIERGE — Willow ──────────────────────────────────────────────────────
+  // Single persistent chat surface that travels across pages. One thread
+  // per (merchant, session_id), stored server-side in concierge_threads
+  // and mirrored to localStorage for instant resume. The bubble lives on
+  // every page (not gated to product/cart). Proactive triggers fire on
+  // greet / page_change / idle / cart_entry, hard-capped to 4 per session.
   //
-  // POSTS to /api/concierge/capture which logs in lead_captures and either
-  // merges into the active negotiation or creates a 'cold_lead' stub row.
-  function setupArrivalCapture(productInfo) {
-    const SEEN_KEY = '_botiga_arrival_seen';
-    try { if (sessionStorage.getItem(SEEN_KEY)) return; } catch (_) {}
+  // The existing "Make an offer" button stays on product/cart pages as a
+  // direct entry to the negotiation engine — Willow can also tell the
+  // customer to tap it.
+  function setupConcierge() {
+    const STATE_KEY = '_botiga_concierge';
+    function loadState() {
+      try { return JSON.parse(localStorage.getItem(STATE_KEY) || '{}'); }
+      catch { return {}; }
+    }
+    function saveState(patch) {
+      try {
+        const cur = loadState();
+        localStorage.setItem(STATE_KEY, JSON.stringify({ ...cur, ...patch, ts: Date.now() }));
+      } catch {}
+    }
 
-    // Don't pop if we already have contact captured this session
-    const existing = getSession();
-    if (existing.email || existing.phone) return;
+    const sess = getSession();
+    const session_id = sess.session_id || (Math.random().toString(36).slice(2) + Date.now().toString(36));
+    saveSession({ session_id });
 
-    setTimeout(() => {
-      // Bail if customer engaged with the negotiation button — they're
-      // already in the funnel, no need for a parallel capture pop.
-      if (document.querySelector('#_botiga_chat_host, #_botiga_modal_host')) return;
-      try { sessionStorage.setItem(SEEN_KEY, '1'); } catch (_) {}
-
-      const host = document.createElement('div');
-      host.id = '_botiga_arrival_host';
-      host.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:2147483645;font-family:system-ui,-apple-system,sans-serif;';
-      const shadow = host.attachShadow({ mode: 'open' });
-      shadow.innerHTML = `
-        <style>
-          .card { background: #111; color: #fff; border-radius: 14px; padding: 16px 18px 14px; width: 280px; box-shadow: 0 8px 28px rgba(0,0,0,0.35); transform: translateY(20px); opacity: 0; transition: all .35s cubic-bezier(.34,1.56,.64,1); }
-          .card.in { transform: translateY(0); opacity: 1; }
-          .hook { font-size: 14px; font-weight: 600; line-height: 1.35; margin-bottom: 4px; letter-spacing: -0.2px; }
-          .sub  { font-size: 12px; color: #9ca3af; margin-bottom: 12px; line-height: 1.4; }
-          input { width: 100%; box-sizing: border-box; background: #1e1e1e; border: 1px solid #333; border-radius: 9px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
-          input:focus { border-color: #16a34a; }
-          .row { display: flex; gap: 8px; margin-top: 10px; }
-          .save { flex: 1; padding: 10px; background: #16a34a; color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
-          .skip { background: none; border: none; color: #6b7280; font-size: 12px; cursor: pointer; padding: 0 6px; font-family: inherit; }
-          .done { font-size: 13px; color: #d1d5db; padding: 4px 0; }
-        </style>
-        <div class="card" id="card">
-          <div class="hook">🔒 I've got a special price on this</div>
-          <div class="sub">Drop your email — I'll unlock it for you.</div>
-          <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
-          <div class="row">
-            <button class="save" id="save">Unlock my price</button>
-            <button class="skip" id="skip">No thanks</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(host);
-      const card = shadow.getElementById('card');
-      requestAnimationFrame(() => card.classList.add('in'));
-
-      const dismiss = () => {
-        card.classList.remove('in');
-        setTimeout(() => host.remove(), 350);
-      };
-      shadow.getElementById('skip').addEventListener('click', dismiss);
-
-      shadow.getElementById('save').addEventListener('click', async () => {
-        const email = shadow.getElementById('email').value.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          shadow.getElementById('email').style.borderColor = '#ef4444';
-          return;
-        }
-        const sess = getSession();
-        const session_id = sess.session_id || (Math.random().toString(36).slice(2) + Date.now().toString(36));
-        saveSession({ session_id, email });
+    function pageType() {
+      const p = window.location.pathname;
+      if (/\/products\//.test(p))    return 'product';
+      if (/\/collections\//.test(p)) return 'collection';
+      if (/\/cart/.test(p))          return 'cart';
+      if (p === '/' || p === '')     return 'home';
+      return 'other';
+    }
+    function pageContext() {
+      const t = pageType();
+      const ctx = { page_type: t };
+      if (t === 'product') {
+        ctx.product_url = window.location.href;
         try {
-          await fetch(`${API_BASE}/api/concierge/capture`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, ...API_HEADERS },
-            body: JSON.stringify({
-              session_id,
-              source: 'concierge_arrival',
-              capture_step: 'contact',
-              email,
-              product_url: window.location.href,
-              product_name: productInfo?.name || document.title,
-              list_price: productInfo?.price || null,
-            }),
-          });
-        } catch (_) {}
-        card.innerHTML = '<div class="done">✅ Saved — your price is unlocked. Look for the chat button below.</div>';
-        setTimeout(dismiss, 2400);
-      });
-    }, 14000);
+          const meta = window.ShopifyAnalytics?.meta?.product;
+          if (meta) {
+            ctx.product_name = meta.title || document.title;
+            const v = (meta.variants || [])[0];
+            if (v) ctx.list_price = (v.price || 0) / 100;
+          } else {
+            ctx.product_name = document.title.replace(/[\s\-|]+\s*$/, '');
+          }
+        } catch {}
+      }
+      if (t === 'collection') ctx.collection_url = window.location.href;
+      return ctx;
+    }
+
+    // ── UI: floating button + slide-up panel ────────────────────────────────
+    const host = document.createElement('div');
+    host.id = '_botiga_willow_host';
+    host.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:2147483640;font-family:system-ui,-apple-system,sans-serif;';
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `
+      <style>
+        :host { all: initial; }
+        .bubble { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg,#0ea5e9,#7c3aed); color: #fff; display:flex; align-items:center; justify-content:center; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,0.25); transition: transform .2s; font-size: 24px; }
+        .bubble:hover { transform: scale(1.07); }
+        .badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; border-radius: 999px; min-width: 18px; height: 18px; font-size: 10px; font-weight: 700; display:none; align-items:center; justify-content:center; padding: 0 5px; }
+        .badge.on { display: flex; }
+        .panel { position: fixed; bottom: 84px; right: 18px; width: 360px; max-width: calc(100vw - 36px); height: 540px; max-height: 70vh; background: #fff; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.22); display: none; flex-direction: column; overflow: hidden; transform-origin: bottom right; transform: scale(0.92); opacity: 0; transition: all .25s cubic-bezier(.34,1.56,.64,1); }
+        .panel.open { display: flex; transform: scale(1); opacity: 1; }
+        .head { padding: 14px 18px; background: linear-gradient(135deg,#0ea5e9,#7c3aed); color: #fff; display:flex; align-items:center; justify-content:space-between; }
+        .head .name { font-size: 14px; font-weight: 700; letter-spacing: -0.2px; }
+        .head .sub { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+        .close { background:none; border:none; color:#fff; font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
+        .body { flex: 1; overflow-y: auto; padding: 14px; background: #fafafa; }
+        .row { margin: 6px 0; display: flex; }
+        .row.assistant { justify-content: flex-start; }
+        .row.user { justify-content: flex-end; }
+        .msg { max-width: 80%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+        .msg.assistant { background: #fff; color: #111; border: 1px solid #eef0f2; }
+        .msg.user { background: #111; color: #fff; }
+        .msg a { color: inherit; text-decoration: underline; }
+        .msg strong { font-weight: 700; }
+        .typing { display:inline-flex; gap:4px; padding: 10px 13px; background:#fff; border:1px solid #eef0f2; border-radius:14px; }
+        .typing span { width:6px; height:6px; background:#bbb; border-radius:50%; animation: bounce 1.2s infinite; }
+        .typing span:nth-child(2){ animation-delay:.15s; } .typing span:nth-child(3){ animation-delay:.3s; }
+        @keyframes bounce { 0%,80%,100%{ transform: translateY(0); opacity:.4; } 40%{ transform: translateY(-4px); opacity:1; } }
+        .foot { padding: 10px 12px; border-top: 1px solid #eef0f2; background: #fff; display:flex; gap: 8px; }
+        .input { flex:1; border: 1px solid #e5e7eb; border-radius: 999px; padding: 10px 14px; font-size: 14px; outline: none; font-family: inherit; }
+        .input:focus { border-color: #7c3aed; }
+        .send { background: #111; color: #fff; border: none; border-radius: 999px; padding: 0 16px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 13px; }
+      </style>
+      <div class="panel" id="panel">
+        <div class="head">
+          <div>
+            <div class="name" id="bot_name">Willow</div>
+            <div class="sub">Your shopping concierge</div>
+          </div>
+          <button class="close" id="close_btn">×</button>
+        </div>
+        <div class="body" id="body"></div>
+        <div class="foot">
+          <input class="input" id="input" placeholder="Type a message…" />
+          <button class="send" id="send">Send</button>
+        </div>
+      </div>
+      <div style="position:relative;">
+        <div class="bubble" id="bubble">💬</div>
+        <div class="badge" id="badge"></div>
+      </div>
+    `;
+    document.body.appendChild(host);
+
+    const panel = shadow.getElementById('panel');
+    const body = shadow.getElementById('body');
+    const input = shadow.getElementById('input');
+    const send = shadow.getElementById('send');
+    const bubble = shadow.getElementById('bubble');
+    const badge = shadow.getElementById('badge');
+    const closeBtn = shadow.getElementById('close_btn');
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+    function formatMessage(s) {
+      // Markdown-light: **bold**, links auto-detected
+      let h = escapeHtml(s);
+      h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      h = h.replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+      return h;
+    }
+    function renderMessage(role, content) {
+      const row = document.createElement('div');
+      row.className = 'row ' + role;
+      const m = document.createElement('div');
+      m.className = 'msg ' + role;
+      m.innerHTML = formatMessage(content);
+      row.appendChild(m);
+      body.appendChild(row);
+      body.scrollTop = body.scrollHeight;
+    }
+    function showTyping() {
+      const row = document.createElement('div');
+      row.className = 'row assistant';
+      row.id = '_typing';
+      row.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+      body.appendChild(row);
+      body.scrollTop = body.scrollHeight;
+    }
+    function clearTyping() {
+      const t = shadow.getElementById('_typing');
+      if (t) t.remove();
+    }
+    function bumpBadge() {
+      const cur = parseInt(badge.textContent || '0', 10) || 0;
+      badge.textContent = String(cur + 1);
+      badge.classList.add('on');
+    }
+    function clearBadge() {
+      badge.textContent = '';
+      badge.classList.remove('on');
+    }
+
+    let isOpen = false;
+    let isSending = false;
+
+    function openPanel() {
+      panel.classList.add('open');
+      isOpen = true;
+      clearBadge();
+      setTimeout(() => input.focus(), 250);
+      // Greet on first ever open this session if the thread is empty
+      const st = loadState();
+      if (!st.greeted) {
+        st.greeted = true;
+        saveState({ greeted: true });
+        sendTrigger('greet');
+      }
+    }
+    function closePanel() {
+      panel.classList.remove('open');
+      isOpen = false;
+    }
+    bubble.addEventListener('click', () => isOpen ? closePanel() : openPanel());
+    closeBtn.addEventListener('click', closePanel);
+
+    // ── Server I/O ──────────────────────────────────────────────────────────
+    async function sendMessage(text) {
+      if (!text || isSending) return;
+      isSending = true;
+      renderMessage('user', text);
+      input.value = '';
+      showTyping();
+      try {
+        const res = await fetch(`${API_BASE}/api/concierge/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, ...API_HEADERS },
+          body: JSON.stringify({
+            session_id,
+            customer_message: text,
+            trigger: 'user',
+            page_context: pageContext(),
+          }),
+        });
+        const data = await res.json();
+        clearTyping();
+        if (data.reply) renderMessage('assistant', data.reply);
+      } catch (_) {
+        clearTyping();
+        renderMessage('assistant', "Sorry — I'm having trouble connecting. Try again in a sec?");
+      } finally {
+        isSending = false;
+      }
+    }
+
+    async function sendTrigger(trigger) {
+      try {
+        showTyping();
+        const res = await fetch(`${API_BASE}/api/concierge/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, ...API_HEADERS },
+          body: JSON.stringify({
+            session_id,
+            customer_message: null,
+            trigger,
+            page_context: pageContext(),
+          }),
+        });
+        const data = await res.json();
+        clearTyping();
+        if (data.reply && !data.suppressed) {
+          renderMessage('assistant', data.reply);
+          if (!isOpen) bumpBadge();
+        }
+      } catch (_) {
+        clearTyping();
+      }
+    }
+
+    send.addEventListener('click', () => sendMessage(input.value.trim()));
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(input.value.trim()); });
+
+    // ── Resume on page load ────────────────────────────────────────────────
+    async function rehydrate() {
+      try {
+        const res = await fetch(`${API_BASE}/api/concierge/thread/${encodeURIComponent(session_id)}?k=${encodeURIComponent(apiKey)}`, { headers: API_HEADERS });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.exists && Array.isArray(data.messages)) {
+          for (const m of data.messages) {
+            if (m.role === 'user' || m.role === 'assistant') renderMessage(m.role, m.content);
+          }
+          // Page-change proactive — fires once per nav, server enforces
+          // throttle so no need to debounce client-side beyond this.
+          if (data.messages.length > 0) {
+            sendTrigger('page_change');
+          }
+          // Mark greeted so opening doesn't re-greet
+          saveState({ greeted: true });
+        }
+      } catch {}
+    }
+    rehydrate();
+
+    // ── Cart-entry trigger ─────────────────────────────────────────────────
+    if (pageType() === 'cart') {
+      // Slight delay so rehydrate runs first
+      setTimeout(() => sendTrigger('cart_entry'), 800);
+    }
+
+    // ── Idle trigger — 90s of zero engagement on this page ─────────────────
+    let idleTimer = null;
+    let idleFired = false;
+    function resetIdle() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (idleFired || isOpen) return;
+        idleFired = true;
+        sendTrigger('idle');
+      }, 90_000);
+    }
+    ['scroll', 'click', 'keydown', 'mousemove'].forEach(ev =>
+      window.addEventListener(ev, resetIdle, { passive: true, once: false })
+    );
+    resetIdle();
   }
 
   // ── EXIT INTENT ──────────────────────────────────────────────────────────────
@@ -892,8 +1087,6 @@
         }
 
         if (effectiveSettings.recovery_enabled) setupExitIntent(getNegId);
-        // Site-arrival concierge — soft email-only ask after dwell
-        setupArrivalCapture(productInfo);
       })
       .catch(() => {
         // On rules fetch failure, fall back to showing button with global settings
@@ -913,6 +1106,11 @@
       .then(r => r.json())
       .then(settings => {
         if (settings.error) return;
+        // The concierge bubble (Willow) lives on EVERY page, regardless of
+        // negotiate_on_product / negotiate_on_cart settings — it's the
+        // shopping companion. The "Make an offer" button is still gated
+        // by init() to product/cart pages where it makes sense.
+        try { setupConcierge(); } catch (e) { console.warn('[Botiga] concierge init failed:', e); }
         init(settings);
       })
       .catch(() => {});
