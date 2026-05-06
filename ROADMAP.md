@@ -438,6 +438,7 @@ The first three (B1, B2, B3) plus I1+I2 are ~½ day combined and lift the moat f
 | Defensive module loading — `safeRequire` / `safeMount` wraps optional routes so a missing file doesn't 500 the whole API | Shipped | S | Stability | Discussed |
 | Tick-pattern chunking — auto-tag-tick, clone-tick, IG-import-tick run within Vercel's 60s ceiling | Shipped | M | Stability | Discussed |
 | Background queue (Inngest / Trigger.dev) — proper agent-friendly execution past Vercel ceiling | **Later** | M | Stability | Discussed |
+| Real-time lead escalation — `escalate-floors` cron is daily on Hobby plan; needs sub-10min cadence for floor-idle hot leads. Three options when first paying merchants land: (1) Vercel Pro $20/mo restores `*/5` schedule, (2) GitHub Actions hits the endpoint every 5min for free, (3) cron-job.org external scheduler with CRON_SECRET. Decide once we have real merchants. | **Backlog** | S | Conversion | 2026-05-06 deploy gate |
 | Merchant white-label | Later | M | Revenue | Suggested |
 | Competitor price matching | Icebox | L | Conversion | Suggested |
 
