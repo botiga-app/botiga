@@ -36,52 +36,97 @@ function LeadRow({ lead, onMark }) {
   const tier = TIER_BADGE[lead.lead_tier] || TIER_BADGE.cold;
   const contact = lead.customer_email || lead.customer_whatsapp || '—';
   const contacted = !!lead.merchant_contacted_at;
+  const [showThread, setShowThread] = useState(false);
 
   const mailto = lead.customer_email
     ? `mailto:${lead.customer_email}?subject=${encodeURIComponent(`About your ${lead.product_name || 'order'}`)}`
     : null;
+  const tel = lead.customer_whatsapp ? `tel:${lead.customer_whatsapp}` : null;
 
   return (
-    <div className={`px-5 py-4 flex items-center gap-4 border-b border-gray-50 ${contacted ? 'opacity-60' : ''}`}>
-      <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${tier.className}`}>
-        {tier.emoji} {tier.label}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-gray-900 truncate">{lead.product_name || 'Unknown product'}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {STATUS_LABEL[lead.status] || lead.status} · {timeAgo(lead.last_message_at)}
-        </p>
-      </div>
-      <div className="text-sm text-gray-600 w-40 truncate">
-        <div className="text-xs text-gray-400">Contact</div>
-        <div className="font-medium text-gray-900 truncate">{lead.customer_name ? `${lead.customer_name} · ` : ''}{contact}</div>
-      </div>
-      <div className="text-sm w-28 text-right">
-        <div className="text-xs text-gray-400">You earn</div>
-        <div className="font-semibold text-emerald-600">{fmt$(lead.earnable)}</div>
-      </div>
-      <div className="flex gap-2">
-        {mailto && (
-          <a href={mailto} className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-black">
-            Email
-          </a>
-        )}
-        {!contacted ? (
-          <button onClick={() => onMark(lead.id, 'contacted')}
-            className="text-xs px-3 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50">
-            Mark contacted
+    <div className={`border-b border-gray-50 ${contacted ? 'opacity-60' : ''}`}>
+      <div className="px-5 py-4 flex items-center gap-4">
+        <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${tier.className}`}>
+          {tier.emoji} {tier.label}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-gray-900 truncate">{lead.product_name || 'Unknown product'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {STATUS_LABEL[lead.status] || lead.status}
+            <span className="mx-1.5">·</span>
+            <span className="font-medium text-gray-600">{lead.interactions ?? 0} {lead.interactions === 1 ? 'msg' : 'msgs'}</span>
+            <span className="mx-1.5">·</span>
+            {timeAgo(lead.last_message_at)}
+          </p>
+        </div>
+        <div className="text-sm text-gray-600 w-44 truncate">
+          <div className="text-xs text-gray-400">Customer</div>
+          <div className="font-medium text-gray-900 truncate">
+            {lead.customer_name && <span>{lead.customer_name}</span>}
+          </div>
+          <div className="text-xs text-gray-700 truncate">
+            {lead.customer_email && <span>{lead.customer_email}</span>}
+            {lead.customer_email && lead.customer_whatsapp && <span className="mx-1">·</span>}
+            {lead.customer_whatsapp && <span>{lead.customer_whatsapp}</span>}
+            {!lead.customer_email && !lead.customer_whatsapp && <span className="text-gray-400">{contact}</span>}
+          </div>
+        </div>
+        <div className="text-sm w-24 text-right">
+          <div className="text-xs text-gray-400">You earn</div>
+          <div className="font-semibold text-emerald-600">{fmt$(lead.earnable)}</div>
+        </div>
+        <div className="flex gap-2 items-center">
+          {mailto && (
+            <a href={mailto} className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-black">
+              Email
+            </a>
+          )}
+          {!mailto && tel && (
+            <a href={tel} className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-black">
+              Call
+            </a>
+          )}
+          {!contacted ? (
+            <button onClick={() => onMark(lead.id, 'contacted')}
+              className="text-xs px-3 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50">
+              Mark contacted
+            </button>
+          ) : (
+            <button onClick={() => onMark(lead.id, 'new')}
+              className="text-xs px-3 py-1.5 rounded-md border border-gray-200 text-gray-500">
+              Reopen
+            </button>
+          )}
+          <button onClick={() => setShowThread(s => !s)}
+            className="text-xs px-2 py-1.5 rounded-md text-gray-400 hover:text-gray-600">
+            {showThread ? '▲' : '▼'}
           </button>
-        ) : (
-          <button onClick={() => onMark(lead.id, 'new')}
-            className="text-xs px-3 py-1.5 rounded-md border border-gray-200 text-gray-500">
-            Reopen
+          <button onClick={() => onMark(lead.id, 'dismissed')}
+            className="text-xs px-2 py-1.5 rounded-md text-gray-400 hover:text-gray-600">
+            ×
           </button>
-        )}
-        <button onClick={() => onMark(lead.id, 'dismissed')}
-          className="text-xs px-2 py-1.5 rounded-md text-gray-400 hover:text-gray-600">
-          Dismiss
-        </button>
+        </div>
       </div>
+
+      {showThread && (
+        <div className="px-5 pb-4">
+          <div className="bg-gray-50 rounded-lg p-3 max-h-64 overflow-y-auto space-y-2">
+            {(lead.messages || []).length === 0 ? (
+              <p className="text-xs text-gray-400">No conversation yet.</p>
+            ) : (
+              (lead.messages || []).map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-sm px-3 py-2 rounded-xl text-sm ${
+                    msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800 border border-gray-100'
+                  }`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

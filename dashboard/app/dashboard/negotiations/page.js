@@ -83,13 +83,24 @@ export default function NegotiationsPage() {
                 {expanded === n.id && (
                   <div className="px-5 pb-5">
                     <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+                      <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
                         <div><span className="text-gray-400">Floor price</span><br /><strong>${n.floor_price}</strong></div>
                         <div><span className="text-gray-400">Broker fee</span><br /><strong>{n.broker_fee ? `$${n.broker_fee}` : '—'}</strong></div>
                         <div><span className="text-gray-400">Tone used</span><br /><strong className="capitalize">{n.tone_used || '—'}</strong></div>
+                        <div><span className="text-gray-400">Messages</span><br /><strong>{(n.messages || []).filter(m => m.role === 'user').length} from customer</strong></div>
                       </div>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Conversation</p>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {(n.customer_email || n.customer_whatsapp || n.customer_name) && (
+                        <div className="bg-white border border-gray-100 rounded-lg p-3 mb-4 text-sm flex flex-wrap gap-x-6 gap-y-1">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-full">Customer captured</p>
+                          {n.customer_name     && <div><span className="text-gray-400">Name:</span> <strong>{n.customer_name}</strong></div>}
+                          {n.customer_email    && <div><span className="text-gray-400">Email:</span> <strong>{n.customer_email}</strong></div>}
+                          {n.customer_whatsapp && <div><span className="text-gray-400">Phone:</span> <strong>{n.customer_whatsapp}</strong></div>}
+                        </div>
+                      )}
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                        Full conversation ({(n.messages || []).length} {(n.messages || []).length === 1 ? 'turn' : 'turns'})
+                      </p>
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
                         {(n.messages || []).map((msg, i) => (
                           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-sm px-3 py-2 rounded-xl text-sm ${
