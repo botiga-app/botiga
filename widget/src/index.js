@@ -336,12 +336,16 @@
       const saved = Math.round(listPrice - dealPrice);
       const savedPct = Math.round((saved / listPrice) * 100);
 
-      // Resolve final destination once — Draft Order URL preferred. /cart fallback
-      // is for cart-bundles or merchants without Shopify creds.
+      // Resolve final destination once — Draft Order URL preferred,
+      // /checkout fallback (skip the cart page) when not a draft order.
+      // The variant has already been added to cart via /cart/add.js below,
+      // so /checkout starts checkout from that cart with the discount
+      // pre-applied. Previously we used /cart which stopped customers
+      // at a redundant cart-review screen — merchants asked to skip it.
       const isDraftOrderUrl = checkoutUrl && /\/(invoices|checkouts)\//.test(checkoutUrl);
       const dest = isDraftOrderUrl
         ? checkoutUrl
-        : (discountCode ? `/cart?discount=${encodeURIComponent(discountCode)}` : '/cart');
+        : (discountCode ? `/checkout?discount=${encodeURIComponent(discountCode)}` : '/checkout');
 
       // Persist deal into concierge chat history (shared key with video.js) so
       // the conversation resumes naturally when the user reopens the concierge.

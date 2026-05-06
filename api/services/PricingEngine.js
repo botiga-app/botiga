@@ -19,14 +19,21 @@ function minNegotiableSpread(listPrice) {
 
 class PricingEngine {
   constructor({ listPrice, floorPrice, maxDiscountPct }) {
-    // Percentage-based floor from merchant setting
+    // The merchant's max_discount_pct setting is a HARD floor — the engine
+    // must never accept an offer below this percentage. Previously we
+    // used Math.min(pctFloor, spreadFloor) which overrode the merchant's
+    // setting on cheap items: a $34 product with 20% max would silently
+    // allow $20 (41% off) because the spread-inflator preferred deeper
+    // discounts on small-dollar items. That's a trust violation —
+    // merchants expect the percentage to be the binding constraint.
+    //
+    // Now: pctFloor is the only discount floor. If the resulting spread
+    // is too small for a multi-step ladder, generateLadder() falls back
+    // to a single-step ladder (opens at floor immediately) instead of
+    // inflating the floor.
     const pctFloor = listPrice * (1 - (maxDiscountPct || 20) / 100);
-    // Dollar-spread floor — ensures enough room for a real ladder
-    const spreadFloor = listPrice - minNegotiableSpread(listPrice);
-    // Use whichever gives MORE room (lower floor), but never below a merchant's fixed floor
-    const discountFloor = Math.min(pctFloor, spreadFloor);
     this.listPrice = listPrice;
-    this.floorPrice = Math.max(floorPrice || 0, discountFloor);
+    this.floorPrice = Math.max(floorPrice || 0, pctFloor);
     this.priceLadder = this.generateLadder();
   }
 

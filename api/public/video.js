@@ -1518,7 +1518,7 @@
       var isDraftOrder = /\/(invoices|checkouts)\//.test(finalUrl);
       var dest = isDraftOrder
         ? finalUrl
-        : (discountCode ? '/cart?discount=' + encodeURIComponent(discountCode) : '/cart');
+        : (discountCode ? '/checkout?discount=' + encodeURIComponent(discountCode) : '/checkout');
 
       // No-Draft-Order fallback: ensure variant is in cart so /cart?discount works.
       if (!isDraftOrder && tag.shopify_variant_id) {

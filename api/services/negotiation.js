@@ -26,19 +26,25 @@ async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice
     console.warn('[Shopify] Skipping — missing domain:', shopifyDomain, 'or token:', !!shopifyAccessToken);
   }
 
-  // Build a /cart fallback URL (used when the Draft Order path fails or
-  // doesn't apply). DO NOT use Shopify's /cart/{variantId}:1 permalink
-  // format — it returns "Link no longer exists" on Online Store 2.0
-  // themes when the variant resolves differently than expected. The
-  // frontend adds the variant to /cart/add.js separately, so we just
-  // need to land the customer on /cart with the discount applied.
+  // Build a /checkout fallback URL — redirects the customer straight to
+  // checkout instead of stopping at the cart page. The frontend has
+  // already added the variant via /cart/add.js, so cart has the item;
+  // /checkout pulls from cart and starts the checkout flow with the
+  // discount pre-applied.
+  //
+  // Why /checkout not /cart/{variant}:1?discount=...:
+  //   - The variant-permalink format ("/cart/{id}:1") fails on Online
+  //     Store 2.0 themes when the variant doesn't resolve cleanly →
+  //     "Link no longer exists" error
+  //   - /cart works but stops the customer at a redundant cart page;
+  //     merchants prefer fewer clicks-to-checkout
   if (productUrl) {
     try {
       const origin = new URL(productUrl).origin;
-      const cartUrl = new URL(`${origin}/cart`);
-      if (discountCode) cartUrl.searchParams.set('discount', discountCode);
-      else cartUrl.searchParams.set('botiga_deal', negotiationId);
-      return { url: cartUrl.toString(), discountCode };
+      const checkoutUrl = new URL(`${origin}/checkout`);
+      if (discountCode) checkoutUrl.searchParams.set('discount', discountCode);
+      else checkoutUrl.searchParams.set('botiga_deal', negotiationId);
+      return { url: checkoutUrl.toString(), discountCode };
     } catch {}
   }
 
