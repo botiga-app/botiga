@@ -547,6 +547,13 @@
 
   // ── BUTTON ───────────────────────────────────────────────────────────────────
   function injectButton(settings, buttonStyles, productInfo, isFloating) {
+    // Defensive dedup: if n.js was loaded twice on the same page (e.g. both
+    // a manually-pasted script tag AND an auto-installed Script Tag fired),
+    // bail without injecting a second "Make an offer" button. The first
+    // instance to mount wins.
+    if (document.getElementById('_botiga_btn_host')) {
+      return () => null;
+    }
     const host = document.createElement('div');
     host.id = '_botiga_btn_host';
     const shadow = host.attachShadow({ mode: 'closed' });
