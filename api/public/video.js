@@ -2134,11 +2134,31 @@
           cell.appendChild(pImg);
         }
       } else {
-        var video = document.createElement('video');
-        video.dataset.src = item.s3_url;
-        video.muted = true; video.loop = true;
-        video.playsInline = true; video.preload = 'none';
-        cell.appendChild(video);
+        // Photo posts (no s3_url) render their thumbnail as an <img>;
+        // real videos lazy-load via dataset.src. Always show *something*
+        // so the cell never sits empty.
+        if (item.s3_url) {
+          var video = document.createElement('video');
+          video.dataset.src = item.s3_url;
+          video.muted = true; video.loop = true;
+          video.playsInline = true; video.preload = 'none';
+          cell.appendChild(video);
+          if (item.thumbnail_url) {
+            // Show thumbnail until video loads — avoids black flash
+            var poster = document.createElement('img');
+            poster.src = item.thumbnail_url;
+            poster.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;z-index:0';
+            poster.referrerPolicy = 'no-referrer';
+            cell.appendChild(poster);
+          }
+        } else if (item.thumbnail_url) {
+          var poster2 = document.createElement('img');
+          poster2.src = item.thumbnail_url;
+          poster2.alt = item.title || '';
+          poster2.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block';
+          poster2.referrerPolicy = 'no-referrer';
+          cell.appendChild(poster2);
+        }
       }
 
       var ov = document.createElement('div'); ov.className = '_btgv_gc_ov';
@@ -2323,24 +2343,56 @@
       var slide = document.createElement('div');
       slide.className = '_btgv_slide';
 
-      var video = document.createElement('video');
-      video.dataset.src = vid.s3_url;
-      video.muted = muted; video.loop = false;
-      video.playsInline = true; video.preload = 'none';
-      video.onended = function () {
-        var next = scroll.children[i + 1];
-        if (next) next.scrollIntoView({ behavior: 'smooth' });
-        else closeFeed();
-      };
+      // IG photo posts (and any video missing s3_url) render as a static
+      // image using thumbnail_url. The original code always created a
+      // <video> element, which set src="null" for these and showed a
+      // black screen. The intersection-observer auto-advance still works
+      // since img has no onended; we move to the next slide on a timer.
+      var hasVideo = !!vid.s3_url;
+      var video;
+      if (hasVideo) {
+        video = document.createElement('video');
+        video.dataset.src = vid.s3_url;
+        video.muted = muted; video.loop = false;
+        video.playsInline = true; video.preload = 'none';
+        video.onended = function () {
+          var next = scroll.children[i + 1];
+          if (next) next.scrollIntoView({ behavior: 'smooth' });
+          else closeFeed();
+        };
+      } else if (vid.thumbnail_url) {
+        // Fall back to thumbnail-as-image for photo posts. We still keep
+        // the same _btgv_slide structure so the rail/topbar/bottom-zone
+        // layouts work unchanged. Use a div with background-image so
+        // ResponsiveCSS object-cover-equivalent styling applies cleanly.
+        video = document.createElement('img');
+        video.src = vid.thumbnail_url;
+        video.alt = vid.title || '';
+        video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        video.loading = 'lazy';
+        video.referrerPolicy = 'no-referrer'; // Instagram CDN sometimes refuses non-IG referrers
+      } else {
+        // No s3_url AND no thumbnail — render a soft placeholder so the
+        // slide isn't pure black.
+        video = document.createElement('div');
+        video.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.4);font-size:13px;background:linear-gradient(135deg,#1a1a2e,#0f0f1e);';
+        video.textContent = 'No preview available';
+      }
 
       var grad = document.createElement('div'); grad.className = '_btgv_grad';
 
       // Thin video progress bar (top edge) — updates as video plays
       var progress = document.createElement('div'); progress.className = '_btgv_progress';
-      video.addEventListener('timeupdate', function () {
-        if (!video.duration) return;
-        progress.style.width = ((video.currentTime / video.duration) * 100) + '%';
-      });
+      // Progress bar only meaningful for actual videos. For photo posts
+      // (img element), keep it pinned at 100% so the bar doesn't sit empty.
+      if (hasVideo) {
+        video.addEventListener('timeupdate', function () {
+          if (!video.duration) return;
+          progress.style.width = ((video.currentTime / video.duration) * 100) + '%';
+        });
+      } else {
+        progress.style.width = '100%';
+      }
 
       // Top bar: brand badge + view count pill
       var topbar = buildTopBar(vid, feedContext);
@@ -2524,7 +2576,8 @@
     // Aggressive preload throttling: only the active slide + 1 ahead get
     // the video src set. Slides further away keep preload="none". This
     // prevents the storefront from juggling 12 parallel video downloads
-    // and stuttering on slower connections.
+    // and stuttering on slower connections. Photo-post slides (img-based)
+    // skip these calls — they're already loaded inline.
     function ensureVideoLoaded(slide) {
       if (!slide) return;
       var v = slide.querySelector('video');
@@ -2535,7 +2588,7 @@
       entries.forEach(function (entry) {
         var idx = Array.from(scroll.children).indexOf(entry.target);
         var item = idx >= 0 ? vids[idx] : null;
-        var v = entry.target.querySelector('video');
+        var v = entry.target.querySelector('video'); // null for photo-post slides
         if (entry.isIntersecting) {
           if (v) {
             ensureVideoLoaded(entry.target);
@@ -3503,7 +3556,13 @@
   // ── Watch & Shop — horizontal video carousel ────────────────────────────────
   function _cncgWatchShop(msgs) {
     var feedItems = _cncgEl._feedItems || [];
-    var videos = feedItems.filter(function (v) { return v._type !== 'product' && v.s3_url; }).slice(0, 10);
+    // Include both real videos AND photo posts (s3_url null but
+    // thumbnail_url present). Photo posts render as static frames and
+    // are still shoppable. Previously the filter dropped photo posts,
+    // which left IG-photo-only merchants with empty Watch & Shop.
+    var videos = feedItems.filter(function (v) {
+      return v._type !== 'product' && (v.s3_url || v.thumbnail_url);
+    }).slice(0, 10);
     var typing = _cncgTyping(msgs);
     setTimeout(function () {
       typing.remove();
@@ -3526,16 +3585,19 @@
 
         if (v.thumbnail_url) {
           var thumb = document.createElement('img'); thumb.src = v.thumbnail_url; thumb.alt = '';
+          thumb.referrerPolicy = 'no-referrer';
           media.appendChild(thumb);
         }
-        var vid = document.createElement('video');
-        vid.src = v.s3_url; vid.muted = true; vid.loop = true; vid.playsInline = true;
-        vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .2s';
-        media.appendChild(vid);
-
-        // Auto-play video in media area
-        vid.play().catch(function () {});
-        setTimeout(function () { vid.style.opacity = '1'; }, 100);
+        // Only attach a <video> element if we actually have a video URL.
+        // Photo posts (s3_url null) just show the thumbnail.
+        if (v.s3_url) {
+          var vid = document.createElement('video');
+          vid.src = v.s3_url; vid.muted = true; vid.loop = true; vid.playsInline = true;
+          vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .2s';
+          media.appendChild(vid);
+          vid.play().catch(function () {});
+          setTimeout(function () { vid.style.opacity = '1'; }, 100);
+        }
 
         var ov = document.createElement('div'); ov.className = '_btgv_cncg_vtile_ov'; media.appendChild(ov);
 
