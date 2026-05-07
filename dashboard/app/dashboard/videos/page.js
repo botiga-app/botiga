@@ -2621,6 +2621,15 @@ export default function VideosPage() {
         <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
           <h2 className="text-lg font-bold text-gray-900">Video Library</h2>
           <div className="flex gap-2 flex-wrap">
+            {videos.length > 0 && (
+              <a
+                href="/dashboard/videos/preview"
+                className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-black inline-flex items-center gap-1.5 font-medium"
+                title="Vertical scroll editor — preview as customer + edit inline"
+              >
+                ↕ Scroll & edit
+              </a>
+            )}
             {merchantId && (
               <PreviewWithShareButtons
                 shopifyDomain={shopifyDomain}
