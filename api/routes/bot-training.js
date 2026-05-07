@@ -9,10 +9,14 @@ const supabase = require('../lib/supabase');
 const { dashboardCors } = require('../middleware/cors');
 const { parseInstructionToDirectives } = require('../services/botInstructions');
 
-router.use(dashboardCors);
+// CORS is applied per-route below — DON'T use `router.use(dashboardCors)`
+// because Express runs that middleware on every request that traverses
+// this router, including unrelated paths like /api/widget/videos that
+// happen to be mounted under the same /api prefix. dashboardCors's strict
+// origin check then 500s the storefront widget. Per-route is scoped.
 
 // List instructions for a merchant — newest first.
-router.get('/merchants/:merchantId/bot-instructions', async (req, res) => {
+router.get('/merchants/:merchantId/bot-instructions', dashboardCors, async (req, res) => {
   const { merchantId } = req.params;
   const { data, error } = await supabase
     .from('bot_instructions')
@@ -25,7 +29,7 @@ router.get('/merchants/:merchantId/bot-instructions', async (req, res) => {
 
 // Create a new instruction. Parses to directives at save time so the
 // LLM call cost is paid once per save instead of per page-load.
-router.post('/merchants/:merchantId/bot-instructions', async (req, res) => {
+router.post('/merchants/:merchantId/bot-instructions', dashboardCors, async (req, res) => {
   const { merchantId } = req.params;
   const { instruction_text, expires_at, priority = 0 } = req.body || {};
   if (!instruction_text || !String(instruction_text).trim()) {
@@ -58,7 +62,7 @@ router.post('/merchants/:merchantId/bot-instructions', async (req, res) => {
 
 // Toggle active / update priority / set expiry / re-edit text.
 // Re-parsing happens only if the text actually changed.
-router.patch('/bot-instructions/:id', async (req, res) => {
+router.patch('/bot-instructions/:id', dashboardCors, async (req, res) => {
   const id = req.params.id;
   const { active, priority, expires_at, instruction_text } = req.body || {};
 
@@ -91,7 +95,7 @@ router.patch('/bot-instructions/:id', async (req, res) => {
 
 // Hard delete. We don't soft-delete because owners often want clean
 // history, and the dashboard already supports active=false for "pause".
-router.delete('/bot-instructions/:id', async (req, res) => {
+router.delete('/bot-instructions/:id', dashboardCors, async (req, res) => {
   const { error } = await supabase
     .from('bot_instructions')
     .delete()
