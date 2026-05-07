@@ -2,16 +2,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '../../../../lib/supabase';
-import AiTagger from '../../../../components/video-edit/AiTagger';
-import ProductPicker from '../../../../components/video-edit/ProductPicker';
-import TagRow from '../../../../components/video-edit/TagRow';
+import VideoEditPanel from '../../../../components/video-edit/VideoEditPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 
-// Vertical-scroll merchant editor. Same edit power as the grid page —
-// every component is shared from /dashboard/components/video-edit/ so
-// "AI auto-tag", "Add product", and the Shopify edit links behave
-// identically in both surfaces.
+// Vertical-scroll merchant editor. The right-side panel is the EXACT
+// same VideoEditPanel the grid drawer (/dashboard/videos) renders —
+// only the left-side feed differs (snap-scroll vs single video player).
+// One source of truth, no UI drift.
 
 function fmt$(n) { if (n == null) return '—'; return '$' + Number(n).toFixed(2); }
 
@@ -94,215 +92,6 @@ function VideoSlide({ video, isActive, muted, onIntersect }) {
   );
 }
 
-function EditPanel({ video, merchantId, shopifyDomain, onChange, onDelete, onOpenAiTagger }) {
-  const [editingCaption, setEditingCaption] = useState(false);
-  const [caption, setCaption] = useState(video.title || '');
-  const [autoMatching, setAutoMatching] = useState(false);
-  const [autoMatchSummary, setAutoMatchSummary] = useState(null);
-
-  // Reset when active video changes
-  useEffect(() => {
-    setCaption(video.title || '');
-    setEditingCaption(false);
-    setAutoMatchSummary(null);
-  }, [video.id]);
-
-  const tags = video.video_product_tags || video.tags || [];
-
-  async function saveCaption() {
-    const next = caption.trim();
-    setEditingCaption(false);
-    if (next === (video.title || '')) return;
-    await fetch(`${API}/api/videos/${video.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: next }),
-    });
-    onChange && onChange({ ...video, title: next });
-  }
-
-  async function toggleStatus() {
-    const next = video.status === 'active' ? 'hidden' : 'active';
-    await fetch(`${API}/api/videos/${video.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: next }),
-    });
-    onChange && onChange({ ...video, status: next });
-  }
-
-  async function removeTag(tagId) {
-    await fetch(`${API}/api/videos/${video.id}/tags/${tagId}`, { method: 'DELETE' });
-    const nextTags = (video.video_product_tags || []).filter(t => t.id !== tagId);
-    onChange && onChange({ ...video, video_product_tags: nextTags });
-  }
-
-  async function doDelete() {
-    if (!confirm('Delete this video? This cannot be undone.')) return;
-    await fetch(`${API}/api/videos/${video.id}`, { method: 'DELETE' });
-    onDelete && onDelete(video.id);
-  }
-
-  // AI auto-match — runs analyzeAndTag() on this video. Adds tags
-  // with match_status='auto_tagged' (≥0.5) or 'pending_review' (0.3-0.5)
-  // which then render via TagRow with the Accept/Reject buttons. Different
-  // from AI Create (which generates NEW Shopify draft products).
-  async function runAiAutoMatch() {
-    setAutoMatching(true);
-    setAutoMatchSummary(null);
-    try {
-      const r = await fetch(`${API}/api/videos/${video.id}/auto-tag`, { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok) {
-        setAutoMatchSummary({ error: d.error || `Server returned ${r.status}` });
-        return;
-      }
-      setAutoMatchSummary({
-        status: d.status,
-        match_score: d.match_score,
-        message: d.status === 'auto_tagged'
-          ? `✓ Auto-tagged (${Math.round((d.match_score || 0) * 100)}% match)`
-          : d.status === 'pending_review'
-          ? `⚠ Pending review — confirm below (${Math.round((d.match_score || 0) * 100)}% match)`
-          : d.status === 'skipped'
-          ? `No strong match in your catalog. Try AI Create instead.`
-          : d.status === 'no_analysis'
-          ? `Couldn't analyze video. Make sure thumbnails are loaded.`
-          : `Done.`,
-      });
-      // Re-fetch video to pull in any new/updated tags
-      const fresh = await fetch(`${API}/api/videos/${video.id}`);
-      if (fresh.ok) {
-        const v = await fresh.json();
-        onChange && onChange(v);
-      }
-    } catch (err) {
-      setAutoMatchSummary({ error: err.message });
-    } finally {
-      setAutoMatching(false);
-    }
-  }
-
-  function onTagRemoved(tagId) {
-    const nextTags = (video.video_product_tags || []).filter(t => t.id !== tagId);
-    onChange && onChange({ ...video, video_product_tags: nextTags });
-  }
-
-  function onTagUpdated(updated) {
-    const nextTags = (video.video_product_tags || []).map(t => t.id === updated.id ? updated : t);
-    onChange && onChange({ ...video, video_product_tags: nextTags });
-  }
-
-  const taggedIds = new Set(tags.map(t => String(t.shopify_product_id)));
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Caption */}
-      <div className="px-5 py-3 border-b border-gray-100">
-        {editingCaption ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              autoFocus
-              rows={2}
-              value={caption}
-              maxLength={250}
-              onChange={e => setCaption(e.target.value)}
-              className="text-sm border border-gray-200 rounded-md p-2 outline-none resize-none focus:border-indigo-400"
-            />
-            <div className="flex gap-2">
-              <button onClick={saveCaption} className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white">Save</button>
-              <button onClick={() => { setEditingCaption(false); setCaption(video.title || ''); }} className="text-xs px-3 py-1.5 rounded-md text-gray-500">Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <div onClick={() => setEditingCaption(true)} className="cursor-pointer group">
-            <p className="text-base font-semibold text-gray-900 leading-snug">
-              {video.title?.trim() || <span className="text-gray-400 italic">No caption — tap to add</span>}
-            </p>
-            <p className="text-[11px] text-gray-400 mt-1 group-hover:text-indigo-500">
-              {video.status === 'active' ? 'Live on storefront' : 'Hidden'} · click to edit caption
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Tagged products — same TagRow used by the grid view, so REVIEW
-          status surfaces with ✓ Accept / Reject buttons identically. */}
-      <div className="px-5 py-3 border-b border-gray-100">
-        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-          Tagged products <span className="text-gray-700">{tags.length}</span>
-        </div>
-        {autoMatchSummary && (
-          <div className={`text-[11px] rounded-md px-2.5 py-1.5 mb-2 ${autoMatchSummary.error ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'}`}>
-            {autoMatchSummary.error ? `Error: ${autoMatchSummary.error}` : autoMatchSummary.message}
-          </div>
-        )}
-        {tags.length === 0 ? (
-          <p className="text-xs text-gray-400">No products tagged. Run AI auto-match below or add one manually.</p>
-        ) : (
-          <div className="space-y-2">
-            {tags.map(t => (
-              <TagRow
-                key={t.id}
-                tag={t}
-                videoId={video.id}
-                merchantId={merchantId}
-                shopifyDomain={shopifyDomain}
-                onRemoved={() => onTagRemoved(t.id)}
-                onUpdated={(updated) => onTagUpdated(updated)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Add product — uses the shared ProductPicker, identical to grid view */}
-      <div className="px-5 py-3 border-b border-gray-100 flex-1 overflow-hidden flex flex-col">
-        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Add product</div>
-        <div className="flex-1 overflow-y-auto -mx-1 px-1">
-          <ProductPicker
-            video={video}
-            merchantId={merchantId}
-            shopifyDomain={shopifyDomain}
-            existingTagIds={taggedIds}
-            onTagAdded={(newTag) => {
-              const nextTags = [...(video.video_product_tags || []), newTag];
-              onChange && onChange({ ...video, video_product_tags: nextTags });
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Bottom actions — AI auto-match and AI Create are DIFFERENT.
-          Auto-match: finds existing catalog products that match the video.
-          Create:     generates new Shopify draft products from the video. */}
-      <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
-        <button
-          onClick={runAiAutoMatch}
-          disabled={autoMatching}
-          className="w-full text-xs px-3 py-2 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 font-semibold">
-          {autoMatching ? '🔍 Matching against catalog…' : '🔍 AI auto-match this video'}
-        </button>
-        <button
-          onClick={onOpenAiTagger}
-          className="w-full text-xs px-3 py-2 rounded-md text-white font-semibold"
-          style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}>
-          ✨ AI Create new product
-        </button>
-        <button
-          onClick={toggleStatus}
-          className="w-full text-xs px-3 py-2 rounded-md border border-gray-200 hover:bg-gray-50">
-          {video.status === 'active' ? '◌ Hide from storefront' : '✓ Show on storefront'}
-        </button>
-        <button
-          onClick={doDelete}
-          className="w-full text-xs px-3 py-2 rounded-md text-red-600 hover:bg-red-50 font-semibold">
-          Delete video
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function VideoPreviewPage() {
   const router = useRouter();
@@ -312,7 +101,6 @@ export default function VideoPreviewPage() {
   const [activeVideo, setActiveVideo] = useState(null);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [aiTaggerOpen, setAiTaggerOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const supabase = createClient();
   const scrollRef = useRef(null);
@@ -417,22 +205,6 @@ export default function VideoPreviewPage() {
     });
   }, []);
 
-  // After AiTagger creates products, append them to the active video's tags
-  const handleTagsUpdated = useCallback((videoId, tagsOrFn) => {
-    setVideos(prev => prev.map(v => {
-      if (v.id !== videoId) return v;
-      const current = v.video_product_tags || [];
-      const next = typeof tagsOrFn === 'function' ? tagsOrFn(current) : tagsOrFn;
-      return { ...v, video_product_tags: next };
-    }));
-    setActiveVideo(prev => {
-      if (!prev || prev.id !== videoId) return prev;
-      const current = prev.video_product_tags || [];
-      const next = typeof tagsOrFn === 'function' ? tagsOrFn(current) : tagsOrFn;
-      return { ...prev, video_product_tags: next };
-    });
-  }, []);
-
   if (loading) {
     return <div className="p-8 text-sm text-gray-400">Loading videos…</div>;
   }
@@ -489,32 +261,44 @@ export default function VideoPreviewPage() {
         </div>
       </div>
 
-      {/* Right: edit panel */}
-      <div className="w-[400px] flex-shrink-0 bg-white border-l border-gray-100 shadow-lg">
+      {/* Right: shared VideoEditPanel — same component the grid drawer uses */}
+      <div className="w-[440px] flex-shrink-0 bg-white border-l border-gray-100 shadow-lg flex flex-col">
         {activeVideo ? (
-          <EditPanel
+          <VideoEditPanel
             key={activeVideo.id}
             video={activeVideo}
             merchantId={merchantId}
             shopifyDomain={shopifyDomain}
-            onChange={updateVideo}
-            onDelete={removeVideo}
-            onOpenAiTagger={() => setAiTaggerOpen(true)}
+            onTagsUpdated={async (videoId, tagsOrFn) => {
+              // Match the panel's API exactly: it calls with (videoId, nextTagsArray).
+              // Resolve callback form too (from AiTagger).
+              const target = videos.find(v => v.id === videoId);
+              const nextTags = typeof tagsOrFn === 'function'
+                ? tagsOrFn(target?.video_product_tags || [])
+                : tagsOrFn;
+              updateVideo({ id: videoId, video_product_tags: nextTags });
+            }}
+            onDelete={async (videoId) => {
+              await fetch(`${API}/api/videos/${videoId}`, { method: 'DELETE' });
+              removeVideo(videoId);
+            }}
+            onToggleStatus={async (videoId, nextStatus) => {
+              // VideoDetailDrawer uses 'active' / 'inactive'; the API accepts both
+              // 'active' and 'hidden'. Normalize to API expectation.
+              const apiStatus = nextStatus === 'inactive' ? 'hidden' : nextStatus;
+              await fetch(`${API}/api/videos/${videoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: apiStatus }),
+              });
+              updateVideo({ id: videoId, status: apiStatus });
+            }}
+            showCloseButton={false}
           />
         ) : (
           <div className="p-5 text-sm text-gray-400">Select a video</div>
         )}
       </div>
-
-      {/* Shared AiTagger modal — same component the grid page uses */}
-      {aiTaggerOpen && activeVideo && (
-        <AiTagger
-          video={activeVideo}
-          merchantId={merchantId}
-          onTagsUpdated={handleTagsUpdated}
-          onClose={() => setAiTaggerOpen(false)}
-        />
-      )}
     </div>
   );
 }
