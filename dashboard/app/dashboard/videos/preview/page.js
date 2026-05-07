@@ -353,8 +353,39 @@ export default function VideoPreviewPage() {
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(true);
   const [allProducts, setAllProducts] = useState([]);
+  const [copied, setCopied] = useState(false);
   const supabase = createClient();
   const scrollRef = useRef(null);
+
+  // Read ?v=<id> from URL — used to jump straight to a specific
+  // video when the merchant follows a deep link or hits Back/Forward.
+  function getDeepLinkId() {
+    if (typeof window === 'undefined') return null;
+    return new URL(window.location.href).searchParams.get('v');
+  }
+
+  // Push the active video into the URL (replaceState so back-button
+  // navigates videos in scroll order without polluting history).
+  function syncUrlForVideo(v) {
+    if (!v || typeof window === 'undefined') return;
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.get('v') === String(v.id)) return;
+      u.searchParams.set('v', v.id);
+      window.history.replaceState(null, '', u.toString());
+    } catch (_) {}
+  }
+
+  function copyDeepLink(v) {
+    if (!v || typeof window === 'undefined') return;
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set('v', v.id);
+      navigator.clipboard.writeText(u.toString());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch (_) {}
+  }
 
   useEffect(() => {
     (async () => {
@@ -376,7 +407,12 @@ export default function VideoPreviewPage() {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         });
         setVideos(list);
-        if (list.length) setActiveVideo(list[0]);
+        if (list.length) {
+          // Honor deep-link ?v=<id> if present and matches a real video
+          const deepId = getDeepLinkId();
+          const target = deepId ? list.find(v => String(v.id) === deepId) : null;
+          setActiveVideo(target || list[0]);
+        }
       }
       if (mRes.ok) {
         const m = await mRes.json();
@@ -398,7 +434,37 @@ export default function VideoPreviewPage() {
     })();
   }, []);
 
-  const handleIntersect = useCallback((v) => setActiveVideo(v), []);
+  const handleIntersect = useCallback((v) => {
+    setActiveVideo(v);
+    syncUrlForVideo(v);
+  }, []);
+
+  // After videos load, if a deep-link ?v=<id> matches one further down
+  // the list, scroll to it (the snap container otherwise opens at top).
+  useEffect(() => {
+    if (!videos.length || !activeVideo || !scrollRef.current) return;
+    const idx = videos.findIndex(v => v.id === activeVideo.id);
+    if (idx <= 0) return;                    // top → already there
+    const slide = scrollRef.current.children[idx];
+    if (slide) slide.scrollIntoView({ behavior: 'auto', block: 'start' });
+    // Run once on first load with deep-link
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videos.length]);
+
+  // Browser back/forward → re-sync active slide to ?v=<id>
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    function onPop() {
+      const id = getDeepLinkId();
+      if (!id || !videos.length || !scrollRef.current) return;
+      const idx = videos.findIndex(v => String(v.id) === id);
+      if (idx < 0) return;
+      const slide = scrollRef.current.children[idx];
+      if (slide) slide.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [videos]);
 
   const updateVideo = useCallback((updated) => {
     setVideos(prev => prev.map(v => v.id === updated.id ? { ...v, ...updated } : v));
@@ -438,6 +504,13 @@ export default function VideoPreviewPage() {
           </button>
           <button onClick={() => setMuted(m => !m)} className="text-xs px-3 py-1.5 rounded-md bg-white shadow border border-gray-200">
             {muted ? '🔇 Muted' : '🔊 Sound on'}
+          </button>
+          <button
+            onClick={() => copyDeepLink(activeVideo)}
+            disabled={!activeVideo}
+            className="text-xs px-3 py-1.5 rounded-md bg-white shadow border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+            title="Copy a deep link to this exact video">
+            {copied ? '✓ Copied' : '🔗 Copy link'}
           </button>
         </div>
 
