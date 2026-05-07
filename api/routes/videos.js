@@ -728,8 +728,8 @@ router.get('/widget/collections', widgetCors, async (req, res) => {
 
     res.json(collections);
   } catch (err) {
-    console.error('[widget/collections] error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch collections' });
+    console.error('[widget/collections] error:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to fetch collections', detail: err.message });
   }
 });
 
@@ -797,8 +797,8 @@ router.get('/widget/videos', widgetCors, async (req, res) => {
 
     res.json(videos);
   } catch (err) {
-    console.error('[widget/videos] error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch videos' });
+    console.error('[widget/videos] error:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to fetch videos', detail: err.message });
   }
 });
 
@@ -1637,36 +1637,48 @@ router.post('/widget/order', widgetCors, async (req, res) => {
 
 // ─── Widget: public config (Supabase Realtime credentials for browser WS) ────
 router.get('/widget/config', widgetCors, async (req, res) => {
-  const { k: apiKey } = req.query;
-  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
-  // Fetch brand fields too — the new feed surface uses name/logo/domain
-  // for the top-left brand badge + merchant-domain links.
-  const { data: merchant } = await supabase
-    .from('merchants')
-    .select('id, name, logo_url, shopify_domain, ig_handle, website_url')
-    .eq('api_key', apiKey)
-    .single();
-  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
-  const { data: settings } = await supabase
-    .from('merchant_settings')
-    .select('bot_name, bot_greeting, bot_avatar_url, bot_personality, max_discount_pct')
-    .eq('merchant_id', merchant.id)
-    .single();
-  res.json({
-    supabase_url: process.env.SUPABASE_URL,
-    supabase_anon_key: process.env.SUPABASE_ANON_KEY || '',
-    bot_name: settings?.bot_name || null,
-    bot_subtitle: null,
-    bot_greeting: settings?.bot_greeting || null,
-    bot_avatar_url: settings?.bot_avatar_url || null,
-    bot_personality: settings?.bot_personality || 'salesy',
-    max_discount_pct: settings?.max_discount_pct ?? 20,
-    // Brand fields for the new feed top-bar
-    brand_name: merchant.name || null,
-    brand_logo: merchant.logo_url || null,
-    brand_handle: merchant.ig_handle || null,
-    brand_url: merchant.website_url || (merchant.shopify_domain ? `https://${merchant.shopify_domain}` : null),
-  });
+  try {
+    const { k: apiKey } = req.query;
+    if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+    // Fetch brand fields too — the new feed surface uses name/logo/domain
+    // for the top-left brand badge + merchant-domain links.
+    const { data: merchant, error: mErr } = await supabase
+      .from('merchants')
+      .select('id, name, logo_url, shopify_domain, ig_handle, website_url')
+      .eq('api_key', apiKey)
+      .single();
+    if (mErr) {
+      console.error('[widget/config] merchants query failed:', mErr.message, mErr.code);
+      return res.status(500).json({ error: 'merchants query failed', detail: mErr.message, code: mErr.code });
+    }
+    if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+    const { data: settings, error: sErr } = await supabase
+      .from('merchant_settings')
+      .select('bot_name, bot_greeting, bot_avatar_url, bot_personality, max_discount_pct')
+      .eq('merchant_id', merchant.id)
+      .single();
+    if (sErr && sErr.code !== 'PGRST116') {  // PGRST116 = no rows = ok, treat as defaults
+      console.error('[widget/config] merchant_settings query failed:', sErr.message, sErr.code);
+      return res.status(500).json({ error: 'settings query failed', detail: sErr.message, code: sErr.code });
+    }
+    res.json({
+      supabase_url: process.env.SUPABASE_URL,
+      supabase_anon_key: process.env.SUPABASE_ANON_KEY || '',
+      bot_name: settings?.bot_name || null,
+      bot_subtitle: null,
+      bot_greeting: settings?.bot_greeting || null,
+      bot_avatar_url: settings?.bot_avatar_url || null,
+      bot_personality: settings?.bot_personality || 'salesy',
+      max_discount_pct: settings?.max_discount_pct ?? 20,
+      brand_name: merchant.name || null,
+      brand_logo: merchant.logo_url || null,
+      brand_handle: merchant.ig_handle || null,
+      brand_url: merchant.website_url || (merchant.shopify_domain ? `https://${merchant.shopify_domain}` : null),
+    });
+  } catch (err) {
+    console.error('[widget/config] uncaught:', err.message, err.stack);
+    res.status(500).json({ error: 'config_failed', detail: err.message });
+  }
 });
 
 // ─── Widget: recent activity for FOMO toasts ────────────────────────────────
