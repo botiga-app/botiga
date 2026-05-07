@@ -144,10 +144,18 @@ app.get('/', (req, res) => {
   res.redirect('/health');
 });
 
-// Fallback error handler
+// Fallback error handler — surfaces the actual error message + stack
+// excerpt in the response so 500s aren't opaque. Production-safe: we
+// never include arbitrary user data, just the error string + first 5
+// stack frames.
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('[fallback]', req.method, req.path, err);
+  res.status(500).json({
+    error: err.message || 'Internal server error',
+    code: err.code || null,
+    path: req.path,
+    stack: (err.stack || '').split('\n').slice(0, 5).join('\n'),
+  });
 });
 
 // In-process crons only for local dev — on Vercel, crons are triggered via HTTP by vercel.json
