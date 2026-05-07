@@ -120,12 +120,25 @@ router.post('/widget/product-search', widgetCors, settingsLimiter, async (req, r
     const products = runFilter(catalog, parsed, { limit, directives, dwell_map });
     const dims = getFilterDimensions(catalog, parsed);
 
+    // Diagnostic counts — surfaces why N might be small. Helps tell apart
+    // "catalog is sparse" vs "filter dropped everything" vs "merchant has
+    // no in-stock items" without re-running with debug logging.
+    const totalProducts = (catalog.products || []).length;
+    const inStock = (catalog.products || []).filter(p => p.available !== false).length;
+
     res.json({
       filter: parsed,
       products,
       total: products.length,
       dimensions: dims,
       source: catalog.source,
+      diagnostics: {
+        catalog_total: totalProducts,
+        catalog_in_stock: inStock,
+        catalog_collections: (catalog.collections || []).length,
+        directives_active: directives.length,
+        dwell_products: Object.keys(dwell_map).length,
+      },
     });
   } catch (err) {
     console.error('[widget/product-search] error:', err.message);
@@ -153,7 +166,10 @@ router.get('/widget/catalog', widgetCors, settingsLimiter, async (req, res) => {
 
   try {
     const { getCatalog } = require('../services/catalog');
-    const catalog = await getCatalog(merchant.id);
+    // ?refresh=1 bypasses the 10-min cache — handy for diagnostics
+    // after merchants update source_url or change their catalog.
+    const force = req.query.refresh === '1' || req.query.refresh === 'true';
+    const catalog = await getCatalog(merchant.id, { force });
     res.json(catalog);
   } catch (err) {
     console.error('[widget/catalog] error:', err.message);

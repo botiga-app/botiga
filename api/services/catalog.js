@@ -202,6 +202,13 @@ async function getCatalog(merchantId, { force = false } = {}) {
 
   const collectionMap = await fetchCollectionMembership(sourceUrl, scoredCollections);
 
+  // Top tags by product count — useful for diagnostics so the merchant
+  // can see what tags the bot's working with.
+  const topTags = Object.keys(tagMap)
+    .map(t => ({ tag: t, count: tagMap[t].length }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 30);
+
   const payload = {
     products,
     collections: scoredCollections,
@@ -209,6 +216,12 @@ async function getCatalog(merchantId, { force = false } = {}) {
     collection_map: collectionMap,
     source: sourceUrl,
     fetched_at: new Date().toISOString(),
+    // Diagnostic counts so /api/widget/catalog?k= shows the catalog state
+    // at a glance without scrolling through 1000 products.
+    total_products: products.length,
+    total_in_stock: products.filter(p => p.available).length,
+    total_collections: scoredCollections.length,
+    top_tags: topTags,
   };
 
   _memCache.set(merchantId, { fetchedAt: Date.now(), payload });
