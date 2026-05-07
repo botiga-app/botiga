@@ -53,6 +53,114 @@ router.get('/widget/settings', widgetCors, settingsLimiter, async (req, res) => 
   });
 });
 
+// Universal product search — natural-language query + filter object →
+// up to 50 ranked products. The widget can call this with either a
+// raw text query (it'll be parsed) or a filter object (skips parsing).
+// Pre-fills the chat filter card and runs the deterministic scoring.
+router.post('/widget/product-search', widgetCors, settingsLimiter, async (req, res) => {
+  const apiKey = req.body?.k || req.query.k;
+  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+
+  const { data: merchant, error } = await supabase
+    .from('merchants')
+    .select('id, plan, trial_ends_at')
+    .eq('api_key', apiKey)
+    .single();
+  if (error || !merchant) return res.status(401).json({ error: 'Invalid API key' });
+  if (merchant.plan === 'trial' && new Date(merchant.trial_ends_at) < new Date()) {
+    return res.status(402).json({ error: 'Trial expired' });
+  }
+
+  const {
+    query = '',
+    filter: explicitFilter = null,
+    session_id = null,
+    limit = 50,
+  } = req.body || {};
+
+  try {
+    const { getCatalog } = require('../services/catalog');
+    const { parseProductQuery, runFilter, getFilterDimensions } = require('../services/productQuery');
+
+    const catalog = await getCatalog(merchant.id);
+
+    // Parse if no explicit filter; otherwise use what the UI sent.
+    const parsed = explicitFilter || parseProductQuery(query, catalog);
+
+    // Pull active bot instructions for the directive list (boost / suppress)
+    let directives = [];
+    try {
+      const { data: instr } = await supabase
+        .from('bot_instructions')
+        .select('directives, expires_at')
+        .eq('merchant_id', merchant.id)
+        .eq('active', true);
+      const now = Date.now();
+      for (const row of instr || []) {
+        if (row.expires_at && new Date(row.expires_at).getTime() < now) continue;
+        if (Array.isArray(row.directives)) directives.push(...row.directives);
+      }
+    } catch (_) {}
+
+    // Pull session dwell so the customer's lingering products surface higher
+    let dwell_map = {};
+    if (session_id) {
+      try {
+        const { data: dwellRows } = await supabase
+          .from('visitor_dwell')
+          .select('product_handle, dwell_seconds')
+          .eq('merchant_id', merchant.id)
+          .eq('session_id', session_id);
+        for (const r of dwellRows || []) {
+          if (r.product_handle) dwell_map[r.product_handle] = r.dwell_seconds || 0;
+        }
+      } catch (_) {}
+    }
+
+    const products = runFilter(catalog, parsed, { limit, directives, dwell_map });
+    const dims = getFilterDimensions(catalog, parsed);
+
+    res.json({
+      filter: parsed,
+      products,
+      total: products.length,
+      dimensions: dims,
+      source: catalog.source,
+    });
+  } catch (err) {
+    console.error('[widget/product-search] error:', err.message);
+    res.status(500).json({ error: 'search unavailable', detail: err.message });
+  }
+});
+
+// Universal catalog — products + collections + tag map, fetched server-side
+// from merchant.source_url so the widget always sees the merchant's REAL
+// store regardless of where it's embedded. Powers the gift / discovery /
+// "what's new under $50" filter UI in the chat.
+router.get('/widget/catalog', widgetCors, settingsLimiter, async (req, res) => {
+  const apiKey = req.query.k;
+  if (!apiKey) return res.status(400).json({ error: 'Missing API key' });
+
+  const { data: merchant, error } = await supabase
+    .from('merchants')
+    .select('id, plan, trial_ends_at')
+    .eq('api_key', apiKey)
+    .single();
+  if (error || !merchant) return res.status(401).json({ error: 'Invalid API key' });
+  if (merchant.plan === 'trial' && new Date(merchant.trial_ends_at) < new Date()) {
+    return res.status(402).json({ error: 'Trial expired' });
+  }
+
+  try {
+    const { getCatalog } = require('../services/catalog');
+    const catalog = await getCatalog(merchant.id);
+    res.json(catalog);
+  } catch (err) {
+    console.error('[widget/catalog] error:', err.message);
+    res.status(500).json({ error: 'catalog unavailable', detail: err.message });
+  }
+});
+
 // Product eligibility check — called before showing the negotiate button
 router.get('/widget/product-rules', widgetCors, settingsLimiter, async (req, res) => {
   const { k: apiKey, handle, tags } = req.query;

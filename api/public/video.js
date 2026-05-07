@@ -1987,12 +1987,15 @@
     askBtn.innerHTML = askInner + '<span>Ask</span>';
     askBtn.onclick = function (e) {
       e.stopPropagation();
-      if (typeof openConcierge === 'function') {
-        if (_cncgEl) {
-          _cncgEl._lastShownProducts = [tag];
-        }
-        openConcierge();
-      }
+      // Close the feed so the concierge isn't hidden behind it.
+      // The feed has z-index 99999, the concierge 99997 — without
+      // closing, the chat opens but is invisible. Same fix applied to
+      // the video-slide concierge button below.
+      if (_cncgEl) _cncgEl._lastShownProducts = [tag];
+      if (typeof closeFeed === 'function') closeFeed();
+      setTimeout(function () {
+        if (typeof openConcierge === 'function') openConcierge();
+      }, 300);
     };
     rail.appendChild(askBtn);
 
@@ -2644,7 +2647,13 @@
         // Pause the active video so the chat audio (if any) isn't fighting it
         var activeV = feedEl.querySelector('._btgv_slide video');
         if (activeV && !activeV.paused) { try { activeV.pause(); } catch (_) {} }
-        try { if (typeof openConcierge === 'function') openConcierge(); } catch (_) {}
+        // Close the feed first — concierge z-index (99997) is below the
+        // feed (99999), so opening it without closing leaves the chat
+        // hidden behind the feed.
+        try { if (typeof closeFeed === 'function') closeFeed(); } catch (_) {}
+        setTimeout(function () {
+          try { if (typeof openConcierge === 'function') openConcierge(); } catch (_) {}
+        }, 300);
       };
 
       rail.appendChild(likeBtn); rail.appendChild(cmtBtn); rail.appendChild(shareBtn); rail.appendChild(saveBtn); rail.appendChild(muteBtn); rail.appendChild(concBtn);
@@ -4774,6 +4783,205 @@
     return null;
   }
 
+  // Product-discovery intent — anything that smells like the customer
+  // is asking us to find something. Triggers the deterministic filter
+  // card UI instead of a free LLM round-trip. Conservative — false
+  // positives here block LLM responses to legit questions, so we err
+  // toward only well-shaped queries.
+  function _cncgDetectDiscoveryIntent(text) {
+    if (!text) return false;
+    var t = String(text).toLowerCase();
+    if (t.length > 120) return false;
+    // Phrasing hints
+    if (/\bshow\s+me\b|\bdo\s+you\s+have\b|\bdo\s+you\s+sell\b|\blooking\s+for\b|\brecommend\b|\bsuggest\b|\bsearch\b|\bbrowse\b|\bany\s+(other|more|cheaper|different)\b|\bwhat'?s\s+(new|hot|trending|on\s+sale|good)\b/.test(t)) return true;
+    // Price-bound queries
+    if (/(under|below|less\s+than|<=?|max(?:imum)?|up\s+to)\s*\$?\s*\d+/.test(t)) return true;
+    // Category + qualifier ("yellow tops", "summer dresses")
+    if (/\b(dress|dresses|top|tops|shirt|bag|bags|shoe|shoes|jewelry|gift|gifts|present|presents|item|items|outfit|jacket|coat|skirt|pants|jeans|sweater|cardigan|sandals|necklace|earring|bracelet|ring|hat|scarf|belt|sneakers|boots|heels)\b/.test(t)) return true;
+    // Sort hints
+    if (/\bbest\s*sellers?\b|\bnew\s+arrivals?\b|\btrending\b|\bpopular\b|\bdeals?\b|\bsale\b|\bjust\s+in\b/.test(t)) return true;
+    return false;
+  }
+
+  // ── Filter card UI ──────────────────────────────────────────────────────
+  // Renders a card with chips for each filter dimension, pre-selected
+  // from the parsed query. Tap any chip → re-query the deterministic
+  // backend → re-render the product list below. The LLM is never in
+  // this loop; results are predictable and fast.
+  function _cncgRunProductSearch(msgs, queryText, explicitFilter) {
+    var typing = _cncgTyping(msgs, ['Pulling fresh picks for you…']);
+    var sessionId = _getOrInitSessionId();
+    var body = {
+      k: API_KEY,
+      query: queryText || '',
+      filter: explicitFilter || null,
+      session_id: sessionId,
+      limit: 50,
+    };
+    fetch(API_BASE + '/api/widget/product-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        typing.remove();
+        if (!d || !d.products) {
+          _cncgAddBot(msgs, "Hmm — couldn't pull the catalog. Try again in a moment.");
+          _cncgBackChip(msgs);
+          return;
+        }
+        if (d.products.length === 0) {
+          _cncgAddBot(msgs, "Nothing matched those filters. Loosen one and I'll re-run it.");
+          _cncgRenderFilterCard(msgs, d.filter, d.dimensions);
+          return;
+        }
+        _cncgAddBot(msgs, "Here are " + d.products.length + " picks for you. Tap any to negotiate.");
+        _cncgRenderFilterCard(msgs, d.filter, d.dimensions);
+        _cncgRenderSearchResults(msgs, d.products);
+        _cncgBackChip(msgs);
+      })
+      .catch(function () {
+        typing.remove();
+        _cncgAddBot(msgs, "Search hit an error — try rephrasing?");
+      });
+  }
+
+  // Render the filter chips. Tapping a chip mutates the filter and
+  // re-runs the search. No LLM in the loop.
+  function _cncgRenderFilterCard(msgs, filter, dims) {
+    var card = document.createElement('div');
+    card.className = '_btgv_filtercard';
+    card.style.cssText = 'background:#0c0c14;color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;margin:8px 0;font-family:inherit;';
+
+    function section(title, children) {
+      if (!children || !children.length) return null;
+      var s = document.createElement('div');
+      s.style.cssText = 'margin-bottom:10px;';
+      var lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px;';
+      lbl.textContent = title;
+      s.appendChild(lbl);
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+      children.forEach(function (c) { row.appendChild(c); });
+      s.appendChild(row);
+      return s;
+    }
+
+    function chip(label, active, onClick) {
+      var b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = 'background:' + (active ? 'linear-gradient(135deg,#0ea5e9,#7c3aed)' : 'rgba(255,255,255,.06)') +
+                       ';color:' + (active ? '#fff' : '#d1d5db') +
+                       ';border:1px solid ' + (active ? 'transparent' : 'rgba(255,255,255,.1)') +
+                       ';border-radius:999px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;';
+      b.onclick = function (e) { e.stopPropagation(); onClick(); };
+      return b;
+    }
+
+    function reRun(newFilter) {
+      // Replace this card and the results below with fresh ones
+      var nextSibling = card;
+      var siblings = [];
+      while (nextSibling && nextSibling.nextSibling) {
+        var s = nextSibling.nextSibling;
+        if (s.classList && (s.classList.contains('_btgv_filterresults') || s.classList.contains('_btgv_cncg_chips'))) {
+          siblings.push(s);
+          nextSibling = s;
+        } else break;
+      }
+      siblings.forEach(function (el) { el.remove(); });
+      card.remove();
+      _cncgRunProductSearch(msgs, '', newFilter);
+    }
+
+    // Sort
+    var sortChips = (dims.sort_options || []).map(function (s) {
+      var lbl = ({ newest: '⭐ Newest', best_sellers: '🔥 Best sellers', deals: '💰 Best deals', featured: '✨ Featured' })[s] || s;
+      return chip(lbl, filter.sort === s, function () {
+        reRun(Object.assign({}, filter, { sort: filter.sort === s ? null : s }));
+      });
+    });
+    var sortSec = section('Sort by', sortChips); if (sortSec) card.appendChild(sortSec);
+
+    // Budget
+    var budgetChips = (dims.price_buckets || []).map(function (n) {
+      return chip('under $' + n, filter.price_max === n, function () {
+        reRun(Object.assign({}, filter, { price_max: filter.price_max === n ? null : n }));
+      });
+    });
+    budgetChips.push(chip('any', filter.price_max == null, function () {
+      reRun(Object.assign({}, filter, { price_max: null }));
+    }));
+    card.appendChild(section('Budget', budgetChips));
+
+    // Categories — top tags from catalog
+    var tagChips = (dims.tags || []).slice(0, 8).map(function (t) {
+      var active = filter.category && filter.category.kind === 'tag' && filter.category.value === t.tag;
+      return chip(t.tag, active, function () {
+        reRun(Object.assign({}, filter, { category: active ? null : { kind: 'tag', value: t.tag } }));
+      });
+    });
+    var catSec = section('Category', tagChips); if (catSec) card.appendChild(catSec);
+
+    // Colors
+    var colorChips = (dims.colors || []).map(function (c) {
+      return chip(c, filter.color === c, function () {
+        reRun(Object.assign({}, filter, { color: filter.color === c ? null : c }));
+      });
+    });
+    var colSec = section('Color', colorChips); if (colSec) card.appendChild(colSec);
+
+    // Sizes
+    var sizeChips = (dims.sizes || []).map(function (s) {
+      return chip(s.toUpperCase(), filter.size === s, function () {
+        reRun(Object.assign({}, filter, { size: filter.size === s ? null : s }));
+      });
+    });
+    var sizeSec = section('Size', sizeChips); if (sizeSec) card.appendChild(sizeSec);
+
+    // Reset
+    var reset = document.createElement('button');
+    reset.textContent = '✕ Reset all';
+    reset.style.cssText = 'background:none;border:none;color:#6b7280;font-size:11px;cursor:pointer;padding:4px 0;font-family:inherit;text-decoration:underline;';
+    reset.onclick = function (e) {
+      e.stopPropagation();
+      reRun({ raw: '', sort: null, price_max: null, price_min: null, color: null, size: null, category: null });
+    };
+    card.appendChild(reset);
+
+    msgs.appendChild(card);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // Render up to 50 product tiles below the filter card. Each tile uses
+  // the existing _cncgRenderProducts flow which already wires Negotiate/
+  // Cart/Save buttons consistently.
+  function _cncgRenderSearchResults(msgs, products) {
+    var wrap = document.createElement('div');
+    wrap.className = '_btgv_filterresults';
+    wrap.style.cssText = 'margin:6px 0;';
+    msgs.appendChild(wrap);
+
+    // Reuse the standard product rendering. It expects products in the
+    // same compact shape we return from /widget/product-search.
+    var normalized = (products || []).map(function (p) {
+      return {
+        title: p.title,
+        product_name: p.title,
+        handle: p.handle,
+        image: p.image_url,
+        image_url: p.image_url,
+        price: p.price,
+        compare_at_price: p.compare_at_price || '0',
+        variant_id: (p.variants && p.variants[0] && p.variants[0].id) || null,
+        shopify_product_id: p.id,
+      };
+    });
+    _cncgRenderProducts(wrap, normalized, { showNegotiate: true });
+  }
+
   function _cncgPickAddToCartTarget() {
     // Prefer the product page the user is on
     var m = window.location.pathname.match(/\/products\/([^/?#]+)/);
@@ -4820,6 +5028,14 @@
       var dest = _cncgPickCheckoutDest();
       sendBtn.disabled = false;
       _cncgCelebrateAndGo(dest);
+      return;
+    }
+    // Product discovery — handle deterministically with the filter card.
+    // Faster than the LLM, returns predictable results (50 picks),
+    // never invents prices or products.
+    if (_cncgDetectDiscoveryIntent(text)) {
+      sendBtn.disabled = false;
+      _cncgRunProductSearch(msgs, text, null);
       return;
     }
     if (intent === 'add_to_cart') {
