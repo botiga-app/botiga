@@ -655,6 +655,22 @@ router.post('/merchants/:merchantId/videos/auto-tag-tick', dashboardCors, async 
   res.json({ ...summary, has_more: (remaining ?? 0) > 0, remaining: remaining ?? 0 });
 });
 
+// Per-video auto-tag — runs analyzeAndTag() for ONE video on demand.
+// The vertical-scroll editor uses this when the merchant clicks
+// "AI auto-match" so they can see catalog matches show up inline as
+// pending_review tags they Accept/Reject. The grid page relies on the
+// background batch tick instead, but both paths share analyzeAndTag().
+router.post('/videos/:id/auto-tag', dashboardCors, async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await analyzeAndTag(id);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[videos/auto-tag] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Widget: public collections list (one entry per named widget) ────────────
 router.get('/widget/collections', widgetCors, async (req, res) => {
   try {

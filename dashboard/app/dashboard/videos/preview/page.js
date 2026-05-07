@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '../../../../lib/supabase';
 import AiTagger from '../../../../components/video-edit/AiTagger';
 import ProductPicker from '../../../../components/video-edit/ProductPicker';
+import TagRow from '../../../../components/video-edit/TagRow';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.botiga.ai';
 
@@ -96,11 +97,14 @@ function VideoSlide({ video, isActive, muted, onIntersect }) {
 function EditPanel({ video, merchantId, shopifyDomain, onChange, onDelete, onOpenAiTagger }) {
   const [editingCaption, setEditingCaption] = useState(false);
   const [caption, setCaption] = useState(video.title || '');
+  const [autoMatching, setAutoMatching] = useState(false);
+  const [autoMatchSummary, setAutoMatchSummary] = useState(null);
 
   // Reset when active video changes
   useEffect(() => {
     setCaption(video.title || '');
     setEditingCaption(false);
+    setAutoMatchSummary(null);
   }, [video.id]);
 
   const tags = video.video_product_tags || video.tags || [];
@@ -139,6 +143,56 @@ function EditPanel({ video, merchantId, shopifyDomain, onChange, onDelete, onOpe
     onDelete && onDelete(video.id);
   }
 
+  // AI auto-match — runs analyzeAndTag() on this video. Adds tags
+  // with match_status='auto_tagged' (≥0.5) or 'pending_review' (0.3-0.5)
+  // which then render via TagRow with the Accept/Reject buttons. Different
+  // from AI Create (which generates NEW Shopify draft products).
+  async function runAiAutoMatch() {
+    setAutoMatching(true);
+    setAutoMatchSummary(null);
+    try {
+      const r = await fetch(`${API}/api/videos/${video.id}/auto-tag`, { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) {
+        setAutoMatchSummary({ error: d.error || `Server returned ${r.status}` });
+        return;
+      }
+      setAutoMatchSummary({
+        status: d.status,
+        match_score: d.match_score,
+        message: d.status === 'auto_tagged'
+          ? `✓ Auto-tagged (${Math.round((d.match_score || 0) * 100)}% match)`
+          : d.status === 'pending_review'
+          ? `⚠ Pending review — confirm below (${Math.round((d.match_score || 0) * 100)}% match)`
+          : d.status === 'skipped'
+          ? `No strong match in your catalog. Try AI Create instead.`
+          : d.status === 'no_analysis'
+          ? `Couldn't analyze video. Make sure thumbnails are loaded.`
+          : `Done.`,
+      });
+      // Re-fetch video to pull in any new/updated tags
+      const fresh = await fetch(`${API}/api/videos/${video.id}`);
+      if (fresh.ok) {
+        const v = await fresh.json();
+        onChange && onChange(v);
+      }
+    } catch (err) {
+      setAutoMatchSummary({ error: err.message });
+    } finally {
+      setAutoMatching(false);
+    }
+  }
+
+  function onTagRemoved(tagId) {
+    const nextTags = (video.video_product_tags || []).filter(t => t.id !== tagId);
+    onChange && onChange({ ...video, video_product_tags: nextTags });
+  }
+
+  function onTagUpdated(updated) {
+    const nextTags = (video.video_product_tags || []).map(t => t.id === updated.id ? updated : t);
+    onChange && onChange({ ...video, video_product_tags: nextTags });
+  }
+
   const taggedIds = new Set(tags.map(t => String(t.shopify_product_id)));
 
   return (
@@ -172,44 +226,32 @@ function EditPanel({ video, merchantId, shopifyDomain, onChange, onDelete, onOpe
         )}
       </div>
 
-      {/* Tagged products */}
+      {/* Tagged products — same TagRow used by the grid view, so REVIEW
+          status surfaces with ✓ Accept / Reject buttons identically. */}
       <div className="px-5 py-3 border-b border-gray-100">
         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
           Tagged products <span className="text-gray-700">{tags.length}</span>
         </div>
+        {autoMatchSummary && (
+          <div className={`text-[11px] rounded-md px-2.5 py-1.5 mb-2 ${autoMatchSummary.error ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'}`}>
+            {autoMatchSummary.error ? `Error: ${autoMatchSummary.error}` : autoMatchSummary.message}
+          </div>
+        )}
         {tags.length === 0 ? (
-          <p className="text-xs text-gray-400">No products tagged. Add one below or run AI auto-tag.</p>
+          <p className="text-xs text-gray-400">No products tagged. Run AI auto-match below or add one manually.</p>
         ) : (
           <div className="space-y-2">
-            {tags.map(t => {
-              const confPct = t.confidence != null ? Math.round(t.confidence * 100) : null;
-              const editUrl = shopifyDomain && t.shopify_product_id
-                ? `https://${shopifyDomain}/admin/products/${t.shopify_product_id}`
-                : null;
-              return (
-                <div key={t.id} className="flex items-center gap-2.5 bg-gray-50 rounded-lg p-2">
-                  {t.image_url && (
-                    <img src={t.image_url} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-gray-900 truncate">{t.product_name}</p>
-                    <div className="text-[10px] text-gray-500 flex items-center gap-1.5 flex-wrap">
-                      <span>{fmt$(t.price)}</span>
-                      {confPct != null && (
-                        <span className={`px-1.5 py-0.5 rounded font-semibold ${confPct >= 70 ? 'bg-emerald-100 text-emerald-700' : confPct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                          {confPct}% AI
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {editUrl && (
-                    <a href={editUrl} target="_blank" rel="noopener noreferrer" title="Edit on Shopify"
-                       className="text-gray-400 hover:text-indigo-600 text-[11px]">↗</a>
-                  )}
-                  <button onClick={() => removeTag(t.id)} className="text-gray-400 hover:text-red-500 text-sm">✕</button>
-                </div>
-              );
-            })}
+            {tags.map(t => (
+              <TagRow
+                key={t.id}
+                tag={t}
+                videoId={video.id}
+                merchantId={merchantId}
+                shopifyDomain={shopifyDomain}
+                onRemoved={() => onTagRemoved(t.id)}
+                onUpdated={(updated) => onTagUpdated(updated)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -231,13 +273,21 @@ function EditPanel({ video, merchantId, shopifyDomain, onChange, onDelete, onOpe
         </div>
       </div>
 
-      {/* Bottom actions */}
+      {/* Bottom actions — AI auto-match and AI Create are DIFFERENT.
+          Auto-match: finds existing catalog products that match the video.
+          Create:     generates new Shopify draft products from the video. */}
       <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
+        <button
+          onClick={runAiAutoMatch}
+          disabled={autoMatching}
+          className="w-full text-xs px-3 py-2 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 font-semibold">
+          {autoMatching ? '🔍 Matching against catalog…' : '🔍 AI auto-match this video'}
+        </button>
         <button
           onClick={onOpenAiTagger}
           className="w-full text-xs px-3 py-2 rounded-md text-white font-semibold"
           style={{ background: 'linear-gradient(135deg,#FFC107 0%,#FF6B35 33%,#F72585 66%,#9C27B0 100%)' }}>
-          ✨ AI auto-tag · create from video
+          ✨ AI Create new product
         </button>
         <button
           onClick={toggleStatus}
