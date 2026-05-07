@@ -48,6 +48,12 @@ const CATEGORY_HINTS = {
   jewelry:  ['jewelry', 'jewellery', 'necklace', 'necklaces', 'earring', 'earrings', 'bracelet', 'bracelets', 'ring', 'rings'],
   accessory:['hat', 'hats', 'scarf', 'scarves', 'belt', 'belts'],
   gift:     ['gift', 'gifts', 'present', 'presents'],
+  // Kids/baby — covers the merchant's "littles" tag pattern + common
+  // synonyms so "anything for kids" / "baby gift" / "for my toddler"
+  // map to the same product pool.
+  kids:     ['kid', 'kids', 'baby', 'babies', 'toddler', 'toddlers', 'child', 'children', 'little', 'littles', 'infant', 'infants', 'newborn'],
+  swim:     ['swim', 'swimsuit', 'bikini', 'swimwear'],
+  loungewear: ['lounge', 'loungewear', 'pajama', 'pajamas', 'pj', 'pjs', 'sleep', 'sleepwear'],
 };
 
 function tokenize(text) {
@@ -285,7 +291,9 @@ function scoreProduct(p, filter, ctx) {
 }
 
 function runFilter(catalog, filter, opts = {}) {
-  const limit = Math.max(1, Math.min(100, opts.limit || 50));
+  // Default 100, hard cap 200. Merchants with bigger catalogs
+  // benefit from more selection — "more is better" per merchant feedback.
+  const limit = Math.max(1, Math.min(200, opts.limit || 100));
   const ctx = {
     collection_map: catalog?.collection_map || {},
     collections: catalog?.collections || [],

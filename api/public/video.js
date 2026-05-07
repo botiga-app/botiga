@@ -4965,14 +4965,18 @@
   // this loop; results are predictable and fast.
   function _cncgRunProductSearch(msgs, queryText, explicitFilter) {
     try { _btgvFireFunnelEvent('discovered', { query: queryText || null }); } catch (_) {}
-    var typing = _cncgTyping(msgs, ['Pulling fresh picks for you…']);
+    var typing = _cncgTyping(msgs, [
+      '✨ Pulling fresh picks for you…',
+      '🎁 Lining them up…',
+      '🛍️ Sorting your faves…',
+    ]);
     var sessionId = _getOrInitSessionId();
     var body = {
       k: API_KEY,
       query: queryText || '',
       filter: explicitFilter || null,
       session_id: sessionId,
-      limit: 50,
+      limit: 100,
     };
     fetch(API_BASE + '/api/widget/product-search', {
       method: 'POST',
@@ -4983,23 +4987,24 @@
       .then(function (d) {
         typing.remove();
         if (!d || !d.products) {
-          _cncgAddBot(msgs, "Hmm — couldn't pull the catalog. Try again in a moment.");
+          _cncgAddBot(msgs, "🤔 Couldn't pull the catalog right this second — give it a moment and try again?");
           _cncgBackChip(msgs);
           return;
         }
         if (d.products.length === 0) {
-          _cncgAddBot(msgs, "Nothing matched those filters. Loosen one and I'll re-run it.");
+          _cncgAddBot(msgs, "🤔 Nothing matched those filters yet. Loosen one below 👇 and I'll re-run it.");
           _cncgRenderFilterCard(msgs, d.filter, d.dimensions);
           return;
         }
-        _cncgAddBot(msgs, "Here are " + d.products.length + " picks for you. Tap any to negotiate.");
+        var emoji = d.products.length >= 30 ? '🎉' : d.products.length >= 10 ? '✨' : '🎁';
+        _cncgAddBot(msgs, emoji + " Got " + d.products.length + " picks for you 🛍️ Tap any to negotiate 🤝");
         _cncgRenderFilterCard(msgs, d.filter, d.dimensions);
         _cncgRenderSearchResults(msgs, d.products);
         _cncgBackChip(msgs);
       })
       .catch(function () {
         typing.remove();
-        _cncgAddBot(msgs, "Search hit an error — try rephrasing?");
+        _cncgAddBot(msgs, "😕 Search hit an error — try rephrasing?");
       });
   }
 
