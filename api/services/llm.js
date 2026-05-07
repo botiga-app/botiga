@@ -67,7 +67,7 @@ function pickOpener(stepIndex, lastBotMessages) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isFinalOffer, isEscalating, lastBotMessages, needsLeadCapture, needsNameCapture, productContext }) {
+function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, customerInsight, stepIndex, isOpening, isLowball, isFinalOffer, isEscalating, lastBotMessages, needsLeadCapture, needsNameCapture, productContext, ownerInstructions }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const priceStr = `$${nextPrice}`;
   // isEscalating kept as backwards-compat alias for old callers (marketplace
@@ -91,9 +91,26 @@ function buildSystemPrompt({ tone, productName, nextPrice, brandStatement, custo
     }
   }
 
+  // Owner instructions — context_phrases and claims that the merchant
+  // has explicitly told the bot to weave in. These are the highest
+  // priority context, just below identity rules. Boost/suppress
+  // directives don't show up in the prompt — they're applied by the
+  // product scorer in productQuery.js.
+  let ownerLine = '';
+  if (ownerInstructions) {
+    const phrases = ownerInstructions.context_phrases || [];
+    const claims = ownerInstructions.claims || [];
+    if (phrases.length || claims.length) {
+      const lines = [];
+      if (phrases.length) lines.push(`Context to mention naturally if relevant: ${phrases.slice(0, 3).join(' · ')}`);
+      if (claims.length) lines.push(`Promotional claims you may use: ${claims.slice(0, 3).join(' · ')}`);
+      ownerLine = `\n\nOWNER INSTRUCTIONS (highest priority):\n${lines.map(l => '- ' + l).join('\n')}`;
+    }
+  }
+
   return `You are a sales assistant for a boutique selling "${productName}".
 Voice: ${voice}
-${productDetails}
+${productDetails}${ownerLine}
 YOUR PRICE THIS MESSAGE: ${priceStr}
 You MUST include "${priceStr}" in your reply. Do not write any other price.
 
@@ -154,7 +171,7 @@ function estimateCost(provider, i, o) {
 // becomes a helpful concierge for one turn: it can mention specific
 // matched products by name + price + handle, and gently bring the
 // conversation back to the current item.
-function buildDiscoveryPrompt({ tone, productName, currentPrice, query, matches, shopifyDomain, lastBotMessages }) {
+function buildDiscoveryPrompt({ tone, productName, currentPrice, query, matches, shopifyDomain, lastBotMessages, ownerInstructions }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const origin = shopifyDomain ? `https://${shopifyDomain}` : '';
   const matchLines = (matches || []).map(m => {
@@ -166,8 +183,20 @@ function buildDiscoveryPrompt({ tone, productName, currentPrice, query, matches,
   const prevMessages = (lastBotMessages || []).slice(-2);
   const noMatches = !matches || matches.length === 0;
 
+  let ownerLine = '';
+  if (ownerInstructions) {
+    const phrases = ownerInstructions.context_phrases || [];
+    const claims = ownerInstructions.claims || [];
+    if (phrases.length || claims.length) {
+      const lines = [];
+      if (phrases.length) lines.push(`Context to mention naturally if relevant: ${phrases.slice(0, 3).join(' · ')}`);
+      if (claims.length) lines.push(`Promotional claims you may use: ${claims.slice(0, 3).join(' · ')}`);
+      ownerLine = `\n\nOWNER INSTRUCTIONS (highest priority):\n${lines.map(l => '- ' + l).join('\n')}`;
+    }
+  }
+
   return `You are a sales assistant for a boutique. The customer is currently looking at "${productName}" (your current offer: $${currentPrice}), but they just asked a discovery question about the wider catalog.
-Voice: ${voice}
+Voice: ${voice}${ownerLine}
 
 Customer's question: "${query}"
 

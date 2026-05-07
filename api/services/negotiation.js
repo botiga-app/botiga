@@ -12,6 +12,7 @@ const { sendDealEmail } = require('./email');
 const { sendDealSms } = require('./sms');
 const { resolveProductRules } = require('./rules');
 const { detectDiscoveryIntent, searchProducts } = require('./productSearch');
+const { getActiveDirectives } = require('./botInstructions');
 
 async function generateCheckoutUrl({ productUrl, variantId, dealPrice, listPrice, negotiationId, expiresAt, shopifyDomain, shopifyAccessToken }) {
   let discountCode = null;
@@ -381,6 +382,16 @@ async function processNegotiation({
   // name ask. One ask only — never both contact and name in the same turn.
   const needsNameCapture = !needsLeadCapture && hasContact && !hasName && timesAskedName === 0 && currentStepForLead >= 2;
 
+  // Pull merchant's bot training directives once per turn — fed into both
+  // the LLM prompt (context phrases + claims) and any subsequent
+  // product-search calls (boost/suppress).
+  let ownerInstructions = { directives: [], context_phrases: [], claims: [] };
+  try {
+    ownerInstructions = await getActiveDirectives(supabase, merchantId);
+  } catch (e) {
+    console.warn('[negotiation] getActiveDirectives failed:', e.message);
+  }
+
   // ── OPENING MOVE ────────────────────────────────────────────────────────────
   if (isOpening) {
     const nextPrice = priceLadder[0];
@@ -391,7 +402,8 @@ async function processNegotiation({
       brandStatement, customerInsight: null,
       stepIndex: 0, isOpening: true, isLowball: false, isEscalating: false,
       lastBotMessages: [], needsLeadCapture: !hasContactAlready,
-      productContext: productContext || null
+      productContext: productContext || null,
+      ownerInstructions,
     });
 
     const { reply } = await callLLM({
@@ -438,6 +450,7 @@ async function processNegotiation({
       matches,
       shopifyDomain,
       lastBotMessages,
+      ownerInstructions,
     });
 
     const { reply } = await callLLM({
@@ -552,7 +565,8 @@ async function processNegotiation({
     customerInsight: latestInsight,
     stepIndex: nextStep, isOpening: false, isLowball, isFinalOffer, lastBotMessages,
     needsLeadCapture, needsNameCapture,
-    productContext: productContext || null
+    productContext: productContext || null,
+    ownerInstructions,
   });
 
   const [insightResult, llmResult] = await Promise.all([

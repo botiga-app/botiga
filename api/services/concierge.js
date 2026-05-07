@@ -19,6 +19,7 @@ const supabase = require('../lib/supabase');
 const storeContext = require('./storeContext');
 const { searchProducts, detectDiscoveryIntent } = require('./productSearch');
 const { callLLM } = require('./llm');
+const { getActiveDirectives } = require('./botInstructions');
 
 // Maximum messages we keep in the prompt — the full thread is stored
 // in the DB but we only feed the last 12 turns to the LLM to keep
@@ -85,7 +86,7 @@ function buildOpener({ botName, featuredDeal, shopifyDomain }) {
 }
 
 // ── Willow system prompt — used after the opener ─────────────────────────────
-function buildWillowPrompt({ tone, botName, thread, productContext, featuredDeal, pageContext, matches }) {
+function buildWillowPrompt({ tone, botName, thread, productContext, featuredDeal, pageContext, matches, ownerInstructions }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const name = botName || 'Willow';
   const haveContact = !!(thread.customer_email || thread.customer_whatsapp);
@@ -117,8 +118,20 @@ function buildWillowPrompt({ tone, botName, thread, productContext, featuredDeal
     productLine = `\nThe customer is looking at "${productContext.product_name}" (list $${productContext.list_price}). If they want to negotiate it, say so warmly and tell them you'll take them through it.`;
   }
 
+  let ownerLine = '';
+  if (ownerInstructions) {
+    const phrases = ownerInstructions.context_phrases || [];
+    const claims = ownerInstructions.claims || [];
+    if (phrases.length || claims.length) {
+      const lines = [];
+      if (phrases.length) lines.push(`Context to mention naturally if relevant: ${phrases.slice(0, 3).join(' · ')}`);
+      if (claims.length) lines.push(`Promotional claims you may use: ${claims.slice(0, 3).join(' · ')}`);
+      ownerLine = `\n\nOWNER INSTRUCTIONS (highest priority):\n${lines.map(l => '- ' + l).join('\n')}`;
+    }
+  }
+
   return `You are ${name}, a friendly storefront concierge for a boutique. You travel with the customer across pages and help them find, decide, and negotiate.
-Voice: ${voice}
+Voice: ${voice}${ownerLine}
 
 ${contextLines.length ? 'Context:\n' + contextLines.map(l => `- ${l}`).join('\n') : ''}
 ${matchLines}
@@ -264,6 +277,15 @@ async function handleConciergeTurn({ merchantId, sessionId, customerMessage, tri
     userMessageForLLM = `[Customer just landed on the cart page. Drop ONE warm line offering to negotiate the cart total down. Brief.]`;
   }
 
+  // Owner instructions feed into the prompt as highest-priority context.
+  // Failing to load them mustn't block a turn — fall back to empty.
+  let ownerInstructions = { directives: [], context_phrases: [], claims: [] };
+  try {
+    ownerInstructions = await getActiveDirectives(supabase, merchantId);
+  } catch (e) {
+    console.warn('[concierge] getActiveDirectives failed:', e.message);
+  }
+
   const systemPrompt = buildWillowPrompt({
     tone: merchantSettings?.tone || 'friendly',
     botName: merchantSettings?.bot_name,
@@ -272,6 +294,7 @@ async function handleConciergeTurn({ merchantId, sessionId, customerMessage, tri
     featuredDeal,
     pageContext,
     matches,
+    ownerInstructions,
   });
 
   // Trim history sent to the LLM to keep cost down.

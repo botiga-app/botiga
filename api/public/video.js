@@ -1437,6 +1437,7 @@
       function doUnlock(contact, triggerEl) {
         // Persist for future negotiations
         try { localStorage.setItem('_btgv_contact_' + API_KEY, contact); } catch (e) {}
+        try { _btgvFireFunnelEvent('captured', { surface: 'price_gate' }); } catch (_) {}
         if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = '...'; }
         fetch(API_BASE + '/api/negotiate/' + negId + '/contact', {
           method: 'PUT',
@@ -1546,6 +1547,7 @@
         '<div id="_btg_post" style="display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:280px;align-self:center">' +
           '<button id="_btg_keep" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.3);padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px">🛍️ Keep shopping</button>' +
           '<button id="_btg_chk" style="background:#16a34a;color:#fff;border:none;padding:11px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">⚡ Checkout</button>' +
+          '<button id="_btg_hold" style="background:transparent;color:#a5b4fc;border:1px solid rgba(165,180,252,0.4);padding:9px 16px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">🔖 Save for later · I\'ll email you</button>' +
         '</div>';
       panel.appendChild(ds);
       requestAnimationFrame(function () { ds.classList.add('visible'); });
@@ -1575,6 +1577,71 @@
         sub.textContent = 'Taking you to checkout…';
         ds.appendChild(sub);
         setTimeout(function () { if (dest) window.location.href = dest; }, 1100);
+      });
+
+      // Hold-your-place — locks in the negotiated price for 24h and emails
+      // the checkout link. The merchant gets a "Held" hot lead in the
+      // dashboard. If we don't have an email captured yet, prompt for one
+      // inline before posting.
+      var holdBtn = shadow.querySelector('#_btg_hold');
+      if (holdBtn) holdBtn.addEventListener('click', function () {
+        var negId = (typeof getCurrentNegotiationId === 'function')
+          ? getCurrentNegotiationId()
+          : (typeof _btgvCurrentNegId !== 'undefined' ? _btgvCurrentNegId : null);
+        // Try to find it from the latest deal saved in localStorage
+        if (!negId && typeof _btgvGetDeals === 'function') {
+          var ds_ = _btgvGetDeals();
+          if (ds_.length) negId = ds_[ds_.length - 1].negotiationId;
+        }
+        if (!negId) {
+          alert("Couldn't identify this deal — try Keep shopping instead.");
+          return;
+        }
+
+        var sess = (function () { try { return JSON.parse(localStorage.getItem('_botiga_session') || '{}'); } catch (_) { return {}; } })();
+        var existingEmail = sess.email || null;
+
+        function postHold(emailValue) {
+          fetch(API_BASE + '/api/negotiations/' + encodeURIComponent(negId) + '/hold', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailValue || null }),
+          }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+            holdBtn.disabled = true;
+            holdBtn.style.opacity = '0.6';
+            holdBtn.textContent = d && d.ok ? '✓ Held — check your email 📧' : 'Saved';
+            _btgvFireFunnelEvent('held', { negotiation_id: negId });
+          }).catch(function () {
+            holdBtn.textContent = '✕ Couldn\'t save — try again';
+          });
+        }
+
+        if (existingEmail) {
+          postHold(existingEmail);
+        } else {
+          // Inline prompt — replace the button row with a quick email input
+          var post = shadow.querySelector('#_btg_post');
+          if (!post) { postHold(null); return; }
+          post.innerHTML =
+            '<div style="font-size:12px;color:#fff;margin-bottom:6px">📧 Where should I send your saved deal?</div>' +
+            '<input id="_btg_hold_email" type="email" placeholder="you@email.com" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:8px;padding:10px 12px;font-size:13px;outline:none;width:100%;box-sizing:border-box" />' +
+            '<button id="_btg_hold_send" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px">Save for 24h →</button>';
+          var inp = shadow.querySelector('#_btg_hold_email');
+          var send = shadow.querySelector('#_btg_hold_send');
+          if (inp) setTimeout(function () { try { inp.focus(); } catch (_) {} }, 80);
+          if (send) send.addEventListener('click', function () {
+            var v = (inp && inp.value || '').trim().toLowerCase();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+              if (inp) inp.style.borderColor = '#ef4444';
+              return;
+            }
+            // Persist for next time
+            try { localStorage.setItem('_botiga_session', JSON.stringify(Object.assign({}, sess, { email: v, ts: Date.now() }))); } catch (_) {}
+            send.disabled = true;
+            send.textContent = 'Saving…';
+            postHold(v);
+          });
+        }
       });
     }
 
@@ -1610,7 +1677,12 @@
             showGate(d);
           } else {
             appendMsg('bot', d.bot_reply);
+            // Funnel event: customer entered negotiation flow
+            if (d.negotiation_id) {
+              try { _btgvFireFunnelEvent('negotiated', { negotiation_id: d.negotiation_id, product: tag.product_name }); } catch (_) {}
+            }
             if (d.status === 'won' && d.deal_price) {
+              try { _btgvFireFunnelEvent('won', { negotiation_id: d.negotiation_id, deal_price: d.deal_price }); } catch (_) {}
               // Persist deal to localStorage (survives page navigation)
               var newDeal = {
                 negotiationId: d.negotiation_id,
@@ -3477,6 +3549,7 @@
 
     function unlock(email) {
       var sessionId = _getOrInitSessionId();
+      try { _btgvFireFunnelEvent('captured', { surface: 'willow_opener' }); } catch (_) {}
       try {
         fetch(API_BASE + '/api/concierge/capture', {
           method: 'POST',
@@ -3565,6 +3638,7 @@
     if (!_cncgEl) return;
     _cncgOpen = true;
     requestAnimationFrame(function () { _cncgEl.classList.add('open'); });
+    try { _btgvFireFunnelEvent('engaged', { surface: 'concierge_open' }); } catch (_) {}
 
     // Product page via ?btg_neg=1 — always show product context regardless of greeted state
     if (_btgNegProduct && !_cncgEl._negProductShown) {
@@ -4572,6 +4646,87 @@
     return id;
   }
 
+  // ── Funnel events ──────────────────────────────────────────────────────
+  // Fire-and-forget POST that records the visitor crossing a stage. Server
+  // dedupes per (merchant, session, stage) so re-firing is safe.
+  function _btgvFireFunnelEvent(stage, metadata) {
+    try {
+      var sessionId = _getOrInitSessionId();
+      fetch(API_BASE + '/api/visitor/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ session_id: sessionId, stage: stage, metadata: metadata || null }),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // ── Dwell tracker ──────────────────────────────────────────────────────
+  // Tracks time spent on the current product page (URL /products/{handle})
+  // and ships a batch every 30s + on pagehide. Pauses while the tab is
+  // hidden (visibilitychange) and while the chat is open. Server adds
+  // (not replaces), so multiple batches accumulate.
+  (function () {
+    var match = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    if (!match) return;                    // not a product page
+    var handle = match[1];
+    var lastTickAt = Date.now();
+    var batchedSeconds = 0;
+    var BATCH_INTERVAL_MS = 30_000;
+    var TICK_MS = 1000;
+
+    function isPaused() {
+      if (document.visibilityState === 'hidden') return true;
+      // Chat being open = engagement, not browsing. Don't double-count.
+      if (typeof _cncgOpen !== 'undefined' && _cncgOpen) return true;
+      return false;
+    }
+
+    var tickTimer = setInterval(function () {
+      var now = Date.now();
+      var elapsed = now - lastTickAt;
+      lastTickAt = now;
+      if (!isPaused() && elapsed > 0 && elapsed < TICK_MS * 5) {
+        batchedSeconds += elapsed / 1000;
+      }
+    }, TICK_MS);
+
+    function flush() {
+      if (batchedSeconds < 1) return;
+      var secs = Math.round(batchedSeconds);
+      batchedSeconds = 0;
+      try {
+        var sessionId = _getOrInitSessionId();
+        var dwell_map = {};
+        dwell_map[handle] = secs;
+        var url = API_BASE + '/api/visitor/dwell';
+        var body = JSON.stringify({ session_id: sessionId, dwell_map: dwell_map });
+        // sendBeacon if available — survives pagehide. Fall back to fetch.
+        if (navigator.sendBeacon) {
+          var blob = new Blob([body], { type: 'application/json' });
+          // sendBeacon doesn't carry custom headers, so we put api key in URL
+          navigator.sendBeacon(url + '?k=' + encodeURIComponent(API_KEY), blob);
+        } else {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+            body: body,
+            keepalive: true,
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+
+    var batchTimer = setInterval(flush, BATCH_INTERVAL_MS);
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') flush();
+    });
+  })();
+
+  // Fire 'arrived' the moment the widget loads on any page.
+  setTimeout(function () { _btgvFireFunnelEvent('arrived', { path: window.location.pathname }); }, 800);
+
   function _cncgGetMsgHistory() {
     try {
       var raw = localStorage.getItem(_CHAT_KEY);
@@ -4809,6 +4964,7 @@
   // backend → re-render the product list below. The LLM is never in
   // this loop; results are predictable and fast.
   function _cncgRunProductSearch(msgs, queryText, explicitFilter) {
+    try { _btgvFireFunnelEvent('discovered', { query: queryText || null }); } catch (_) {}
     var typing = _cncgTyping(msgs, ['Pulling fresh picks for you…']);
     var sessionId = _getOrInitSessionId();
     var body = {
