@@ -30,12 +30,12 @@ function resolveSourceUrl(merchant) {
 }
 
 async function fetchProducts(sourceUrl) {
-  // Walk pages until empty. /products.json caps at 250/page; merchants
-  // with thousands of products will stop at the 1000-product limit below
-  // (more than the universal filter ever surfaces, and a hard ceiling
-  // keeps response size bounded).
+  // Walk pages until empty. /products.json caps at 250/page; we fetch up
+  // to 10 pages (2500 products) to cover boutiques with longer back
+  // catalogs — earlier 1000-cap was missing Baby/Littles items that lived
+  // on pages 5+. Loop terminates as soon as a page returns < 250.
   const all = [];
-  for (let page = 1; page <= 4; page++) {
+  for (let page = 1; page <= 10; page++) {
     try {
       const res = await fetchWithTimeout(`${sourceUrl}/products.json?page=${page}&limit=250`, 10000);
       if (!res.ok) break;
@@ -138,12 +138,14 @@ function scoreCollection(col) {
 }
 
 // Map: collection handle → [product_id, ...]. Server-side fetch since
-// /collections.json doesn't return product membership inline. We pull
-// the top scored collections only (cap 12) to bound work — merchants
-// with 100+ collections shouldn't fan out to 100 round-trips on every
-// catalog request.
+// /collections.json doesn't return product membership inline. We fetch
+// the first 40 collections in parallel — covers the merchant's main
+// categorical buckets (Tops, Bottoms, Dresses, Baby, Littles, Gifts,
+// Sale, etc.) so when a customer types "tops" or "kids" we have the
+// product membership on hand. Anything beyond 40 is unusual for a
+// boutique and would just slow the cold-fetch.
 async function fetchCollectionMembership(sourceUrl, scoredCollections) {
-  const top = scoredCollections.slice(0, 12);
+  const top = scoredCollections.slice(0, 40);
   const results = await Promise.all(top.map(async col => {
     try {
       const res = await fetchWithTimeout(`${sourceUrl}/collections/${col.handle}/products.json?limit=200`, 8000);

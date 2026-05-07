@@ -40,7 +40,7 @@ const STOP_WORDS = new Set([
 // fallback for common product types ("dress", "top", "bag").
 const CATEGORY_HINTS = {
   dress:    ['dress', 'dresses', 'gown', 'gowns'],
-  top:      ['top', 'tops', 'blouse', 'blouses', 'shirt', 'shirts', 'tee', 'tees'],
+  top:      ['top', 'tops', 'blouse', 'blouses', 'shirt', 'shirts', 'tee', 'tees', 'tank', 'tanks', 'tanktop', 'tube'],
   bottom:   ['pants', 'jeans', 'skirt', 'skirts', 'shorts'],
   outerwear:['jacket', 'jackets', 'coat', 'coats', 'cardigan', 'cardigans', 'sweater', 'sweaters', 'hoodie'],
   bag:      ['bag', 'bags', 'tote', 'totes', 'purse', 'purses', 'clutch'],
@@ -217,11 +217,39 @@ function scoreProduct(p, filter, ctx) {
       score *= 1.4;
     } else if (filter.category.kind === 'collection') {
       const inCol = (ctx?.collection_map?.[filter.category.value] || []).includes(p.id);
-      if (!inCol) return 0;
-      score *= 1.4;
+      if (inCol) {
+        score *= 1.4;
+      } else {
+        // Fallback: catalog didn't fetch this collection's product
+        // membership (out of cap, or non-public collection). Match by
+        // canonical category words derived from the collection handle —
+        // e.g. handle="tops" → match products with title/tag/type "top".
+        const colHandle = (filter.category.value || '').toLowerCase();
+        let matched = false;
+        for (const [key, words] of Object.entries(CATEGORY_HINTS)) {
+          if (words.some(w => colHandle.includes(w))) {
+            const titleLower = (p.title || '').toLowerCase();
+            const typeLower = (p.product_type || '').toLowerCase();
+            const tagsLower = (p.tags || []).map(t => String(t).toLowerCase());
+            if (words.some(w => titleLower.includes(w) || typeLower.includes(w) || tagsLower.some(t => t.includes(w)))) {
+              matched = true; break;
+            }
+          }
+        }
+        if (!matched) return 0;
+        score *= 1.2;
+      }
     } else if (filter.category.kind === 'category') {
       const words = filter.category.words || [];
-      const matches = words.some(w => titleLower.includes(w) || typeLower.includes(w) || tagsLower.includes(w));
+      // tagsLower.some(t => t.includes(w)) — substring match handles
+      // "littles" tag matching "little" keyword, "tanktop" tag matching
+      // "tank" keyword, etc. The earlier exact .includes(w) on the
+      // array missed too many merchant tag conventions.
+      const matches = words.some(w =>
+        titleLower.includes(w) ||
+        typeLower.includes(w) ||
+        tagsLower.some(t => t.includes(w))
+      );
       if (!matches) return 0;
       score *= 1.3;
     }
