@@ -42,9 +42,12 @@ function VideoSlide({ video, isActive, muted, onIntersect }) {
   return (
     <div
       ref={slideRef}
-      className="snap-start h-full w-full flex items-center justify-center bg-black relative"
+      className="snap-start h-full w-full flex items-center justify-center bg-black relative py-6"
       style={{ scrollSnapAlign: 'start' }}
     >
+      {/* Cap the video to ~80% of viewport height so it has breathing room
+          top/bottom — full-height portrait video felt overwhelming and clipped
+          at the seams. The wrapper preserves aspect ratio via object-contain. */}
       {hasVideo ? (
         <video
           ref={videoRef}
@@ -54,7 +57,7 @@ function VideoSlide({ video, isActive, muted, onIntersect }) {
           playsInline
           muted={muted}
           preload={isActive ? 'auto' : 'metadata'}
-          className="h-full max-h-full object-contain"
+          className="max-h-[88%] max-w-full object-contain rounded-lg"
           onClick={(e) => {
             const v = e.currentTarget;
             if (v.paused) v.play().catch(() => {});
@@ -65,7 +68,7 @@ function VideoSlide({ video, isActive, muted, onIntersect }) {
         <img
           src={video.thumbnail_url}
           alt={video.title || ''}
-          className="h-full max-h-full object-contain"
+          className="max-h-[88%] max-w-full object-contain rounded-lg"
           referrerPolicy="no-referrer"
         />
       ) : (
