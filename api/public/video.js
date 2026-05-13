@@ -113,6 +113,7 @@
         if (d.bot_avatar_url && !script.getAttribute('data-bot-avatar')) BOT_AVATAR = d.bot_avatar_url;
         if (d.bot_personality && !script.getAttribute('data-bot-personality')) BOT_PERSONALITY = d.bot_personality;
         if (d.auto_open_delay !== undefined && d.auto_open_delay !== null && !script.hasAttribute('data-auto-open')) AUTO_OPEN_DELAY = d.auto_open_delay;
+        if (d.widget_theme) _btgvApplyTheme(d.widget_theme);
         if (cb && d.supabase_url && d.supabase_anon_key) cb(d);
       }).catch(function () {});
   }
@@ -313,6 +314,83 @@
         if (cb) cb(ok);
       })
       .catch(function () { if (cb) cb(false); });
+  }
+
+  // ─── Theme tokens — per-merchant widget colors applied as CSS custom
+  // properties on the concierge root. Merchants set widget_theme JSONB on
+  // merchant_settings; /api/widget/config returns it; we apply it at boot.
+  // Only the keys present override; everything else falls back to the
+  // built-in dark default in CSS.
+  var _THEME_KEYS = [
+    'primary', 'primary_text', 'surface', 'surface_text',
+    'bot_bubble_bg', 'bot_bubble_text', 'header_bg', 'header_text',
+    'font_family',
+  ];
+  function _btgvApplyTheme(theme) {
+    if (!theme || typeof theme !== 'object') return;
+    // Stash for late-mounted elements (concierge root may not exist yet)
+    window._btgvTheme = theme;
+    function paint(el) {
+      if (!el) return;
+      _THEME_KEYS.forEach(function (k) {
+        var v = theme[k];
+        if (typeof v === 'string' && v) el.style.setProperty('--btgv-' + k.replace(/_/g, '-'), v);
+      });
+    }
+    // Try now; the concierge root is created lazily, so also expose the
+    // function for the constructor to call when it mounts.
+    paint(document.getElementById('_btgv_cncg'));
+    paint(document.documentElement);
+  }
+
+  // ─── Cart attribution — when concierge adds, mark the cart so merchants
+  // see "this order was assisted by {bot}" in admin AND the customer sees
+  // a small badge in the cart drawer. Mirrors REP AI's pattern.
+  function _btgvAttributeCart(cb) {
+    fetch('/cart/update.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        attributes: {
+          '__assisted_by': BOT_NAME,
+          '__assisted_at': new Date().toISOString(),
+        },
+      }),
+    }).catch(function () {}).finally(function () { if (cb) cb(); });
+  }
+
+  // Try to render a "🤝 This order was assisted by {bot}" badge inside
+  // the merchant's cart drawer. Theme-agnostic: scans common drawer
+  // selectors over a short window and injects once. Idempotent.
+  function _btgvInjectCartBadge() {
+    var BADGE_ID = '_btgv_cart_badge';
+    var done = false;
+    function tryInject() {
+      if (done || document.getElementById(BADGE_ID)) return;
+      var drawer = document.querySelector(
+        '#CartDrawer, .cart-drawer, .cart__drawer, [data-cart-drawer], ' +
+        '#cart-drawer, .drawer--cart, #sidebar-cart, .mini-cart, .ajaxcart, ' +
+        'cart-drawer, cart-notification'
+      );
+      if (!drawer) return;
+      var visible = drawer.offsetParent !== null ||
+                    drawer.classList.contains('is-open') ||
+                    drawer.classList.contains('active') ||
+                    drawer.getAttribute('open') !== null;
+      if (!visible) return;
+      var badge = document.createElement('div');
+      badge.id = BADGE_ID;
+      badge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;margin:8px 0;font:500 12px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#666;background:#f7f7f7;border-radius:6px;justify-content:center;';
+      badge.innerHTML = '<span style="font-size:14px;">🤝</span><span>This order was assisted by ' + BOT_NAME + '</span>';
+      drawer.appendChild(badge);
+      done = true;
+    }
+    // Try a few times — drawer often renders after add-to-cart with a delay
+    var attempts = 0;
+    var iv = setInterval(function () {
+      attempts++; tryInject();
+      if (done || attempts > 20) clearInterval(iv);
+    }, 250);
   }
 
   // ─── Feed pause/resume — keep the video focused while user is acting on it ──
@@ -644,8 +722,8 @@
       '._btgv_cncg_shim{height:3px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899,#f59e0b,#6366f1);background-size:200% 100%;animation:_btgv_cncg_shim 2.5s linear infinite;flex-shrink:0}',
       '@keyframes _btgv_cncg_shim{0%{background-position:0% 0%}100%{background-position:200% 0%}}',
       // header
-      '._btgv_cncg_hdr{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.05);flex-shrink:0}',
-      '._btgv_cncg_av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;flex-shrink:0;position:relative;overflow:hidden}',
+      '._btgv_cncg_hdr{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.05);flex-shrink:0;background:var(--btgv-header-bg,transparent);color:var(--btgv-header-text,#fff)}',
+      '._btgv_cncg_av{width:36px;height:36px;border-radius:50%;background:var(--btgv-primary,linear-gradient(135deg,#6366f1,#ec4899));display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--btgv-primary-text,#fff);flex-shrink:0;position:relative;overflow:hidden}',
       '._btgv_cncg_av img{width:100%;height:100%;object-fit:cover;border-radius:50%}',
       '._btgv_cncg_dot{position:absolute;bottom:0;right:0;width:9px;height:9px;background:#22c55e;border-radius:50%;border:2px solid #0c0c14;animation:_btgv_cncg_pulse 2s ease-in-out infinite}',
       '@keyframes _btgv_cncg_pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.45)}50%{box-shadow:0 0 0 4px rgba(34,197,94,0)}}',
@@ -657,7 +735,7 @@
       '._btgv_cncg_msgs::-webkit-scrollbar{display:none}',
       // bubbles
       '._btgv_cncg_bot{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:13px;line-height:1.55;padding:10px 13px;border-radius:16px 16px 16px 4px;max-width:88%}',
-      '._btgv_cncg_usr{align-self:flex-end;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:13px;line-height:1.55;padding:10px 13px;border-radius:16px 16px 4px 16px;max-width:88%}',
+      '._btgv_cncg_usr{align-self:flex-end;background:var(--btgv-primary,linear-gradient(135deg,#6366f1,#8b5cf6));color:var(--btgv-primary-text,#fff);font-size:13px;line-height:1.55;padding:10px 13px;border-radius:16px 16px 4px 16px;max-width:88%}',
       // typing indicator
       '._btgv_cncg_typing{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);padding:10px 14px;border-radius:16px 16px 16px 4px;display:flex;flex-direction:column;gap:6px;min-width:140px}',
       '._btgv_cncg_typing_dots{display:flex;align-items:center;gap:5px}',
@@ -671,6 +749,15 @@
       '._btgv_cncg_chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 2px}',
       '._btgv_cncg_chip{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.82);font-size:12px;font-weight:500;padding:6px 12px;border-radius:99px;cursor:pointer;white-space:nowrap;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:background .15s,border-color .15s}',
       '._btgv_cncg_chip:active{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.25)}',
+      // Inline variant picker (REP-style)
+      '._btgv_cncg_vpicker{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:6px 4px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box;align-self:stretch}',
+      '._btgv_cncg_vpicker::-webkit-scrollbar{display:none}',
+      '._btgv_cncg_vpickeritem{flex:0 0 130px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:0;cursor:pointer;color:#fff;font-family:inherit;display:flex;flex-direction:column;overflow:hidden;-webkit-tap-highlight-color:transparent;transition:transform .15s,border-color .15s;scroll-snap-align:start}',
+      '._btgv_cncg_vpickeritem:active{transform:scale(.97);border-color:var(--btgv-primary,rgba(99,102,241,.6))}',
+      '._btgv_cncg_vpicker_img{position:relative;width:100%;height:130px;background:#111;overflow:hidden}',
+      '._btgv_cncg_vpicker_img img{width:100%;height:100%;object-fit:cover;display:block}',
+      '._btgv_cncg_vpicker_t{font-size:12px;font-weight:600;padding:8px 10px 0;text-align:left}',
+      '._btgv_cncg_vpicker_p{font-size:13px;font-weight:700;padding:2px 10px 10px;color:rgba(255,255,255,.85);text-align:left}',
       // video carousel (inline in chat)
       '._btgv_cncg_vcarouselw{position:relative;width:100%;padding:0 4px;box-sizing:border-box}',
       '._btgv_cncg_vcarousel{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding:2px 4px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;width:100%;box-sizing:border-box}',
@@ -757,7 +844,7 @@
       '._btgv_cncg_inp{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:9px 13px;font-size:13px;color:#fff;font-family:inherit;outline:none;min-width:0;-webkit-appearance:none;appearance:none}',
       '._btgv_cncg_inp::placeholder{color:rgba(255,255,255,.28)}',
       '._btgv_cncg_inp:focus{border-color:rgba(99,102,241,.5);background:rgba(255,255,255,.08);outline:none}',
-      '._btgv_cncg_send{width:34px;height:34px;border:none;border-radius:50%;background:linear-gradient(135deg,#6366f1,#ec4899);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s}',
+      '._btgv_cncg_send{width:34px;height:34px;border:none;border-radius:50%;background:var(--btgv-primary,linear-gradient(135deg,#6366f1,#ec4899));color:var(--btgv-primary-text,#fff);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s}',
       '._btgv_cncg_send:disabled{opacity:.35;cursor:default}',
       // negotiated cart deal cards
       '._btgv_neg_cart{display:flex;flex-direction:column;gap:8px;width:100%;margin:4px 0}',
@@ -3029,6 +3116,19 @@
     _cncgEl._feedItems = feedItems;
     _cncgEl._cols = cols || [];
 
+    // If we're on a product page, pre-fetch the live Shopify product so the
+    // opener can describe it (REP-style) and product-aware chips can answer
+    // fabric/sizes/details without lag.
+    if (_cncgGetPDPHandle()) _cncgFetchPDPProduct(function () {});
+
+    // Apply per-merchant theme tokens if a theme arrived before mount
+    if (window._btgvTheme) {
+      _THEME_KEYS.forEach(function (k) {
+        var v = window._btgvTheme[k];
+        if (typeof v === 'string' && v) _cncgEl.style.setProperty('--btgv-' + k.replace(/_/g, '-'), v);
+      });
+    }
+
     // Shimmer
     var shim = document.createElement('div');
     shim.className = '_btgv_cncg_shim';
@@ -3074,7 +3174,9 @@
     var menuItems = [
       { icon: '🔄', label: 'New conversation', fn: function () { _cncgEl._msgs.innerHTML = ''; _cncgClearHistory(); _cncgEl._greeted = false; _cncgToggleMenu(); openConcierge(); } },
       { icon: '⭐', label: "What's recommended?", fn: function () { _cncgToggleMenu(); _cncgSend("What's recommended?", _cncgEl._msgs, _cncgEl._inp, _cncgEl._sendBtn); } },
+      { icon: '🏷️', label: 'Promotions', fn: function () { _cncgToggleMenu(); _cncgPromotions(_cncgEl._msgs); } },
       { icon: '📦', label: 'Track my order', fn: function () { _cncgToggleMenu(); _cncgTrackOrder(_cncgEl._msgs); } },
+      { icon: '💬', label: 'Recent conversations', fn: function () { _cncgToggleMenu(); _cncgRecentConvs(_cncgEl._msgs); } },
       { icon: '🛒', label: 'View cart', fn: function () { closeConcierge(); window.location.href = '/cart'; } },
       { icon: '💳', label: 'Checkout', fn: function () { closeConcierge(); window.location.href = '/checkout'; } },
     ];
@@ -3215,6 +3317,19 @@
     }
 
     if (ctx.type === 'product' && ctx.title) {
+      // If the live PDP product was already fetched (chips pre-warmed it),
+      // open with a REP-style description sentence — feels like a salesperson
+      // who's looking at the dress with you.
+      var pdp = (_cncgEl && _cncgEl._pdpProduct) || null;
+      if (pdp) {
+        var desc = _cncgCleanDesc(pdp.description || pdp.body_html || '');
+        if (desc) {
+          var firstSentence = desc.split(/(?<=[.!?])\s+/)[0];
+          if (firstSentence && firstSentence.length > 30) {
+            return '✨ ' + firstSentence + ' — would you like help confirming the fit, fabric, or styling for your event?';
+          }
+        }
+      }
       var openers = [
         'Ooh, great choice! ✨ "' + ctx.title + '" is gorgeous' + (ctx.extra ? ' — ' + ctx.extra : '') + '. Want me to get you the best possible price?',
         'Nice taste! 😍 "' + ctx.title + '"' + (ctx.extra ? ' at ' + ctx.extra : '') + ' — I can check if there\'s a better deal waiting for you.',
@@ -3905,6 +4020,70 @@
     msgs.scrollTop = msgs.scrollHeight;
   }
 
+  // ── Promotions — surfaces active sale collections + featured deals ─────────
+  function _cncgPromotions(msgs) {
+    var typing = _cncgTyping(msgs, ['Looking up active promos…', 'Finding deals…']);
+    _fetchCollectionDealsCatalog(function (catalog) {
+      typing.remove();
+      var sale = (catalog.feature_collections || []).filter(function (c) {
+        return /sale|clearance|deal|markdown|outlet|promo/i.test((c.handle || '') + ' ' + (c.title || ''));
+      });
+      var withDiscount = (catalog.products || []).filter(function (p) {
+        var price = parseFloat(p.price || 0); var was = parseFloat(p.compare_at_price || 0);
+        return was > price && price > 0;
+      });
+      if (!sale.length && !withDiscount.length) {
+        _cncgAddBot(msgs, "No active sale running right now — but you can still ask me to negotiate any item. 🤝");
+        _cncgBackChip(msgs);
+        return;
+      }
+      var lines = [];
+      if (sale.length) lines.push('🏷️ Active sale collections: <b>' + sale.slice(0, 3).map(function (c) { return c.title; }).join(', ') + '</b>');
+      if (withDiscount.length) {
+        var top = withDiscount.sort(function (a, b) {
+          return ((b.compare_at_price - b.price) / b.compare_at_price) - ((a.compare_at_price - a.price) / a.compare_at_price);
+        })[0];
+        var pct = Math.round((1 - top.price / top.compare_at_price) * 100);
+        lines.push('💸 Biggest markdown: <b>' + top.title + '</b> at ' + pct + '% off');
+      }
+      lines.push('— or just tell me what you\'re after and I\'ll negotiate it for you. 🤝');
+      _cncgAddBot(msgs, lines.join('<br>'), true);
+      _cncgBackChip(msgs);
+    });
+  }
+
+  // ── Recent conversations — pulls thread history from the server ─────────────
+  function _cncgRecentConvs(msgs) {
+    var typing = _cncgTyping(msgs, ['Pulling your history…']);
+    var sessionId = _getOrInitSessionId();
+    fetch(API_BASE + '/api/concierge/threads?k=' + API_KEY + '&session_id=' + encodeURIComponent(sessionId))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        typing.remove();
+        var threads = (d && d.threads) || [];
+        if (!threads.length) {
+          _cncgAddBot(msgs, "No prior conversations on file — but we can start one right now! ✨");
+          _cncgBackChip(msgs);
+          return;
+        }
+        _cncgAddBot(msgs, '💬 Your recent conversations:');
+        threads.slice(0, 5).forEach(function (t) {
+          var preview = (t.last_message || '').slice(0, 80);
+          var when = t.last_at ? new Date(t.last_at).toLocaleDateString() : '';
+          var line = document.createElement('div');
+          line.style.cssText = 'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);padding:8px 12px;border-radius:10px;font-size:12px;color:rgba(255,255,255,.78);margin:4px 0;';
+          line.innerHTML = '<div style="opacity:.5;font-size:10px;margin-bottom:2px;">' + when + '</div>' + preview;
+          msgs.appendChild(line);
+        });
+        _cncgBackChip(msgs);
+      })
+      .catch(function () {
+        typing.remove();
+        _cncgAddBot(msgs, "Couldn't load history right now.");
+        _cncgBackChip(msgs);
+      });
+  }
+
   // ── Track order ──────────────────────────────────────────────────────────────
   function _cncgTrackOrder(msgs) {
     _cncgAddBot(msgs, "Enter your order number and email to check your order status 📦");
@@ -3999,6 +4178,46 @@
     });
   }
 
+  // ── PDP product fetch — pulls the live Shopify product JSON for the
+  // current /products/{handle} page so chips can answer "fabric / sizes /
+  // details" without round-tripping to the LLM. Cached per widget session.
+  function _cncgGetPDPHandle() {
+    var m = window.location.pathname.match(/\/products\/([^/?#]+)/);
+    return m ? m[1] : null;
+  }
+  function _cncgFetchPDPProduct(cb) {
+    if (_cncgEl && _cncgEl._pdpProduct) { cb(_cncgEl._pdpProduct); return; }
+    var handle = _cncgGetPDPHandle();
+    if (!handle) { cb(null); return; }
+    fetch('/products/' + handle + '.js')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (p) {
+        if (_cncgEl) _cncgEl._pdpProduct = p;
+        cb(p);
+      })
+      .catch(function () { cb(null); });
+  }
+  // Strip HTML and trim a description down to one or two readable sentences.
+  function _cncgCleanDesc(html) {
+    if (!html) return '';
+    var tmp = document.createElement('div');
+    tmp.innerHTML = String(html);
+    var txt = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+    if (txt.length <= 280) return txt;
+    var cut = txt.slice(0, 280);
+    var dot = cut.lastIndexOf('.');
+    return (dot > 100 ? cut.slice(0, dot + 1) : cut) + (txt.length > 280 ? '…' : '');
+  }
+  function _cncgPDPInStockSizes(p) {
+    if (!p || !Array.isArray(p.variants)) return [];
+    var sizes = [];
+    p.variants.forEach(function (v) {
+      if (v && v.available && v.public_title) sizes.push(v.public_title);
+      else if (v && v.available && v.title && v.title !== 'Default Title') sizes.push(v.title);
+    });
+    return sizes;
+  }
+
   // ── Opening chips — W&S + Deal always first, third varies by context ─────────
   function _cncgMainMenu(msgs) {
     // Returning to main menu means we've left product context
@@ -4007,10 +4226,15 @@
     var ws = _chipWatchShop(), deal = _chipDeal(), find = _chipFind();
 
     if (ctx.type === 'product' && ctx.title) {
+      // REP-style product-aware chips. Pre-fetches the product so chip
+      // handlers can answer fabric/sizes/details without LLM round-trips.
+      _cncgFetchPDPProduct(function () {});
       _cncgAddChips(msgs, _buildChips(msgs, [
-        { label: ws.label, fn: ws.fn },
         { label: deal.label, fn: deal.fn },
-        { label: '🔍 Show me similar items', fn: function (m) {
+        { label: '📏 In stock sizes', fn: function (m) { _cncgPDPSizes(m); }},
+        { label: '🧵 Fabric', fn: function (m) { _cncgPDPFabric(m); }},
+        { label: '📐 Details & silhouette', fn: function (m) { _cncgPDPDetails(m); }},
+        { label: '🛍️ Browse for more', fn: function (m) {
           _cncgSend('Show me something similar to ' + ctx.title, m, _cncgEl._inp, _cncgEl._sendBtn);
         }},
       ]));
@@ -4027,6 +4251,131 @@
         { label: find.label, fn: find.fn },
       ]));
     }
+  }
+
+  // ── Product-aware chip handlers (Fabric / Details / In stock sizes) ─────────
+  function _cncgPDPSizes(msgs) {
+    _cncgFetchPDPProduct(function (p) {
+      if (!p) { _cncgAddBot(msgs, "Couldn't pull this product's variants — try the size dropdown on the page."); _cncgPDPBackChips(msgs); return; }
+      var sizes = _cncgPDPInStockSizes(p);
+      if (!sizes.length) {
+        _cncgAddBot(msgs, "Looks like this is sold out, darling — but I can find something similar! 💫");
+      } else {
+        _cncgAddBot(msgs, '📏 In stock right now: <b>' + sizes.join(' · ') + '</b>', true);
+      }
+      _cncgPDPBackChips(msgs);
+    });
+  }
+  function _cncgPDPFabric(msgs) {
+    _cncgFetchPDPProduct(function (p) {
+      if (!p) { _cncgAddBot(msgs, "Couldn't pull the product info — try the description on the page."); _cncgPDPBackChips(msgs); return; }
+      var desc = _cncgCleanDesc(p.description || p.body_html || '');
+      // Pull fabric/material sentence if we can find one
+      var sentence = null;
+      if (desc) {
+        var rx = /([^.!?]*\b(fabric|material|cotton|silk|satin|chiffon|tulle|velvet|lace|polyester|nylon|spandex|wool|linen|denim|leather|sequin|beaded|knit|jersey|crepe)[^.!?]*[.!?])/i;
+        var m = desc.match(rx);
+        if (m) sentence = m[1].trim();
+      }
+      // Tag-based fallback
+      if (!sentence && Array.isArray(p.tags) && p.tags.length) {
+        var fabricTags = p.tags.filter(function (t) { return /silk|satin|cotton|lace|velvet|linen|denim|wool|leather|sequin|beaded/i.test(t); });
+        if (fabricTags.length) sentence = 'Fabric tags on this piece: ' + fabricTags.join(', ') + '.';
+      }
+      _cncgAddBot(msgs, sentence || "🧵 The product page has the full fabric breakdown — want me to pull the description?");
+      _cncgPDPBackChips(msgs);
+    });
+  }
+  function _cncgPDPDetails(msgs) {
+    _cncgFetchPDPProduct(function (p) {
+      if (!p) { _cncgAddBot(msgs, "Couldn't pull the details — try the description on the page."); _cncgPDPBackChips(msgs); return; }
+      var desc = _cncgCleanDesc(p.description || p.body_html || '');
+      if (!desc) { _cncgAddBot(msgs, "No detailed description on this one — but I can pull up similar styles. 💫"); _cncgPDPBackChips(msgs); return; }
+      _cncgAddBot(msgs, '📐 ' + desc);
+      _cncgPDPBackChips(msgs);
+    });
+  }
+  function _cncgPDPBackChips(msgs) {
+    var deal = _chipDeal();
+    _cncgAddChips(msgs, _buildChips(msgs, [
+      { label: deal.label, fn: deal.fn },
+      { label: '🛍️ Browse for more', fn: function (m) { _cncgMainMenu(m); }},
+    ]));
+  }
+
+  // ── Inline variant picker — REP-style carousel of variant tiles inside
+  // the chat. Customer never leaves the conversation to pick size/color.
+  // Filters by hints from the user's message ("add size 6 in red"); if no
+  // matches, falls back to all available variants.
+  function _cncgPDPVariantPicker(msgs, sizeHint, colorHint) {
+    _cncgFetchPDPProduct(function (p) {
+      if (!p || !Array.isArray(p.variants) || !p.variants.length) {
+        _cncgAddBot(msgs, "Hmm, couldn't pull this product's variants — try the page form instead.");
+        _cncgPDPBackChips(msgs);
+        return;
+      }
+      var available = p.variants.filter(function (v) { return v.available; });
+      if (!available.length) {
+        _cncgAddBot(msgs, "Looks like this is sold out, darling — but I can find something similar! 💫");
+        _cncgPDPBackChips(msgs);
+        return;
+      }
+      // Filter by hints (case-insensitive substring on variant title + options)
+      function variantMatches(v, hint) {
+        if (!hint) return true;
+        var hay = ((v.title || '') + ' ' + (v.public_title || '') + ' ' + (v.option1 || '') + ' ' + (v.option2 || '') + ' ' + (v.option3 || '')).toLowerCase();
+        return hay.indexOf(String(hint).toLowerCase()) !== -1;
+      }
+      var filtered = available.filter(function (v) { return variantMatches(v, sizeHint) && variantMatches(v, colorHint); });
+      var pool = filtered.length ? filtered : available;
+
+      var prompt = (filtered.length && (sizeHint || colorHint))
+        ? 'Got it — pick the option you want:'
+        : 'Now choose your size:';
+      _cncgAddBot(msgs, prompt);
+
+      var carousel = document.createElement('div');
+      carousel.className = '_btgv_cncg_vpicker';
+      pool.slice(0, 12).forEach(function (v) {
+        var tile = document.createElement('button');
+        tile.className = '_btgv_cncg_vpickeritem';
+        // Variant image: prefer featured_image on variant, fallback to product first image
+        var imgSrc = (v.featured_image && v.featured_image.src) || (p.featured_image) || (p.images && p.images[0]) || null;
+        var imgHtml = imgSrc ? '<img src="' + imgSrc + '" alt="">' : '<div style="background:rgba(255,255,255,.08);width:100%;height:100%;"></div>';
+        var title = v.public_title || v.title || 'Default';
+        // /products/{handle}.js returns price in cents (integer)
+        var priceCents = parseFloat(v.price);
+        var price = (isFinite(priceCents) && priceCents > 0) ? (priceCents / 100).toFixed(0) : '—';
+        tile.innerHTML =
+          '<div class="_btgv_cncg_vpicker_img">' + imgHtml + '</div>' +
+          '<div class="_btgv_cncg_vpicker_t">' + title + '</div>' +
+          '<div class="_btgv_cncg_vpicker_p">$' + price + '</div>';
+        tile.onclick = function (e) {
+          e.stopPropagation();
+          carousel.remove();
+          _cncgAddUser(msgs, title);
+          _cncgAddBot(msgs, 'Adding to your cart…');
+          addToCart(v.id, function (ok) {
+            if (ok) {
+              _btgvAttributeCart();
+              _btgvInjectCartBadge();
+              fireConfetti();
+              _cncgAddBot(msgs, "Certainly — I've added 1 × " + p.title + " - " + title + " to your cart.<br><br>Is there anything else I can assist you with?", true);
+              _cncgAddChips(msgs, _buildChips(msgs, [
+                { label: '⚡ Checkout', fn: function () { window.location.href = '/checkout'; }},
+                { label: '🛍️ Browse for more', fn: function (m) { _cncgMainMenu(m); }},
+              ]));
+            } else {
+              _cncgAddBot(msgs, "Hmm, couldn't add it. Try the size dropdown on the page.");
+              _cncgPDPBackChips(msgs);
+            }
+          });
+        };
+        carousel.appendChild(tile);
+      });
+      msgs.appendChild(carousel);
+      msgs.scrollTop = msgs.scrollHeight;
+    });
   }
 
   // ── After any interaction — weave W&S and deal back in with fresh language ───
@@ -4575,7 +4924,7 @@
   }
 
   // ── Typing indicator helper ──────────────────────────────────────────────────
-  var _typingPhrases = ['Searching…', 'Curating finds…', 'Hunting down the best…', 'Finding perfect matches…', 'Exploring the catalog…', 'Sifting through products…'];
+  var _typingPhrases = ['Searching the <em>catalog</em>…', 'Curating finds…', 'Hunting down the best…', 'Finding perfect matches…', 'Looking up information…', 'Sifting through products…'];
   function _cncgTyping(msgs, customPhrases) {
     var phrases = customPhrases || _typingPhrases;
     var el = document.createElement('div'); el.className = '_btgv_cncg_typing';
@@ -4583,12 +4932,12 @@
     for (var i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
     el.appendChild(dots);
     var hint = document.createElement('span'); hint.className = '_btgv_cncg_typing_hint';
-    hint.textContent = phrases[0]; el.appendChild(hint);
+    hint.innerHTML = phrases[0]; el.appendChild(hint);
     var idx = 0;
     var iv = setInterval(function () {
       idx = (idx + 1) % phrases.length;
       hint.style.opacity = '0';
-      setTimeout(function () { hint.textContent = phrases[idx]; hint.style.opacity = '1'; }, 150);
+      setTimeout(function () { hint.innerHTML = phrases[idx]; hint.style.opacity = '1'; }, 150);
     }, 900);
     msgs.appendChild(el); msgs.scrollTop = msgs.scrollHeight;
     return { remove: function () { clearInterval(iv); el.remove(); } };
@@ -4935,7 +5284,29 @@
     if (/^(add (it|this)?( to)? cart|add to (the )?cart|put (it|this) in (my )?cart|add to bag|cart it)\.?!?$/i.test(t)) {
       return 'add_to_cart';
     }
+    // Variant-specific add: "add size 6", "add medium", "add the small in red",
+    // "add it in red", "add 8 to cart" — triggers the inline variant picker
+    // when on a product page (REP AI parity).
+    if (/^add\s+(it\s+)?(in\s+\w+|size\s+[\w-]+|x?s|sm|small|m|med|medium|l|lg|large|xl|xxl|2xl|3xl|the\s+\w+|\d+)/i.test(t)) {
+      return 'add_to_cart';
+    }
     return null;
+  }
+
+  // Parse size + color hints out of a free-form add-to-cart message.
+  // "add size 6 in red to cart" → { size: '6', color: 'red' }.
+  function _cncgParseVariantHints(text) {
+    var t = (text || '').toLowerCase();
+    var size = null, color = null;
+    var sizeM = t.match(/(?:size\s*)([0-9]{1,2}|x?s|sm|small|m|med|medium|l|lg|large|xl|xxl|2xl|3xl)\b/);
+    if (sizeM) size = sizeM[1];
+    else {
+      var bareM = t.match(/^add\s+(?:it\s+)?(\d{1,2}|x?s|sm|small|m|med|medium|l|lg|large|xl|xxl|2xl|3xl)\b/);
+      if (bareM) size = bareM[1];
+    }
+    var colorM = t.match(/\bin\s+([a-z]+(?:\s+[a-z]+)?)\b/);
+    if (colorM) color = colorM[1].trim();
+    return { size: size, color: color };
   }
 
   // Product-discovery intent — anything that smells like the customer
@@ -4966,8 +5337,8 @@
   function _cncgRunProductSearch(msgs, queryText, explicitFilter) {
     try { _btgvFireFunnelEvent('discovered', { query: queryText || null }); } catch (_) {}
     var typing = _cncgTyping(msgs, [
+      'Searching the <em>catalog</em>…',
       '✨ Pulling fresh picks for you…',
-      '🎁 Lining them up…',
       '🛍️ Sorting your faves…',
     ]);
     var sessionId = _getOrInitSessionId();
@@ -5200,8 +5571,16 @@
       return;
     }
     if (intent === 'add_to_cart') {
-      var target = _cncgPickAddToCartTarget();
       sendBtn.disabled = false;
+      // On a product page → inline variant picker (REP-style). The picker
+      // filters variants by any size/color hints from the user's message.
+      if (_cncgGetPDPHandle()) {
+        var hints = _cncgParseVariantHints(text);
+        _cncgPDPVariantPicker(msgs, hints.size, hints.color);
+        return;
+      }
+      // Otherwise fall back to single-variant add for the most-recently-shown product
+      var target = _cncgPickAddToCartTarget();
       if (!target) {
         _cncgAddBot(msgs, "Tell me which one and I'll add it — or open a product first. 🛍️");
         return;
@@ -5209,6 +5588,8 @@
       _cncgAddBot(msgs, 'Adding ' + target.name + ' to your cart…');
       addToCart(target.variantId, function (ok) {
         if (ok) {
+          _btgvAttributeCart();
+          _btgvInjectCartBadge();
           fireConfetti();
           _cncgAddBot(msgs, '✓ Added! Want to keep shopping or head to checkout?');
           _cncgAddChips(msgs, _buildChips(msgs, [

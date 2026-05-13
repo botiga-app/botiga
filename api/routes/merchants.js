@@ -63,7 +63,8 @@ router.put('/merchants/:id/settings', async (req, res) => {
     'dwell_time_seconds', 'brand_value_statements',
     'proactive_delay', 'proactive_message', 'auto_open_delay',
     'widget_type', 'show_trigger', 'chat_popup_delay', 'cart_trigger',
-    'bot_name', 'bot_greeting', 'bot_avatar_url', 'bot_personality'
+    'bot_name', 'bot_greeting', 'bot_avatar_url', 'bot_personality',
+    'widget_theme',
   ];
 
   const updates = {};

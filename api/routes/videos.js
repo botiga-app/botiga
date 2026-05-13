@@ -1654,7 +1654,7 @@ router.get('/widget/config', widgetCors, async (req, res) => {
     if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
     const { data: settings, error: sErr } = await supabase
       .from('merchant_settings')
-      .select('bot_name, bot_greeting, bot_avatar_url, bot_personality, max_discount_pct')
+      .select('bot_name, bot_greeting, bot_avatar_url, bot_personality, max_discount_pct, widget_theme')
       .eq('merchant_id', merchant.id)
       .single();
     if (sErr && sErr.code !== 'PGRST116') {  // PGRST116 = no rows = ok, treat as defaults
@@ -1670,6 +1670,7 @@ router.get('/widget/config', widgetCors, async (req, res) => {
       bot_avatar_url: settings?.bot_avatar_url || null,
       bot_personality: settings?.bot_personality || 'salesy',
       max_discount_pct: settings?.max_discount_pct ?? 20,
+      widget_theme: settings?.widget_theme || null,
       brand_name: merchant.name || null,
       brand_logo: merchant.logo_url || null,
       brand_handle: merchant.ig_handle || null,

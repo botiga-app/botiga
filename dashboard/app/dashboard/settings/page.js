@@ -59,6 +59,7 @@ export default function SettingsPage() {
         bot_greeting: null,
         bot_avatar_url: null,
         bot_personality: 'salesy',
+        widget_theme: null,
       };
 
       try {
@@ -233,6 +234,9 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+      {/* Widget theme — per-merchant colors that paint the chat widget */}
+      <WidgetThemeSection theme={settings.widget_theme} botName={settings.bot_name} botAvatar={settings.bot_avatar_url} update={t => update({ widget_theme: t })} />
+
       {/* Negotiation settings moved — pointer card */}
       <a href="/dashboard/rules" className="block bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 hover:from-amber-100 hover:to-orange-100 transition-colors">
         <div className="flex items-center justify-between gap-3">
@@ -248,6 +252,227 @@ export default function SettingsPage() {
         </div>
       </a>
 
+    </div>
+  );
+}
+
+// ─── Widget theme — per-merchant colors painted onto the storefront widget
+// via CSS custom properties. Saved as JSONB on merchant_settings.widget_theme;
+// /api/widget/config returns it; the widget reads it at boot. Mirrors REP
+// AI's white-label theming (Couture Candy red, Bluecorn dark/cream).
+const THEME_PRESETS = [
+  {
+    name: 'Botiga (default)',
+    theme: null, // null = built-in dark default
+    swatch: 'linear-gradient(135deg,#6366f1,#ec4899)',
+  },
+  {
+    name: 'Couture coral',
+    theme: {
+      primary: '#dc6b6b',
+      primary_text: '#ffffff',
+      surface: '#ffffff',
+      surface_text: '#1f2937',
+      bot_bubble_bg: '#f3f4f6',
+      bot_bubble_text: '#1f2937',
+      header_bg: '#dc6b6b',
+      header_text: '#ffffff',
+    },
+    swatch: '#dc6b6b',
+  },
+  {
+    name: 'Boutique cream',
+    theme: {
+      primary: '#1f2937',
+      primary_text: '#ffffff',
+      surface: '#fefcf6',
+      surface_text: '#1f2937',
+      bot_bubble_bg: '#f3eee0',
+      bot_bubble_text: '#1f2937',
+      header_bg: '#1f2937',
+      header_text: '#fefcf6',
+    },
+    swatch: 'linear-gradient(135deg,#1f2937,#fefcf6)',
+  },
+  {
+    name: 'Forest sage',
+    theme: {
+      primary: '#3f6f4e',
+      primary_text: '#ffffff',
+      surface: '#ffffff',
+      surface_text: '#1f2937',
+      bot_bubble_bg: '#eef4ef',
+      bot_bubble_text: '#1f2937',
+      header_bg: '#3f6f4e',
+      header_text: '#ffffff',
+    },
+    swatch: '#3f6f4e',
+  },
+  {
+    name: 'Indigo',
+    theme: {
+      primary: '#4f46e5',
+      primary_text: '#ffffff',
+      surface: '#ffffff',
+      surface_text: '#1f2937',
+      bot_bubble_bg: '#eef2ff',
+      bot_bubble_text: '#1f2937',
+      header_bg: '#4f46e5',
+      header_text: '#ffffff',
+    },
+    swatch: '#4f46e5',
+  },
+];
+
+function WidgetThemeSection({ theme, botName, botAvatar, update }) {
+  const t = theme || {};
+  const isCustom = theme && !THEME_PRESETS.some(p => JSON.stringify(p.theme) === JSON.stringify(theme));
+  const activePreset = isCustom ? null : THEME_PRESETS.find(p => JSON.stringify(p.theme) === JSON.stringify(theme)) || THEME_PRESETS[0];
+
+  function setField(k, v) {
+    const next = { ...(theme || {}) };
+    if (v == null || v === '') delete next[k];
+    else next[k] = v;
+    update(Object.keys(next).length ? next : null);
+  }
+
+  return (
+    <Section title="Widget theme">
+      <p className="text-xs text-gray-500 -mt-2">
+        Brand colors painted onto your storefront chat widget. Pick a preset or customize each surface — changes apply on next page load for shoppers.
+      </p>
+
+      {/* Preset row */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-2">Preset</label>
+        <div className="grid grid-cols-5 gap-2">
+          {THEME_PRESETS.map(p => {
+            const active = activePreset && p.name === activePreset.name;
+            return (
+              <button
+                key={p.name}
+                onClick={() => update(p.theme)}
+                className={`p-2 rounded-xl border-2 text-left transition-all ${active ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-gray-200'}`}
+              >
+                <div className="w-full h-8 rounded-lg mb-2" style={{ background: p.swatch }} />
+                <div className="text-[11px] font-medium text-gray-800 leading-tight">{p.name}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Custom color pickers */}
+      <div className="grid grid-cols-2 gap-3 pt-2">
+        <ColorField label="Primary (buttons + your bubbles)" value={t.primary || ''} onChange={v => setField('primary', v)} placeholder="#dc6b6b" />
+        <ColorField label="Primary text (on buttons)" value={t.primary_text || ''} onChange={v => setField('primary_text', v)} placeholder="#ffffff" />
+        <ColorField label="Header background" value={t.header_bg || ''} onChange={v => setField('header_bg', v)} placeholder="#dc6b6b" />
+        <ColorField label="Header text" value={t.header_text || ''} onChange={v => setField('header_text', v)} placeholder="#ffffff" />
+        <ColorField label="Bot bubble background" value={t.bot_bubble_bg || ''} onChange={v => setField('bot_bubble_bg', v)} placeholder="#f3f4f6" />
+        <ColorField label="Bot bubble text" value={t.bot_bubble_text || ''} onChange={v => setField('bot_bubble_text', v)} placeholder="#1f2937" />
+        <ColorField label="Widget background" value={t.surface || ''} onChange={v => setField('surface', v)} placeholder="#ffffff" />
+        <ColorField label="Widget text" value={t.surface_text || ''} onChange={v => setField('surface_text', v)} placeholder="#1f2937" />
+      </div>
+
+      <div className="pt-2">
+        <label className="block text-xs font-semibold text-gray-600 mb-1">Font family (optional)</label>
+        <input
+          type="text"
+          value={t.font_family || ''}
+          onChange={e => setField('font_family', e.target.value)}
+          placeholder="system-ui, -apple-system, sans-serif"
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+        />
+        <p className="text-xs text-gray-400 mt-1">CSS font-family stack. Leave blank for the system default.</p>
+      </div>
+
+      {/* Live preview */}
+      <div className="pt-3">
+        <label className="block text-xs font-semibold text-gray-600 mb-2">Preview</label>
+        <ThemePreview theme={t} botName={botName || 'Botiga'} botAvatar={botAvatar} />
+      </div>
+    </Section>
+  );
+}
+
+function ColorField({ label, value, onChange, placeholder }) {
+  // Color input requires a 7-char hex. Keep two inputs synchronized:
+  // a swatch (color picker) and a text field (so users can paste/clear).
+  const safe = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#ffffff';
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <div className="flex gap-2 items-center">
+        <input
+          type="color"
+          value={safe}
+          onChange={e => onChange(e.target.value)}
+          className="w-10 h-9 border border-gray-200 rounded-lg cursor-pointer"
+        />
+        <input
+          type="text"
+          value={value || ''}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+    </div>
+  );
+}
+
+// Mini-replica of the storefront concierge widget — header + two bubbles +
+// a chip + send button — painted with the current theme tokens. Lets the
+// merchant see the result without leaving the page.
+function ThemePreview({ theme, botName, botAvatar }) {
+  const t = theme || {};
+  const primary = t.primary || 'linear-gradient(135deg,#6366f1,#ec4899)';
+  const primaryText = t.primary_text || '#ffffff';
+  const surface = t.surface || '#0c0c14';
+  const surfaceText = t.surface_text || '#ffffff';
+  const headerBg = t.header_bg || 'transparent';
+  const headerText = t.header_text || surfaceText;
+  const botBg = t.bot_bubble_bg || 'rgba(255,255,255,.07)';
+  const botText = t.bot_bubble_text || surfaceText;
+  const fontFamily = t.font_family || 'system-ui, -apple-system, sans-serif';
+
+  return (
+    <div
+      style={{
+        width: 320,
+        background: surface,
+        color: surfaceText,
+        borderRadius: 16,
+        border: '1px solid rgba(0,0,0,.06)',
+        boxShadow: '0 12px 32px rgba(0,0,0,.08)',
+        overflow: 'hidden',
+        fontFamily,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: headerBg, color: headerText, borderBottom: '1px solid rgba(0,0,0,.05)' }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: primary, color: primaryText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, overflow: 'hidden' }}>
+          {botAvatar ? <img src={botAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🛍️'}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{botName}</div>
+          <div style={{ fontSize: 10, opacity: .65 }}>Here to help you shop</div>
+        </div>
+      </div>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 140 }}>
+        <div style={{ alignSelf: 'flex-start', background: botBg, color: botText, padding: '8px 12px', borderRadius: '14px 14px 14px 4px', fontSize: 12, maxWidth: '85%' }}>
+          Hey there! What are you looking for today? ✨
+        </div>
+        <div style={{ alignSelf: 'flex-end', background: primary, color: primaryText, padding: '8px 12px', borderRadius: '14px 14px 4px 14px', fontSize: 12, maxWidth: '85%' }}>
+          Show me dresses under $100
+        </div>
+        <div style={{ alignSelf: 'flex-start', background: botBg, color: botText, padding: '8px 12px', borderRadius: '14px 14px 14px 4px', fontSize: 12, maxWidth: '85%' }}>
+          On it. <span style={{ fontStyle: 'italic', opacity: .65 }}>Searching the catalog…</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderTop: '1px solid rgba(0,0,0,.05)' }}>
+        <div style={{ flex: 1, background: 'rgba(0,0,0,.04)', color: surfaceText, padding: '7px 10px', borderRadius: 12, fontSize: 12, opacity: .55 }}>Type anything here…</div>
+        <div style={{ width: 30, height: 30, borderRadius: '50%', background: primary, color: primaryText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>➤</div>
+      </div>
     </div>
   );
 }

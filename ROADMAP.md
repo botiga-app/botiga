@@ -543,11 +543,13 @@ The first three (B1, B2, B3) plus I1+I2 are ~½ day combined and lift the moat f
 |---|---|---|
 | **Tolstoy** | Shoppable video, floating launcher, Shopify-native install, stories format. Pre-recorded "video bot" for routing. Clean merchant UX. | No negotiation. No real AI. No marketplace. Full price only. |
 | **Nibble** | AI price negotiation in chat format. Proven conversion lift. "Make an offer" UX on product pages. | No video. No concierge. No marketplace. Customer must already be on the product page. |
-| **Rep AI** | Proactive AI concierge. Behavioural triggers (time on page, exit intent, scroll depth). Product Q&A, recommendations. 20–30% conversion lift claimed. Shopify App Store presence. | No video. No negotiation. Assists but doesn't close. |
+| **REP AI** (formerly Rep AI) | Proactive AI concierge. Behavioural triggers (time on page, exit intent, scroll depth). Product Q&A, recommendations. 20–30% conversion lift claimed. Shopify App Store presence. **Per-merchant brand theming** (red/coral on Couture Candy, dark/cream on Bluecorn — same widget, different theme tokens). **Inline variant picker + add-to-cart in chat** (size/color carousel inside the chat bubble — customer never touches the PDP). **Cart drawer attribution** ("This order was assisted by Rep" badge on Shopify cart drawer). Hamburger utility menu with `Promotions / Track order / Recent Conversations / View cart / Checkout`. Product-page contextual openers + product-specific chips (`Fabric`, `Details & silhouette`, `In stock sizes`). Time-of-day-aware greetings. Discovery as inline horizontal carousels with hero images. | No video. No negotiation (`5% Off!` is a static promo chip, not negotiated). No marketplace. Per-merchant theming but no self-serve theme editor — looks like a service implementation per customer. Assists but doesn't close on price. |
 | **Videowise** | Shoppable video, stories, carousels, analytics. Enterprise-focused. | No negotiation. No concierge. No marketplace. |
 | **Firework** | Live shopping + short-form video. Media/brand focused. | Enterprise contracts. Not Shopify-native. No negotiation. |
 | **Octane AI** | Quiz funnels + chat. Merchant-controlled recommendation flows. | Not genuinely intelligent. No video. No negotiation. |
-| **Tidio / Gorgias** | Customer support chat with AI bolt-on. | Service-first, not sales-first. No video. No negotiation. |
+| **Tidio (Lyro)** | AI agent + human Operator coexisting on the same knowledge base. Knowledge sources tagged "Used by: Lyro / Copilot" so merchants scope what AI can answer vs what's for humans. Categorized Guidance (Tone / Handoff / Other) with toggles. Visual flow editor with template library showing uses count. Multi-channel inbox (web, Messenger, IG, WhatsApp, email). | Service-first, not sales-first. No video. No negotiation. No marketplace. |
+| **Gorgias** | Helpdesk + AI bolt-on. Strong ticket lifecycle, integrations with Shopify orders. | Service-first, not sales-first. No video. No negotiation. |
+| **Intercom (Fin)** | Live conversation queue with AI-default + human takeover. Owner watches AI handle, intervenes when needed, hands back with context. Suggested-reply pattern lets AI assist humans even in human mode. | Not Shopify-native. Heavy enterprise pricing. No video. No negotiation. |
 
 ### The white space Botiga owns
 
@@ -558,6 +560,15 @@ Nobody has connected **video discovery → AI concierge → price negotiation �
 - **From Tolstoy** — floating launcher UX and zero-friction install story. They've trained merchants to accept a floating widget. Copy that pattern, stack everything behind it.
 - **From Nibble** — "Make an offer" entry point on product pages. Low friction because it's the customer's idea. The concierge nudging toward negotiation is the same instinct, applied proactively.
 - **From Rep AI** — behavioural trigger logic. Time on page, scroll depth, cart value, exit intent. They've solved when to interrupt without annoying. Use the same trigger system for the concierge pop-up timing.
+- **From REP AI (live observation 2026-05-08)** — six concrete UX patterns we don't have yet:
+  1. **Inline variant picker in chat** — "Add size 6 to cart" → "Now choose your size:" carousel; customer never leaves the chat to pick variants. Critical for negotiation flow too: today our deal-done UX still bounces to PDP.
+  2. **Per-merchant brand theming** — same widget, theme-token swap (color, name, avatar). We currently have one global look; needed before we onboard merchants on different brand palettes.
+  3. **Hamburger utility menu inside the widget** — `Promotions / Track order / Recent Conversations / View cart / Checkout`. Customer never leaves chat.
+  4. **Cart drawer attribution badge** — `📋 This order was assisted by Rep` shown on the Shopify cart drawer. Direct merchant-facing trust signal that AI is closing orders. We track this server-side; need to surface it.
+  5. **Product-page contextual openers + product-specific chips** — bot reads PDP context, opens with description of *that exact product*, chips become `Fabric / Details & silhouette / In stock sizes / Add to cart`. Our product-page Willow today opens generic.
+  6. **Searching the catalog…** loading state with the word "catalog" italicized. Sets expectation it's looking at real inventory, not making things up. ~5min change.
+- **From Tidio (Lyro)** — knowledge-source surface (`Used by: Lyro / Copilot` column) so merchants see exactly what the AI knows AND can scope which knowledge feeds AI vs human-facing copilot. Categorized guidance cards (Tone of voice / Handoff and escalation / Other) with per-card on/off toggles — same shape as Chatty but better grouped. Sales flow templates with **uses count** ("431.5K uses") as social proof of which templates work.
+- **From Intercom Fin** — live conversation queue with AI-default + human-takeover. Owner watches AI handle, intervenes when needed, hands back to AI with context preserved. This pattern (AI-first, human-fallback) is the right default for a sales bot — see Round D below.
 
 ### The moat
 
@@ -566,6 +577,155 @@ The marketplace creates a network effect none of them have. More merchants → m
 ### The risk
 
 Rep AI is well-funded with Shopify merchant relationships. If they add video and negotiation they become a direct threat. The window to own "the unified commerce widget" positioning is real but not unlimited. Speed matters.
+
+---
+
+## Chatty (AVADA) — Polish Gap & Catch-Up Plan
+
+> Reviewed 2026-05-05 from 22 Chatty product screenshots. Chatty is the closest UI/UX benchmark for the merchant side of the dashboard — they've solved the polish problems we still have. They have **no negotiation, no video, no marketplace** — but their merchant UX is meaningfully ahead and that's what signs first-time visitors.
+
+### Where Chatty leads us today
+
+| Area | Chatty | Botiga (today) | Gap |
+|---|---|---|---|
+| **Onboarding** | 4-step wizard (welcome → connect store → train AI → embed) with progress bar | Merchant lands on dashboard, has to find each setting | High — first impression |
+| **Training data** | Dashboard shows `0 of 855 products learned`, `0 of 81 collections learned`, `0 of 24 pages learned` with retrain buttons | Catalog is fetched on demand; merchant has no visibility into "what does the AI know about my store?" | High — trust signal |
+| **Instructions UI** | Structured form: Role (250 chars) / Communication style (presets: Formal/Friendly/Casual/Funny + custom) / Behaviours (1000) / Boundaries (1000) | Free-text textarea with "save" — gets parsed into directives but merchant doesn't see the structure | High — onboarding quality |
+| **Skills toggles** | Granular on/off per skill (Negotiate, Recommendations, Order tracking, After-sales, Size guide) + 5 custom scenarios | Everything is on by default; no merchant-side ability to turn off behaviours | Medium |
+| **Test AI surface** | Dedicated `Test AI` page with chat + "Review sources ↓" expand showing exactly which products/pages the AI cited | Merchant can preview as customer but can't see WHAT the AI used to answer | High — debuggability |
+| **Multi-channel** | Email, Messenger, Instagram DM, WhatsApp inbound | Storefront widget only | High — distribution |
+| **AI re-engagement** | Auto-resurrects abandoned conversations after N hours via email | Hold-your-place email exists but only on negotiation accept | Medium |
+| **Theme embed targets** | Toggles for product page, homepage, collection page, etc. | Single global widget | Low |
+| **Public roadmap** | Voted feature requests on a public board | Not exposed | Low — but a cheap trust signal |
+
+### Where Botiga leads Chatty
+
+| Capability | Why it matters |
+|---|---|
+| **Negotiation engine + floor enforcement** | Chatty has no negotiation. This is our durable wedge. |
+| **Hold-your-place** | 24h save with email send. No competitor has this. |
+| **Storefront video feed** | Vertical scroll, deep links per video, dwell tracking. Tolstoy/Videowise own video but not unified with chat. |
+| **Vertical-scroll merchant editor** | Single-screen edit experience for video catalog. Faster than Chatty's table-based product training. |
+| **Lead surfacing (Hot/Warm/Cold + earnable $)** | Merchants see captured leads with classification + recovery potential. Chatty only shows raw conversations. |
+| **Visitor funnel** | Per-stage dropoff with per-visitor drilldown. Chatty has analytics but not funnel-shaped. |
+| **Universal product filter** | Deterministic NL → filter card → ranked results across the catalog. Differentiates from generic Q&A. |
+
+### Round A — Polish parity ✅ SHIPPED 2026-05-08 (~6h)
+
+These three changes close most of the "looks less mature than Chatty" perception gap.
+
+| Work | Status | Where |
+|---|---|---|
+| Onboarding wizard at `/onboarding` — 4 steps with progress dots; new merchants redirected on first login; `OnboardingBanner` nudges if incomplete. | ✅ Already shipped (pre-Round A) | `dashboard/app/onboarding/page.js` + `OnboardingBanner` in `DashboardLayout.js` |
+| **Training Data dashboard** at `/dashboard/training` — counts per source ("X of Y in stock", N collections, N tags, N active directives, N/5 brand statements) + tabs per source + Refresh-from-store button (busts catalog cache) | ✅ Shipped | `dashboard/app/dashboard/training/page.js`; reuses `/api/widget/catalog?refresh=1` + `/api/merchants/:id/bot-instructions` |
+| **Test AI page** at `/dashboard/test-ai` — full chat surface that hits the same `/api/concierge/message` shoppers use, paired with a Sources panel that shows on `Review sources ↓`: catalog totals, parsed query JSON, featured deal cited, top products considered, LLM-matched products | ✅ Shipped | `dashboard/app/dashboard/test-ai/page.js`; runs concierge + product-search in parallel for source visibility |
+| Sidebar nav | ✅ Updated | `dashboard/components/DashboardLayout.js` — `Training data` (📚) and `Test AI` (🧪) added under Setup section |
+
+### Round B — Instruction depth (~5h, do second)
+
+Lifts the bot training experience from "free-text and hope" to "structured presets that compose."
+
+| Work | Where | Effort |
+|---|---|---|
+| Instructions UI rebuild — Role (250 chars) / Communication style (presets: Formal/Friendly/Casual/Funny/Custom) / Behaviours (1000) / Boundaries (1000) | `/dashboard/bot-training` redesign; 4 fields parsed independently into directives | M (~2h) |
+| Skills toggle surface at `/dashboard/skills` — Negotiate / Recommendations / Order tracking / After-sales / Size guide as on/off cards + 5 custom scenarios slot | New page + `merchant_skills` table | M (~2h) |
+| Per-skill prompt injection — system prompt assembler reads enabled skills and includes only relevant capability blocks | `api/services/llm.js` — `buildSystemPrompt` accepts `enabledSkills[]` | S (~1h) |
+
+### Round C — Multi-channel reach (defer until first 3 paying merchants ask)
+
+Heaviest lift, **and the original ~10h estimate was light** — once Meta app review, OAuth onboarding, identity stitching, and per-channel reply-window rules are factored in, this is **30-60h** of real work. Tidio has been at this for years with a team of dozens. Don't start until Round A+B+D prove out and merchants explicitly ask for it.
+
+**Architecture (when we do build it):** every channel becomes an adapter that pushes to a webhook → unified `conversations` table → AI/human handles → reply goes back through the same adapter. The AI doesn't know which channel a message came from.
+
+| Channel | Mechanism | Effort | When |
+|---|---|---|---|
+| **Email inbound** | Postmark/SES inbound parse → webhook → thread | M (~3h) | First — low compliance burden, no OAuth review, useful for hold-your-place follow-ups |
+| **WhatsApp via Twilio** | Twilio handles the Meta relationship; we just consume Twilio API | M (~5h) | Second — Twilio Sandbox tests in 10min, prod needs Twilio business profile but no Meta review |
+| **Facebook Messenger** | Meta Messenger Platform webhook + Send API; needs `pages_messaging` permission | L (~15h+) | Third — Meta app review takes 2-4 weeks, they reject thin apps |
+| **Instagram DM** | Same Meta Graph API as Messenger; needs IG Business account linked to FB Page | L (~10h+) | After Messenger lands — same OAuth surface |
+| **Theme app extension** | Shopify CLI + theme block for native embed | L (~4h) | Prerequisite for App Store distribution; build before any of the above |
+
+**Hard parts that bloat the estimate:**
+1. **OAuth flows per platform** — each merchant connects their own FB Page / IG / WhatsApp number through our app
+2. **Identity matching** — same human is `psid_8472` on Messenger, `ig_user_id_99` on IG, `+15551234` on WhatsApp, `email@x.com` on web; stitching is hard
+3. **Reply windows** — WhatsApp 24h free-form rule then template messages; Messenger 24h + message tags
+4. **Compliance** — GDPR data deletion, Meta data use audits, WhatsApp opt-in records
+
+**Strategic take — why this is gated:** Botiga's wedge is negotiation, which only works where we can show price + add-to-cart. That's the **website widget**. Multi-channel is competitive parity, not wedge. Email is useful for held-lead follow-ups. Messenger/IG/WhatsApp defer until a paying merchant says "I lose customers because they DM us on IG and never come back." Until then every hour here is an hour not spent on the negotiation moat.
+
+### Round D — Live Conversations & Human Takeover (~6.5h, build after Round A)
+
+> Intercom-style: AI handles by default, owner watches in real-time, can take over a conversation, hands back when done. This is feature parity with Tidio's Operator + Lyro coexistence and Intercom Fin's queue UI.
+
+**Why this matters now:** today Botiga is fire-and-forget AI — if Willow gets it wrong, the customer leaves and the merchant never sees it. With live takeover, owners build trust in the AI by watching it work, and rescue any conversation that's going off-rails. Same database, same widget, just adds a "human in the loop" mode flag.
+
+**Customer side**
+- Same chat widget, no UI break
+- When owner takes over: bubble shows `🟢 Sarah from {Store} is here`
+- When owner hands back: `Willow is back ✨`
+
+**Owner side — new `/dashboard/live` page**
+- Left rail: list of active conversations (last 30min) with unread badge + status pill
+- Center: full thread, real-time scrolling via Supabase Realtime channel per merchant
+- Status per convo: `🤖 AI handling` / `👀 Human watching` / `✋ Human in control`
+- `Take over` button → sets `mode='human'`, AI stops responding, owner types directly
+- `Hand back to AI` button → sets `mode='ai'`, bot resumes with context summary of the human's exchange
+
+**Data model** (one migration)
+- `concierge_threads.mode` enum: `ai` / `human_watching` / `human` (default `ai`)
+- `concierge_threads.taken_over_by` — uuid of dashboard user
+- `concierge_threads.taken_over_at` — timestamp
+- `concierge_messages.sender_type` — `ai` | `human` | `customer` (so the LLM can summarize the human's exchange when AI resumes)
+
+**Realtime mechanism**
+- Supabase Realtime channel per `merchant_id` — owner page subscribes, gets new-message events
+- Customer widget gets owner messages back via existing concierge polling endpoint
+- Browser notification + sound when new message arrives on dashboard
+
+**Effort breakdown**
+
+| Work | Effort |
+|---|---|
+| Migration: `mode`, `taken_over_by`, `taken_over_at`, `sender_type` | S (~30min) |
+| `/api/concierge/takeover` + `/api/concierge/release` + `/api/concierge/owner-message` | S (~1h) |
+| AI gating — `concierge.js` skips LLM call when `mode='human'` | S (~30min) |
+| `/dashboard/live` page with Realtime subscription + thread viewer | M (~3h) |
+| Customer widget — listen for human messages, render with avatar + name | M (~1h) |
+| Browser notification + sound on new dashboard message | S (~30min) |
+
+**Decision still pending:** does AI keep generating *suggested* replies for the owner to send-or-edit while in `human` mode (Intercom Fin pattern), or does it stay silent until released? Suggested replies = ~2h additional but lifts owner productivity meaningfully.
+
+### Round E — REP AI parity: chat-native commerce ✅ SHIPPED 2026-05-08 (~9h)
+
+> Live observation of REP AI on couturecandy.com + bluecorncandles.com (2026-05-08) showed six UX patterns that meaningfully out-polish our concierge today. None of them are wedge features — REP doesn't negotiate, has no video — but together they set the bar for "looks like a real shopping assistant" vs "looks like a chatbot."
+
+| Work | Status | Where |
+|---|---|---|
+| **Inline variant picker in chat** — when customer says "add size 6" or "add medium", concierge renders size/color carousel inline (image + price per variant) and confirms add-to-cart in chat. Customer never leaves chat. | ✅ Shipped | `_cncgPDPVariantPicker` in `api/public/video.js`; intent regex extended in `_cncgDetectIntent`; `_cncgParseVariantHints` filters by size+color. |
+| **Per-merchant brand theming** — `merchant_settings.widget_theme` JSONB with primary color, accent, font, bot name, avatar URL. Widget reads tokens at boot. **Plus** self-serve dashboard editor with 5 presets + 8 color pickers + live preview. | ✅ Shipped | Migration `036_widget_theme.sql`; `_btgvApplyTheme` in widget; `WidgetThemeSection` + `ThemePreview` in `dashboard/app/dashboard/settings/page.js`. |
+| **Hamburger utility menu inside widget** — `New Conversation / Promotions / Track order / Recent Conversations / View cart / Checkout`. | ✅ Shipped | Existing menu extended with `_cncgPromotions` + `_cncgRecentConvs`; new `/api/concierge/threads` endpoint. |
+| **Cart drawer attribution badge** — "🤝 This order was assisted by {BotName}" injected into the Shopify cart drawer when the cart was built via concierge. | ✅ Shipped | `_btgvAttributeCart` (Shopify cart attributes) + `_btgvInjectCartBadge` (DOM injection across common drawer selectors). |
+| **Product-page contextual openers + product-specific chips** — when widget opens on `/products/{handle}`, opener describes *that specific product* and chips become `In stock sizes / Fabric / Details & silhouette / Browse for more`. | ✅ Shipped | `_cncgFetchPDPProduct` prefetches on mount; `_buildContextGreeting` uses first description sentence; `_cncgPDPSizes/Fabric/Details` chip handlers. |
+| **`Searching the catalog…` loading state** with the word "catalog" italicized | ✅ Shipped | `_cncgTyping` switched from `textContent` to `innerHTML`; default phrases lead with `Searching the <em>catalog</em>…`. |
+
+**Decision made (and over-delivered):** chose self-serve dashboard editor over JSONB-only config (Round E decision #4). Theme presets + color pickers + live mini-widget preview shipped together so merchants can see changes before saving.
+
+**Deploy steps:**
+1. Apply migration `036_widget_theme.sql`
+2. Redeploy API (returns `widget_theme` in `/widget/config`)
+3. Redeploy widget (`api/public/video.js`)
+4. Redeploy dashboard (`/dashboard/settings` has new Widget theme section)
+5. Smoke-test on `botiga-6380.myshopify.com`: open product page, type "add size 6 to cart" — confirm carousel renders + cart attribution badge appears in drawer.
+
+**Strategic note:** Round E closes the polish gap with REP AI. None of these features compete with negotiation, video, or marketplace — those remain our wedge.
+
+### Decisions still pending (user to pick)
+
+1. ~~Round A vs Round D vs Round E first?~~ ✅ **Round E shipped 2026-05-08, Round A shipped 2026-05-08.** Next call: Round B (structured Instructions UI + Skills toggles, ~5h) or Round D (Intercom-style human takeover, ~6.5h)?
+2. **Free-text instructions vs structured form (Role/Style/Behaviours/Boundaries)?** Structured = better onboarding, harder to edit power-user cases. Free-text = current state, lower quality first run.
+3. **In Round D, does AI generate *suggested* replies for the owner while in human mode (Intercom Fin pattern), or stay silent?** Suggested = ~2h extra, lifts productivity. Silent = simpler, owner types from scratch.
+4. ~~Round E theming — admin UI or JSONB-only first?~~ ✅ **Admin UI shipped** with 5 presets + 8 color pickers + live preview.
+5. **Public roadmap with votable feature requests — worth building?** Cheap trust signal Chatty uses; could be a static page reading from a Supabase `feature_requests` table.
 
 ---
 
@@ -603,4 +763,4 @@ Rep AI is well-funded with Shopify merchant relationships. If they add video and
 
 ---
 
-*Last updated: 2026-05-05 — added IG Ad Funnel section as user stories (Maya the shopper, Rachel the merchant). Buyer-side V1 (deep-link + welcome banner + negotiable price hint) promoted to Tier 1 — the highest-leverage funnel for IG-running merchants. Previously: brand-story auto-write + full-price justifications (Tier 2), onboarding wizard, Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*
+*Last updated: 2026-05-08 — **Round A shipped** (~6h): Training Data dashboard at `/dashboard/training` with X-of-Y counts per source + Refresh-from-store; Test AI page at `/dashboard/test-ai` with chat surface + Review-sources panel; sidebar nav updated. Onboarding wizard already existed at `/onboarding`. Earlier 2026-05-08: **Round E shipped end-to-end**: all 6 REP AI parity features (inline variant picker in chat, per-merchant theming with self-serve dashboard editor + 5 presets + live preview, hamburger utility menu w/ Promotions + Recent Conversations, cart drawer attribution badge, PDP contextual openers + product-specific chips, "Searching the *catalog*…" loading state). Migration 036_widget_theme.sql added. Decisions remaining: Round A (Chatty polish) vs Round D (Intercom takeover) next. Earlier 2026-05-08: added Round E spec after live observation of REP AI on couturecandy.com + bluecorncandles.com. 2026-05-07: added Tidio (Lyro) + Intercom (Fin) competitor rows, expanded Round C with realistic 30-60h estimate, added Round D — Live Conversations & Human Takeover (~6.5h). Previously (2026-05-05): Chatty (AVADA) competitive polish-gap analysis with Round A/B/C plan, IG Ad Funnel section as user stories (Maya the shopper, Rachel the merchant), buyer-side V1 promoted to Tier 1, brand-story auto-write + full-price justifications (Tier 2), onboarding wizard, Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*

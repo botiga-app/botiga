@@ -218,6 +218,54 @@ router.get('/concierge/thread/:session_id', widgetCors, settingsLimiter, validat
   });
 });
 
+// List recent conversations for this visitor — used by the hamburger
+// "Recent conversations" menu. Returns up to 5 threads matched by
+// session_id, plus any threads tied to the visitor's captured email
+// (so they see history across devices once they've identified).
+router.get('/concierge/threads', widgetCors, settingsLimiter, validateApiKey, async (req, res) => {
+  const merchantId = req.merchant.id;
+  const sessionId = req.query.session_id;
+  if (!sessionId) return res.json({ threads: [] });
+
+  // First, find this session's thread to grab the captured email (if any)
+  const { data: own } = await supabase
+    .from('concierge_threads')
+    .select('customer_email')
+    .eq('merchant_id', merchantId)
+    .eq('session_id', sessionId)
+    .maybeSingle();
+
+  const email = own?.customer_email || null;
+
+  // Pull up to 5 threads — by session OR by email
+  let query = supabase
+    .from('concierge_threads')
+    .select('id, messages, updated_at')
+    .eq('merchant_id', merchantId)
+    .order('updated_at', { ascending: false })
+    .limit(5);
+
+  if (email) {
+    query = query.or(`session_id.eq.${sessionId},customer_email.eq.${email}`);
+  } else {
+    query = query.eq('session_id', sessionId);
+  }
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const threads = (data || []).map(t => {
+    const msgs = Array.isArray(t.messages) ? t.messages : [];
+    const last = msgs[msgs.length - 1];
+    return {
+      id: t.id,
+      last_at: t.updated_at,
+      last_message: last ? String(last.content || '').slice(0, 120) : '',
+    };
+  });
+  res.json({ threads });
+});
+
 // ── CONCIERGE LOG ─────────────────────────────────────────────────────────
 // Lightweight "fire-and-forget" mirror of every message into the server
 // thread. video.js's storefront concierge has its own client-side logic
