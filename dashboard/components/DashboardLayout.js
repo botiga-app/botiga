@@ -16,6 +16,8 @@ const navItems = [
   { href: '/dashboard/rules', label: 'Negotiation bot', icon: '🤝', section: 'Setup' },
   { href: '/dashboard/videos', label: 'Video bot', icon: '🎬', section: 'Setup' },
   { href: '/dashboard/bot-training', label: 'Bot training', icon: '🎓', section: 'Setup' },
+  { href: '/dashboard/training', label: 'Training data', icon: '📚', section: 'Setup' },
+  { href: '/dashboard/test-ai', label: 'Test AI', icon: '🧪', section: 'Setup' },
   { href: '/dashboard/leads', label: 'Leads', icon: '🔥', section: 'Activity' },
   { href: '/dashboard/funnel', label: 'Funnel', icon: '📈', section: 'Activity' },
   { href: '/dashboard/negotiations', label: 'Negotiations', icon: '📋', section: 'Activity' },
