@@ -71,33 +71,40 @@ async function pickFeaturedDeal(merchant) {
 }
 
 // ── Scripted Willow opener ───────────────────────────────────────────────────
-// We script the very first message so the value-hook is bulletproof and the
-// contact ask is unambiguous. Subsequent turns are LLM-driven.
-function buildOpener({ botName, featuredDeal, shopifyDomain }) {
+// We script the very first message so the value-hook is bulletproof.
+// NO contact ask in the opener — capture happens later at a buying-intent
+// moment (price reveal, deal interest), per JTBD. Lead with value + a
+// shopper question, not a gate.
+function buildOpener({ botName, featuredDeal }) {
   const name = botName || 'Willow';
-  if (featuredDeal) {
-    const url = shopifyDomain ? `https://${shopifyDomain}/products/${featuredDeal.handle}` : null;
-    const dealLine = featuredDeal.discount_pct
-      ? `**${featuredDeal.title}** is on deal — up to ${featuredDeal.discount_pct}% off${url ? ` (${url})` : ''}`
-      : `**${featuredDeal.title}** is on deal`;
-    return `Hey, I'm ${name} 👋 I can help with sizes, deals, tracking — anything. BTW we have amazing deals this season — ${dealLine}. Drop your email or phone and I'll unlock the price for you.`;
+  if (featuredDeal && featuredDeal.discount_pct) {
+    return `Hey, I'm ${name} 👋 We've got some great picks on sale — including the **${featuredDeal.title}** at ${featuredDeal.discount_pct}% off. Want a few options, or are you looking for something specific?`;
   }
-  return `Hey, I'm ${name} 👋 I can help with sizes, deals, tracking — anything. We've got some great deals this season. Drop your email or phone and I'll send you a private offer.`;
+  return `Hey, I'm ${name} 👋 What can I help you find — something specific, or want to see what's good today?`;
 }
 
 // ── Willow system prompt — used after the opener ─────────────────────────────
-function buildWillowPrompt({ tone, botName, thread, productContext, featuredDeal, pageContext, matches, ownerInstructions }) {
+function buildWillowPrompt({ tone, botName, thread, productContext, featuredDeal, pageContext, matches, ownerInstructions, customerMessage }) {
   const voice = TONE_VOICE[tone] || TONE_VOICE.friendly;
   const name = botName || 'Willow';
   const haveContact = !!(thread.customer_email || thread.customer_whatsapp);
   const haveName = !!thread.customer_name;
 
-  // The bot's job changes based on what we already have.
+  // Capture timing: only ask for contact at a buying-intent moment, never
+  // during discovery. Per JTBD the email gate fires at the price-reveal /
+  // deal-interest moment, not on every untargeted turn.
+  const lastUser = (customerMessage || '').toLowerCase();
+  const highIntent = /\b(price|cost|how much|deal|discount|offer|buy|order|deliver|ship|negotiate|haggle|checkout)\b/i.test(lastUser);
+
   let job;
   if (!haveContact) {
-    job = `You haven't captured contact yet. If natural, ask for ONE channel — email or phone, never both. Keep it light.`;
+    if (highIntent && (matches?.length || productContext)) {
+      job = `Customer just signaled buying intent on a product. THIS is the moment for the email gate — end your reply with one warm soft-ask: "drop your email and I'll send the private offer 💌". Never both email and phone. One ask, then stop.`;
+    } else {
+      job = `You don't have contact yet, and that's fine. DO NOT ask for email or phone this turn. Focus on helping them browse/decide. Capture comes later when they're closer to buying. NEVER ask for contact in the same message that surfaces products.`;
+    }
   } else if (!haveName) {
-    job = `You have their contact. If the conversation feels relaxed enough, ask for their name once — "what should I call you?". Otherwise just help.`;
+    job = `You have their contact. Focus on helping. Only ask their name if you're already in a friendly back-and-forth — never as the lead of a reply.`;
   } else {
     job = `You have their contact and name. Just be useful.`;
   }
@@ -142,7 +149,8 @@ Your job this turn: ${job}
 RULES — every one is hard:
 - 2 sentences MAX. One is often better. Chat, not email.
 - ONLY name products from the catalog list above. Never invent product names or prices.
-- If you don't have a contact yet, ask for email OR phone (one), never both.
+- Follow the JOB above for contact-capture timing. NEVER ask for contact in the same message that surfaces products. If you do ask, it's ONE channel (email OR phone), never both.
+- Do NOT reference holidays, dates, seasons, or events unless they appear in OWNER INSTRUCTIONS.
 - NEVER say: "I appreciate", "Certainly", "Absolutely", "Of course", "Great question", "Happy to help".
 - No bullet points. Sound like a real human texting.
 - One emoji max. Zero is fine.`.trim();
@@ -295,6 +303,7 @@ async function handleConciergeTurn({ merchantId, sessionId, customerMessage, tri
     pageContext,
     matches,
     ownerInstructions,
+    customerMessage,
   });
 
   // Trim history sent to the LLM to keep cost down.
