@@ -166,6 +166,7 @@ export default function TestAIPage() {
                   >
                     {m.content}
                   </div>
+                  {m.role === 'bot' && m.sources && <InlineProductCards sources={m.sources} />}
                   {m.role === 'bot' && m.sources && (
                     <button
                       onClick={() => setActiveSourcesIdx(activeSourcesIdx === i ? null : i)}
@@ -295,6 +296,71 @@ function SourcesPanel({ sources }) {
       )}
     </div>
   );
+}
+
+// Inline product cards beneath bot replies — mirrors the storefront widget's
+// horizontal carousel so merchants can see what customers actually see.
+// Prefers what the bot chose to surface (featured_deal + matches). Falls
+// back to product-search results so the test surface still signals
+// retrievable products even when the bot's reply skipped them.
+function InlineProductCards({ sources }) {
+  const primary = [];
+  if (sources.featured_deal) primary.push(sources.featured_deal);
+  (sources.matches || []).forEach(p => primary.push(p));
+  const withData = primary.filter(p => p.image_url || p.image || p.price);
+  const fallback = (sources.searched_products || []).filter(p => p.image_url || p.image);
+
+  const cards = withData.length ? withData : fallback;
+  const isFallback = !withData.length && fallback.length > 0;
+  if (!cards.length) return null;
+
+  return (
+    <div className="space-y-1">
+      {isFallback && (
+        <div className="text-[10px] text-amber-700 italic">
+          Bot didn't surface these — showing retrievable products
+        </div>
+      )}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {cards.slice(0, 6).map((p, i) => <InlineProductCard key={p.id || p.shopify_product_id || i} p={p} />)}
+      </div>
+    </div>
+  );
+}
+
+function InlineProductCard({ p }) {
+  const img = p.image_url || p.image;
+  const title = p.title || p.product_name || p.name || '';
+  const price = Number(p.price || 0);
+  const compare = Number(p.compare_at_price || 0);
+  const onSale = compare > price && compare > 0;
+  const pct = onSale ? Math.round((1 - price / compare) * 100) : 0;
+  const href = p.product_url || p.url || (p.handle ? `/products/${p.handle}` : null);
+
+  const inner = (
+    <>
+      {img ? (
+        <img src={img} alt="" className="w-full h-32 object-cover" />
+      ) : (
+        <div className="w-full h-32 bg-gray-100" />
+      )}
+      <div className="p-2">
+        <div className="text-xs font-medium text-gray-900 leading-snug line-clamp-2" style={{ minHeight: '2.4em' }}>
+          {title}
+        </div>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-xs font-semibold text-gray-900">${price.toFixed(0)}</span>
+          {onSale && <span className="text-[10px] text-gray-400 line-through">${compare.toFixed(0)}</span>}
+          {onSale && <span className="text-[10px] font-semibold text-emerald-600">−{pct}%</span>}
+        </div>
+      </div>
+    </>
+  );
+
+  const cls = "flex-shrink-0 w-36 bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-indigo-300 transition-colors";
+  return href
+    ? <a href={href} target="_blank" rel="noreferrer" className={cls}>{inner}</a>
+    : <div className={cls}>{inner}</div>;
 }
 
 function Dots() {
