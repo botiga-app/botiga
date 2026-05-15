@@ -69,6 +69,20 @@
   // of the conversational /api/widget/chat. Cleared on deal close/abandon.
   var _btgNegoChat = { active: false, negotiationId: null, productInfo: null, listPrice: 0 };
 
+  // Per-product eligibility cache. Keyed by handle. Avoid hitting
+  // /widget/product-rules on every render — fetch once per product per page.
+  var _btgRulesCache = {};
+  function _btgvFetchProductRules(handle, tags, cb) {
+    if (!handle) { cb && cb({ negotiable: true }); return; }
+    if (_btgRulesCache[handle]) { cb && cb(_btgRulesCache[handle]); return; }
+    var qs = '?k=' + API_KEY + '&handle=' + encodeURIComponent(handle);
+    if (tags && tags.length) qs += '&tags=' + encodeURIComponent(tags.join(','));
+    fetch(API_BASE + '/api/widget/product-rules' + qs)
+      .then(function (r) { return r.ok ? r.json() : { negotiable: true }; })
+      .then(function (d) { _btgRulesCache[handle] = d; cb && cb(d); })
+      .catch(function () { cb && cb({ negotiable: true }); });
+  }
+
   // ─── Deal persistence (localStorage, 24h TTL) ────────────────────────────────
   function _btgvSaveDeal(deal) {
     try {
@@ -712,8 +726,47 @@
 
       // ─── Concierge chat ───────────────────────────────────────────────────────
       // Widget window — portrait ratio (taller than wide) on all screen sizes
-      '#_btgv_cncg{position:fixed;bottom:16px;right:16px;z-index:99997;width:360px;height:min(640px,calc(100svh - 100px));background:#0c0c14;border-radius:20px;border:1px solid rgba(255,255,255,.06);box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden;transform:translateY(20px) scale(0.96);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .22s ease}',
+      '#_btgv_cncg{position:fixed;bottom:16px;right:16px;z-index:99997;width:360px;height:min(640px,calc(100svh - 100px));background:#0c0c14;border-radius:20px;border:1px solid rgba(255,255,255,.06);box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden;transform:translateY(20px) scale(0.96);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .22s ease,box-shadow .35s ease}',
       '#_btgv_cncg.open{transform:translateY(0) scale(1);opacity:1;pointer-events:all}',
+      // ─── Negotiation mode (Slice D) — bold visual when haggle is live ─────
+      '#_btgv_cncg.negotiating{animation:_btgv_neg_glow 2.4s ease-in-out infinite}',
+      '@keyframes _btgv_neg_glow{0%,100%{box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 2px rgba(245,158,11,0.4),inset 0 0 0 1px rgba(245,158,11,0.18)}50%{box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 3px rgba(245,158,11,0.7),inset 0 0 0 1px rgba(245,158,11,0.32)}}',
+      '#_btgv_cncg.negotiating ._btgv_cncg_msgs{background:linear-gradient(180deg,rgba(245,158,11,0.08) 0%,rgba(245,158,11,0.02) 100%)}',
+      '#_btgv_cncg.negotiating ._btgv_cncg_shim{background:linear-gradient(90deg,#f59e0b,#f97316,#ec4899,#f59e0b);background-size:200% 100%;animation:_btgv_cncg_shim 1.6s linear infinite}',
+      '#_btgv_cncg.negotiating ._btgv_cncg_title{background:linear-gradient(135deg,#fbbf24,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}',
+      '._btgv_neg_pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;background:rgba(245,158,11,0.18);color:#fbbf24;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;animation:_btgv_neg_pulse 2s ease-in-out infinite}',
+      '@keyframes _btgv_neg_pulse{0%,100%{transform:scale(1);opacity:.95}50%{transform:scale(1.04);opacity:1}}',
+      // ─── Offer card (Slice E) ────────────────────────────────────────────
+      '._btgv_offercard{align-self:flex-start;width:88%;max-width:300px;background:linear-gradient(160deg,rgba(245,158,11,0.16),rgba(236,72,153,0.10));border:1px solid rgba(245,158,11,0.32);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 18px rgba(245,158,11,0.18)}',
+      '._btgv_offercard_hdr{display:flex;gap:10px;align-items:center}',
+      '._btgv_offercard_img{width:48px;height:48px;border-radius:10px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.08)}',
+      '._btgv_offercard_info{flex:1;min-width:0}',
+      '._btgv_offercard_label{font-size:10px;color:#fbbf24;font-weight:700;letter-spacing:.04em;text-transform:uppercase}',
+      '._btgv_offercard_name{font-size:12px;color:#fff;font-weight:600;line-height:1.3;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '._btgv_offercard_pricerow{display:flex;align-items:baseline;gap:8px}',
+      '._btgv_offercard_now{font-size:24px;color:#fff;font-weight:800;line-height:1}',
+      '._btgv_offercard_was{font-size:13px;color:rgba(255,255,255,.45);text-decoration:line-through}',
+      '._btgv_offercard_save{font-size:11px;color:#34d399;font-weight:700;background:rgba(52,211,153,0.14);padding:2px 8px;border-radius:6px}',
+      '._btgv_offercard_meta{font-size:10px;color:rgba(255,255,255,.5)}',
+      // ─── Polished negotiation chips (Slice F) ────────────────────────────
+      '._btgv_negochips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px 0}',
+      '._btgv_negochip_accept{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:9px 16px;border-radius:18px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,0.35);transition:transform .12s}',
+      '._btgv_negochip_accept:active{transform:scale(.97)}',
+      '._btgv_negochip_counter{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.18);padding:9px 14px;border-radius:18px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}',
+      '._btgv_negochip_counter:hover{background:rgba(255,255,255,.14)}',
+      '._btgv_negochip_pass{background:transparent;color:rgba(255,255,255,.5);border:none;padding:9px 12px;border-radius:18px;font-size:11px;font-weight:500;cursor:pointer}',
+      '._btgv_negochip_pass:hover{color:#fff}',
+      // ─── Page-level celebration (Slice H) ────────────────────────────────
+      '#_btgv_pagewin{position:fixed;inset:0;z-index:2147483647;background:radial-gradient(circle at center,rgba(0,0,0,.86),rgba(0,0,0,.95));display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .4s ease;pointer-events:none}',
+      '#_btgv_pagewin.show{opacity:1;pointer-events:all}',
+      '._btgv_pagewin_card{text-align:center;color:#fff;padding:32px 40px;display:flex;flex-direction:column;align-items:center;gap:14px;transform:scale(.85);transition:transform .55s cubic-bezier(.34,1.56,.64,1)}',
+      '#_btgv_pagewin.show ._btgv_pagewin_card{transform:scale(1)}',
+      '._btgv_pagewin_emoji{font-size:72px;animation:_btgv_pw_bounce .7s cubic-bezier(.34,1.56,.64,1)}',
+      '@keyframes _btgv_pw_bounce{0%{transform:scale(0);opacity:0}60%{transform:scale(1.18);opacity:1}100%{transform:scale(1)}}',
+      '._btgv_pagewin_label{font-size:14px;color:#fbbf24;font-weight:700;letter-spacing:.18em;text-transform:uppercase}',
+      '._btgv_pagewin_price{font-size:72px;font-weight:900;line-height:1;background:linear-gradient(135deg,#fbbf24,#fb7185,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}',
+      '._btgv_pagewin_sub{font-size:13px;color:rgba(255,255,255,.7);margin-top:2px}',
+      '._btgv_pagewin_code{font-family:monospace;font-size:11px;color:rgba(255,255,255,.85);background:rgba(255,255,255,.08);padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.14);letter-spacing:.1em;margin-top:6px}',
       '#_btgv_cncg ._btgv_cncg_msgs{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 12px 8px;display:flex;flex-direction:column;gap:9px;min-height:0;scrollbar-width:none}',
       // expanded: wider but still portrait
       '#_btgv_cncg.expanded{width:min(420px,calc(100vw - 32px));height:min(720px,calc(100svh - 40px))}',
@@ -5574,10 +5627,34 @@
       _cncgAddBot(msgs, "Hmm, I can't read the price on this one. Open the product page first?");
       return;
     }
+
+    // Eligibility check — polite refuse if the merchant has marked this
+    // product (or its tag) as non-negotiable. Don't even spin up a
+    // negotiation row; just stay in conversation mode.
+    var handle = prod.handle || prod.product_handle || null;
+    var tags = prod.tags || [];
+    _btgvFetchProductRules(handle, tags, function (rules) {
+      if (rules && rules.negotiable === false) {
+        _cncgAddBot(msgs, "Aw, this one's at fixed price 💌 But I can help you snag a deal on something similar — want me to look?");
+        _cncgAddChips(msgs, [
+          { label: '🔍 Show me similar', fn: function () { _cncgFind(msgs); } },
+          { label: '🛒 Just add to cart', fn: function () {
+            var vid = prod.shopify_variant_id || prod.variant_id;
+            if (vid) addToCart(vid, function () { fireConfetti(); _cncgAddBot(msgs, '✓ Added to cart!'); });
+          }},
+        ]);
+        return;
+      }
+      _btgvStartChatNegotiationConfirmed(prod, msgs, listPrice);
+    });
+  }
+
+  function _btgvStartChatNegotiationConfirmed(prod, msgs, listPrice) {
     _btgNegoChat.active = true;
     _btgNegoChat.productInfo = prod;
     _btgNegoChat.listPrice = listPrice;
     _btgNegoChat.negotiationId = null;
+    _btgvEnterNegotiationVisualMode(prod);
 
     var typing = _cncgTyping(msgs);
     var body = {
@@ -5600,11 +5677,13 @@
         if (typing && typing.remove) typing.remove();
         if (d.error) {
           _btgNegoChat.active = false;
+          _btgvExitNegotiationVisualMode();
           _cncgAddBot(msgs, "Hmm, hit a snag starting the negotiation. Try again in a sec?");
           return;
         }
         _btgNegoChat.negotiationId = d.negotiation_id;
         _cncgAddBot(msgs, d.bot_reply || "Let me see what I can do on this 💭");
+        _btgNegoRenderOfferCard(d, msgs);
         try { _btgvFireFunnelEvent('negotiated', { negotiation_id: d.negotiation_id, product: prod.product_name }); } catch (_) {}
         if (d.status === 'won' && d.deal_price) { _btgNegoCloseDeal(d, msgs); return; }
         _btgNegoRenderOfferChips(d, msgs);
@@ -5612,30 +5691,210 @@
       .catch(function () {
         if (typing && typing.remove) typing.remove();
         _btgNegoChat.active = false;
+        _btgvExitNegotiationVisualMode();
         _cncgAddBot(msgs, "Hmm, couldn't reach the negotiation engine. Try again?");
       });
   }
 
-  // Chip row under each negotiation reply. Lightweight for now — Slice F will
-  // upgrade these to the Airbnb-style offer cards with [Accept $X] + [Counter].
-  function _btgNegoRenderOfferChips(d, msgs) {
-    var chips = [];
-    if (d.offered_price) {
-      chips.push({
-        label: '✓ Accept $' + Math.round(d.offered_price),
-        fn: function () { _cncgAddUser(msgs, 'I accept'); _btgNegoSendCounter('I accept', msgs); },
-      });
+  // Toggle the bubble's bold negotiation visual mode. The class drives all
+  // the CSS (glow, tint, header swap). The subtitle also gets a "Negotiating
+  // <Product>" pill so the context is unmistakable.
+  function _btgvEnterNegotiationVisualMode(prod) {
+    if (!_cncgEl) return;
+    _cncgEl.classList.add('negotiating');
+    var sub = _cncgEl.querySelector('._btgv_cncg_sub');
+    if (sub) {
+      if (!sub.dataset._btgvOrig) sub.dataset._btgvOrig = sub.textContent;
+      sub.innerHTML = '<span class="_btgv_neg_pill">🤝 Negotiating</span> ' +
+        (prod.product_name || prod.title || 'this item');
     }
-    chips.push({
-      label: '💬 Counter',
-      fn: function () {
+  }
+
+  function _btgvExitNegotiationVisualMode() {
+    if (!_cncgEl) return;
+    _cncgEl.classList.remove('negotiating');
+    var sub = _cncgEl.querySelector('._btgv_cncg_sub');
+    if (sub && sub.dataset._btgvOrig) {
+      sub.textContent = sub.dataset._btgvOrig;
+      delete sub.dataset._btgvOrig;
+    }
+  }
+
+  // Airbnb-style offer card. Renders below the bot's text reply so the
+  // anchored counter is impossible to miss. Customer can act with chips
+  // immediately beneath — no need to read prose and parse a number.
+  function _btgNegoRenderOfferCard(d, msgs) {
+    if (!msgs) return;
+    var offered = parseFloat(d.offered_price || d.deal_price || 0);
+    if (!(offered > 0)) return;
+    var prod = _btgNegoChat.productInfo || {};
+    var listPrice = _btgNegoChat.listPrice || parseFloat(prod.price || 0);
+    var save = listPrice - offered;
+    var pct = listPrice > 0 ? Math.round((save / listPrice) * 100) : 0;
+
+    var card = document.createElement('div');
+    card.className = '_btgv_offercard';
+
+    var hdr = document.createElement('div');
+    hdr.className = '_btgv_offercard_hdr';
+    if (prod.image_url) {
+      var img = document.createElement('img');
+      img.className = '_btgv_offercard_img';
+      img.src = prod.image_url;
+      img.onerror = function () { this.style.display = 'none'; };
+      hdr.appendChild(img);
+    }
+    var info = document.createElement('div');
+    info.className = '_btgv_offercard_info';
+    var label = document.createElement('div');
+    label.className = '_btgv_offercard_label';
+    label.textContent = d.status === 'won' ? '🎉 Deal locked' : '🎁 My offer';
+    var name = document.createElement('div');
+    name.className = '_btgv_offercard_name';
+    name.textContent = prod.product_name || prod.title || 'this item';
+    info.appendChild(label);
+    info.appendChild(name);
+    hdr.appendChild(info);
+    card.appendChild(hdr);
+
+    var priceRow = document.createElement('div');
+    priceRow.className = '_btgv_offercard_pricerow';
+    var now = document.createElement('span');
+    now.className = '_btgv_offercard_now';
+    now.textContent = '$' + offered.toFixed(0);
+    priceRow.appendChild(now);
+    if (listPrice > offered) {
+      var was = document.createElement('span');
+      was.className = '_btgv_offercard_was';
+      was.textContent = '$' + listPrice.toFixed(0);
+      priceRow.appendChild(was);
+    }
+    if (pct > 0) {
+      var sv = document.createElement('span');
+      sv.className = '_btgv_offercard_save';
+      sv.textContent = 'Save $' + save.toFixed(0) + ' · ' + pct + '%';
+      priceRow.appendChild(sv);
+    }
+    card.appendChild(priceRow);
+
+    if (d.is_final_offer) {
+      var meta = document.createElement('div');
+      meta.className = '_btgv_offercard_meta';
+      meta.textContent = '⏳ This is my best — yours for 10 min';
+      card.appendChild(meta);
+    }
+
+    msgs.appendChild(card);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // Polished chip row beneath each offer (Slice F).
+  // [Accept $X] (prominent green) · [Counter] (neutral) · [Pass for now] (subtle).
+  // "Pass for now" gracefully ends the negotiation without burning the deal.
+  function _btgNegoRenderOfferChips(d, msgs) {
+    if (!msgs) return;
+    var wrap = document.createElement('div');
+    wrap.className = '_btgv_negochips';
+
+    var offered = parseFloat(d.offered_price || d.deal_price || 0);
+    if (offered > 0 && d.status !== 'won') {
+      var ok = document.createElement('button');
+      ok.className = '_btgv_negochip_accept';
+      ok.textContent = '✓ Accept $' + Math.round(offered);
+      ok.onclick = function () {
+        _cncgAddUser(msgs, 'I accept');
+        _btgNegoSendCounter('I accept', msgs);
+      };
+      wrap.appendChild(ok);
+    }
+
+    if (d.status !== 'won') {
+      var cn = document.createElement('button');
+      cn.className = '_btgv_negochip_counter';
+      cn.textContent = '💬 Counter';
+      cn.onclick = function () {
         if (_cncgEl && _cncgEl._inp) {
           _cncgEl._inp.focus();
           _cncgEl._inp.placeholder = 'Type your counter-offer…';
         }
-      },
-    });
-    _cncgAddChips(msgs, chips);
+      };
+      wrap.appendChild(cn);
+
+      var pass = document.createElement('button');
+      pass.className = '_btgv_negochip_pass';
+      pass.textContent = 'Pass for now';
+      pass.onclick = function () {
+        _cncgAddUser(msgs, 'Pass for now');
+        _cncgAddBot(msgs, "No pressure — I'm here whenever you want to come back to this 💌");
+        _btgNegoChat.active = false;
+        _btgNegoChat.negotiationId = null;
+        _btgvExitNegotiationVisualMode();
+      };
+      wrap.appendChild(pass);
+    }
+
+    msgs.appendChild(wrap);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // Page-level celebration overlay. Fires on deal accept BEFORE redirect.
+  // The whole window celebrates, not just the bubble — matches the
+  // emotional weight of "you just won a deal".
+  function _btgvShowPageCelebration(dealPrice, discountCode, redirectUrl, productName) {
+    var existing = document.getElementById('_btgv_pagewin');
+    if (existing) existing.remove();
+
+    var wrap = document.createElement('div');
+    wrap.id = '_btgv_pagewin';
+
+    var card = document.createElement('div');
+    card.className = '_btgv_pagewin_card';
+
+    var emoji = document.createElement('div');
+    emoji.className = '_btgv_pagewin_emoji';
+    emoji.textContent = '🎉';
+    card.appendChild(emoji);
+
+    var label = document.createElement('div');
+    label.className = '_btgv_pagewin_label';
+    label.textContent = 'Deal Locked';
+    card.appendChild(label);
+
+    var price = document.createElement('div');
+    price.className = '_btgv_pagewin_price';
+    price.textContent = '$' + Math.round(dealPrice);
+    card.appendChild(price);
+
+    if (productName) {
+      var sub = document.createElement('div');
+      sub.className = '_btgv_pagewin_sub';
+      sub.textContent = productName;
+      card.appendChild(sub);
+    }
+
+    if (discountCode) {
+      var code = document.createElement('div');
+      code.className = '_btgv_pagewin_code';
+      code.textContent = 'Code: ' + discountCode;
+      card.appendChild(code);
+    }
+
+    var hint = document.createElement('div');
+    hint.className = '_btgv_pagewin_sub';
+    hint.style.marginTop = '14px';
+    hint.textContent = 'Heading to checkout…';
+    card.appendChild(hint);
+
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+    requestAnimationFrame(function () { wrap.classList.add('show'); });
+    fireConfetti();
+    setTimeout(function () { try { fireConfetti(); } catch (_) {} }, 300);
+    setTimeout(function () { try { fireConfetti(); } catch (_) {} }, 700);
+
+    setTimeout(function () {
+      window.location.href = redirectUrl || '/checkout';
+    }, 1800);
   }
 
   function _btgNegoSendCounter(text, msgs) {
@@ -5661,8 +5920,14 @@
         if (typing && typing.remove) typing.remove();
         if (d.error) { _cncgAddBot(msgs, "Hmm, the engine glitched. Try again?"); return; }
         _cncgAddBot(msgs, d.bot_reply || '');
+        _btgNegoRenderOfferCard(d, msgs);
         if (d.status === 'won' && d.deal_price) { _btgNegoCloseDeal(d, msgs); return; }
-        if (d.status === 'lost' || d.status === 'abandoned') { _btgNegoChat.active = false; return; }
+        if (d.status === 'lost' || d.status === 'abandoned') {
+          _btgvExitNegotiationVisualMode();
+          _btgNegoChat.active = false;
+          _btgNegoChat.negotiationId = null;
+          return;
+        }
         _btgNegoRenderOfferChips(d, msgs);
       })
       .catch(function () {
@@ -5689,14 +5954,15 @@
       expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     });
     _cncgUpdateProfile({ negotiated: { name: prod.product_name, dealPrice: Math.round(d.deal_price), listPrice: Math.round(listPrice) } });
-    fireConfetti();
     _cncgAddBot(msgs, '🎉 Deal locked at $' + Math.round(d.deal_price) + '! Taking you to checkout…');
     _btgNegoChat.active = false;
     _btgNegoChat.negotiationId = null;
-    setTimeout(function () {
-      var dest = d.checkout_url || d.draft_order_invoice_url || '/checkout';
-      window.location.href = dest;
-    }, 2000);
+    _btgvExitNegotiationVisualMode();
+    // Page-level celebration takeover (Slice H) — the whole window
+    // celebrates, then redirects to checkout. Replaces the bubble-only
+    // confetti + 2s timeout pattern.
+    var dest = d.checkout_url || d.draft_order_invoice_url || '/checkout';
+    _btgvShowPageCelebration(d.deal_price, d.discount_code, dest, prod.product_name);
   }
 
   // ── LLM free-form chat with full store catalog ───────────────────────────────
@@ -5970,7 +6236,15 @@
     (function () {
       try {
         var params = new URL(window.location.href).searchParams;
-        if (params.get('btg_neg') === '1' && window.location.pathname.indexOf('/products/') !== -1) {
+        // Slice G: proactively pre-stage the negotiation intro on EVERY
+        // negotiable product page, not just when ?btg_neg=1 is set. This
+        // turns the haggle into a first-class affordance for boutique
+        // shoppers — the existing concierge-open flow (line ~3815) will
+        // surface the product card + "Push for a better price" chip
+        // automatically once _btgNegProduct is populated.
+        var isPDP = window.location.pathname.indexOf('/products/') !== -1;
+        var forced = params.get('btg_neg') === '1';
+        if (isPDP) {
           var handle = window.location.pathname.split('/products/')[1].split('?')[0].split('#')[0];
           if (!handle) return;
           fetch('/products/' + handle + '.json')
@@ -5980,15 +6254,25 @@
               var p = data.product;
               var v = p.variants && p.variants[0];
               if (!v) return;
-              _btgNegProduct = {
-                shopify_product_id: String(p.id),
-                product_name: p.title,
-                price: v.price,
-                compare_at_price: v.compare_at_price || '0',
-                handle: p.handle,
-                image_url: (p.images && p.images[0] && p.images[0].src) || '',
-                variant_id: v.id,
+              var setIt = function () {
+                _btgNegProduct = {
+                  shopify_product_id: String(p.id),
+                  product_name: p.title,
+                  price: v.price,
+                  compare_at_price: v.compare_at_price || '0',
+                  handle: p.handle,
+                  image_url: (p.images && p.images[0] && p.images[0].src) || '',
+                  variant_id: v.id,
+                  tags: p.tags || [],
+                };
               };
+              if (forced) { setIt(); return; }
+              // Gated by per-product eligibility — don't pre-stage haggle
+              // intro on items the merchant has marked fixed-price.
+              _btgvFetchProductRules(p.handle, p.tags || [], function (rules) {
+                if (rules && rules.negotiable === false) return;
+                setIt();
+              });
             }).catch(function () {});
         }
       } catch (e) {}
