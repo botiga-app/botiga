@@ -64,6 +64,10 @@
   var launcherEl = null;
   var _cncgEl = null, _cncgOpen = false, _cncgHistory = [];
   var _btgNegProduct = null;
+  // In-chat negotiation state. When `active`, _cncgSend routes the customer's
+  // next message to /api/negotiate (with the tracked negotiation_id) instead
+  // of the conversational /api/widget/chat. Cleared on deal close/abandon.
+  var _btgNegoChat = { active: false, negotiationId: null, productInfo: null, listPrice: 0 };
 
   // ─── Deal persistence (localStorage, 24h TTL) ────────────────────────────────
   function _btgvSaveDeal(deal) {
@@ -3499,7 +3503,7 @@
     setTimeout(function () {
       var negProd = prod;
       _cncgAddChips(msgs, [
-        { label: '🤝 Push for a better price', fn: function () { openNegotiateModal(negProd); }},
+        { label: '🤝 Push for a better price', fn: function () { _btgvStartChatNegotiation(negProd, msgs); }},
         { label: '🛒 Add to cart at ' + (priceStr || 'list price'), fn: function () {
           var vid = negProd.variant_id;
           if (!vid) return;
@@ -5547,9 +5551,159 @@
     return '/checkout';
   }
 
+  // ── In-chat negotiation (replaces the legacy openNegotiateModal flow) ────────
+  // The bubble becomes the negotiation surface. Same chat surface, same brand
+  // voice, same merchant theme. /api/negotiate handles the price ladder and
+  // floor enforcement; we just render its replies as concierge messages.
+  function _btgvStartChatNegotiation(prod, msgs) {
+    if (!msgs || !prod) return;
+    if (_btgNegoChat.active && _btgNegoChat.negotiationId) {
+      _cncgAddBot(msgs, "We're already on this one — counter with a number?");
+      return;
+    }
+    var listPrice = parseFloat(prod.price || prod.list_price || 0);
+    if (!(listPrice > 0)) {
+      _cncgAddBot(msgs, "Hmm, I can't read the price on this one. Open the product page first?");
+      return;
+    }
+    _btgNegoChat.active = true;
+    _btgNegoChat.productInfo = prod;
+    _btgNegoChat.listPrice = listPrice;
+    _btgNegoChat.negotiationId = null;
+
+    var typing = _cncgTyping(msgs);
+    var body = {
+      session_id: _getOrInitSessionId(),
+      product_name: prod.product_name || prod.title || 'this item',
+      product_url: prod.product_url || (prod.handle ? '/products/' + prod.handle : null),
+      product_image: prod.image_url || null,
+      variant_id: prod.shopify_variant_id || prod.variant_id || null,
+      list_price: listPrice,
+      opening: true,
+    };
+
+    fetch(API_BASE + '/api/negotiate?k=' + API_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (typing && typing.remove) typing.remove();
+        if (d.error) {
+          _btgNegoChat.active = false;
+          _cncgAddBot(msgs, "Hmm, hit a snag starting the negotiation. Try again in a sec?");
+          return;
+        }
+        _btgNegoChat.negotiationId = d.negotiation_id;
+        _cncgAddBot(msgs, d.bot_reply || "Let me see what I can do on this 💭");
+        try { _btgvFireFunnelEvent('negotiated', { negotiation_id: d.negotiation_id, product: prod.product_name }); } catch (_) {}
+        if (d.status === 'won' && d.deal_price) { _btgNegoCloseDeal(d, msgs); return; }
+        _btgNegoRenderOfferChips(d, msgs);
+      })
+      .catch(function () {
+        if (typing && typing.remove) typing.remove();
+        _btgNegoChat.active = false;
+        _cncgAddBot(msgs, "Hmm, couldn't reach the negotiation engine. Try again?");
+      });
+  }
+
+  // Chip row under each negotiation reply. Lightweight for now — Slice F will
+  // upgrade these to the Airbnb-style offer cards with [Accept $X] + [Counter].
+  function _btgNegoRenderOfferChips(d, msgs) {
+    var chips = [];
+    if (d.offered_price) {
+      chips.push({
+        label: '✓ Accept $' + Math.round(d.offered_price),
+        fn: function () { _cncgAddUser(msgs, 'I accept'); _btgNegoSendCounter('I accept', msgs); },
+      });
+    }
+    chips.push({
+      label: '💬 Counter',
+      fn: function () {
+        if (_cncgEl && _cncgEl._inp) {
+          _cncgEl._inp.focus();
+          _cncgEl._inp.placeholder = 'Type your counter-offer…';
+        }
+      },
+    });
+    _cncgAddChips(msgs, chips);
+  }
+
+  function _btgNegoSendCounter(text, msgs) {
+    if (!_btgNegoChat.active || !_btgNegoChat.negotiationId) return false;
+    var typing = _cncgTyping(msgs);
+    var prod = _btgNegoChat.productInfo || {};
+    var body = {
+      session_id: _getOrInitSessionId(),
+      negotiation_id: _btgNegoChat.negotiationId,
+      list_price: _btgNegoChat.listPrice,
+      customer_message: text,
+      opening: false,
+      product_name: prod.product_name || 'this item',
+      variant_id: prod.shopify_variant_id || prod.variant_id || null,
+    };
+    fetch(API_BASE + '/api/negotiate?k=' + API_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (typing && typing.remove) typing.remove();
+        if (d.error) { _cncgAddBot(msgs, "Hmm, the engine glitched. Try again?"); return; }
+        _cncgAddBot(msgs, d.bot_reply || '');
+        if (d.status === 'won' && d.deal_price) { _btgNegoCloseDeal(d, msgs); return; }
+        if (d.status === 'lost' || d.status === 'abandoned') { _btgNegoChat.active = false; return; }
+        _btgNegoRenderOfferChips(d, msgs);
+      })
+      .catch(function () {
+        if (typing && typing.remove) typing.remove();
+        _cncgAddBot(msgs, "Hmm, couldn't reach the engine. Try again?");
+      });
+    return true;
+  }
+
+  function _btgNegoCloseDeal(d, msgs) {
+    var prod = _btgNegoChat.productInfo || {};
+    var listPrice = _btgNegoChat.listPrice;
+    try { _btgvFireFunnelEvent('won', { negotiation_id: d.negotiation_id, deal_price: d.deal_price }); } catch (_) {}
+    _btgvSaveDeal({
+      negotiationId: d.negotiation_id,
+      productName: prod.product_name || '',
+      listPrice: listPrice,
+      price: d.deal_price,
+      checkoutUrl: d.checkout_url,
+      invoiceUrl: d.draft_order_invoice_url || d.checkout_url,
+      draftOrderId: d.draft_order_id || null,
+      lineItemId: d.draft_order_line_item_id || null,
+      discountCode: d.discount_code || null,
+      expiresAt: d.expires_at || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    });
+    _cncgUpdateProfile({ negotiated: { name: prod.product_name, dealPrice: Math.round(d.deal_price), listPrice: Math.round(listPrice) } });
+    fireConfetti();
+    _cncgAddBot(msgs, '🎉 Deal locked at $' + Math.round(d.deal_price) + '! Taking you to checkout…');
+    _btgNegoChat.active = false;
+    _btgNegoChat.negotiationId = null;
+    setTimeout(function () {
+      var dest = d.checkout_url || d.draft_order_invoice_url || '/checkout';
+      window.location.href = dest;
+    }, 2000);
+  }
+
   // ── LLM free-form chat with full store catalog ───────────────────────────────
   function _cncgSend(text, msgs, inp, sendBtn) {
     if (!msgs) return;
+    // If a chat-mode negotiation is live, route this message through the
+    // negotiation engine, not the conversational chat endpoint.
+    if (_btgNegoChat.active && _btgNegoChat.negotiationId) {
+      inp.value = '';
+      sendBtn.disabled = false;
+      _cncgAddUser(msgs, text);
+      if (_cncgEl && _cncgEl._inp) _cncgEl._inp.placeholder = '';
+      _btgNegoSendCounter(text, msgs);
+      return;
+    }
     inp.value = ''; sendBtn.disabled = true;
     _cncgAddUser(msgs, text);
     _cncgHistory.push({ role: 'user', content: text });
