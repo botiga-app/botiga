@@ -1002,7 +1002,7 @@
       e.stopPropagation();
       track(vid.id, 'negotiate', tag.shopify_product_id);
       pauseFeedForAction();
-      openNegotiateModal(tag);
+      _btgvStartChatNegotiation(tag);
     };
     ctaRow.appendChild(negBtn);
 
@@ -1291,7 +1291,7 @@
       actions.appendChild(iconBtn('_btgv_ib_neg', '🤝', 'Negotiate', function () {
         track(videoId, 'negotiate', tag.shopify_product_id);
         pauseFeedForAction();
-        openNegotiateModal(tag);
+        _btgvStartChatNegotiation(tag);
       }));
 
       body.appendChild(nm); body.appendChild(pr); body.appendChild(actions);
@@ -2489,7 +2489,7 @@
 
         pbtns.appendChild(cellBtn('_btgv_gc_pb_neg', '🤝', 'Negotiate', function () {
           track(trackId, 'negotiate', tag.shopify_product_id);
-          openNegotiateModal(tag);
+          _btgvStartChatNegotiation(tag);
         }));
 
         prod.appendChild(pbtns);
@@ -5556,7 +5556,15 @@
   // voice, same merchant theme. /api/negotiate handles the price ladder and
   // floor enforcement; we just render its replies as concierge messages.
   function _btgvStartChatNegotiation(prod, msgs) {
-    if (!msgs || !prod) return;
+    if (!prod) return;
+    // Callers from outside the concierge (video CTAs, PDP button, grid cards)
+    // don't have a `msgs` reference. Open the bubble and grab the messages
+    // element so the negotiation surfaces in the same place every time.
+    if (!msgs) {
+      try { if (typeof openConcierge === 'function') openConcierge(); } catch (_) {}
+      msgs = _cncgEl && _cncgEl._msgs ? _cncgEl._msgs : null;
+    }
+    if (!msgs) return;
     if (_btgNegoChat.active && _btgNegoChat.negotiationId) {
       _cncgAddBot(msgs, "We're already on this one — counter with a number?");
       return;
