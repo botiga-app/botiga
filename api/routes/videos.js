@@ -421,6 +421,178 @@ function normalizeInstagramPosts(raw) {
     .filter(p => p.thumbnail_url || p.video_url);
 }
 
+// ─── Paste-a-URL import ─────────────────────────────────────────────────────
+// Merchant pastes a URL — we detect the platform, resolve to direct media,
+// mirror to S3, insert a row. The auto-tag-tick cron will pick it up
+// from there. Works for any platform Cobalt supports (TikTok, FB, FB Live
+// recordings, YouTube, Twitter, Reddit, Vimeo, ~30 total), plus an IG
+// fast-path via our existing RapidAPI proxy, plus raw .mp4/.mov URLs.
+//
+// Sidesteps Meta app review entirely — we never touch Meta's official APIs
+// for content. The merchant operates on their own content; Cobalt resolves
+// publicly-accessible media URLs.
+router.post('/merchants/:merchantId/videos/import-url', dashboardCors, async (req, res) => {
+  const { merchantId } = req.params;
+  const { url, title } = req.body || {};
+
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'url is required' });
+  }
+
+  let cleanUrl;
+  try {
+    cleanUrl = new URL(url.trim()).toString();
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  const platform = _detectVideoPlatform(cleanUrl);
+
+  // Dedup by source_url — paste same URL twice → return the existing row.
+  const { data: existing } = await supabase
+    .from('videos')
+    .select('id')
+    .eq('merchant_id', merchantId)
+    .eq('source_url', cleanUrl)
+    .maybeSingle();
+  if (existing) {
+    return res.json({ video_id: existing.id, status: 'duplicate', message: 'Already imported.' });
+  }
+
+  let mediaUrls;
+  try {
+    mediaUrls = await _resolveMediaUrls(cleanUrl, platform);
+  } catch (err) {
+    return res.status(400).json({ error: 'Could not resolve media from URL', detail: err.message, platform });
+  }
+  if (!mediaUrls.videoUrl) {
+    return res.status(400).json({ error: 'No video found at that URL', platform });
+  }
+
+  // Mirror to S3 so the URL we store is permanent (Cobalt-tunneled and
+  // IG-CDN URLs both expire — keep our copy).
+  const mirrored = await importIgMedia({
+    videoUrl: mediaUrls.videoUrl,
+    thumbnailUrl: mediaUrls.thumbnailUrl,
+    merchantId,
+  });
+
+  const { data, error } = await supabase
+    .from('videos')
+    .insert({
+      merchant_id: merchantId,
+      title: (title && title.trim()) || mediaUrls.title || null,
+      s3_key: mirrored.s3_key,
+      s3_url: mirrored.s3_url || mediaUrls.videoUrl,
+      thumbnail_url: mirrored.thumbnail_s3_url || mediaUrls.thumbnailUrl,
+      source: platform,
+      source_url: cleanUrl,
+      status: 'active',
+    })
+    .select('id')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({
+    video_id: data.id,
+    status: 'imported',
+    platform,
+    next_step: `Poll /merchants/${merchantId}/videos/auto-tag-tick to start AI tagging`,
+  });
+});
+
+function _detectVideoPlatform(url) {
+  const u = String(url).toLowerCase();
+  if (/instagram\.com\/(reel|reels|p|tv)\//.test(u)) return 'instagram';
+  if (/(?:^|\.)tiktok\.com|vm\.tiktok\.com/.test(u)) return 'tiktok';
+  if (/(?:^|\.)facebook\.com|fb\.watch|fb\.com/.test(u)) return 'facebook';
+  if (/(?:^|\.)youtube\.com|youtu\.be/.test(u))         return 'youtube';
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u))          return 'direct';
+  return 'other';
+}
+
+async function _resolveMediaUrls(url, platform) {
+  if (platform === 'direct') {
+    // Try HEAD; some CDNs reject HEAD so fall through to GET-as-needed at S3 mirror time.
+    try {
+      const head = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(6000) });
+      if (head.ok || head.status === 405) return { videoUrl: url, thumbnailUrl: null, title: null };
+    } catch (_) { /* fall through */ }
+    return { videoUrl: url, thumbnailUrl: null, title: null };
+  }
+
+  if (platform === 'instagram') {
+    const m = url.match(/instagram\.com\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i);
+    if (!m) throw new Error('Could not parse Instagram shortcode from URL');
+    const shortcode = m[1];
+    if (!process.env.RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not configured');
+    const r = await fetch(`https://instagram120.p.rapidapi.com/api/instagram/post?shortcode=${shortcode}`, {
+      headers: {
+        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-host': 'instagram120.p.rapidapi.com',
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error(`IG proxy ${r.status}`);
+    const data = await r.json();
+    // The proxy returns various shapes depending on the post — try each.
+    const item = data?.result || data?.data?.item || data?.item || data?.data || data;
+    const videoUrl =
+      item?.video_url ||
+      item?.video_versions?.[0]?.url ||
+      (Array.isArray(item?.carousel_media) && item.carousel_media[0]?.video_versions?.[0]?.url) ||
+      null;
+    const thumbnailUrl =
+      item?.thumbnail_url ||
+      item?.display_url ||
+      item?.image_versions2?.candidates?.[0]?.url ||
+      null;
+    const title =
+      item?.caption?.text ||
+      item?.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      null;
+    return { videoUrl, thumbnailUrl, title: title ? String(title).slice(0, 200) : null };
+  }
+
+  // TikTok / Facebook / FB Live recording / YouTube / Vimeo / etc.
+  return await _resolveViaCobalt(url);
+}
+
+async function _resolveViaCobalt(url) {
+  // Cobalt is a free public service — sidesteps every platform's API.
+  // If self-hosting later, set COBALT_API_URL.
+  const cobaltBase = process.env.COBALT_API_URL || 'https://api.cobalt.tools';
+  const r = await fetch(`${cobaltBase}/api/json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Botiga/1.0 (+https://botiga.ai)',
+    },
+    body: JSON.stringify({
+      url,
+      vCodec: 'h264',
+      vQuality: '720',
+      filenamePattern: 'basic',
+      isAudioOnly: false,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!r.ok) throw new Error(`Cobalt HTTP ${r.status}`);
+  const d = await r.json();
+  if (d.status === 'error') throw new Error(d.text || 'Cobalt error');
+  if (d.status === 'redirect' || d.status === 'stream' || d.status === 'tunnel') {
+    return { videoUrl: d.url, thumbnailUrl: null, title: null };
+  }
+  if (d.status === 'picker' && Array.isArray(d.picker) && d.picker.length) {
+    // Carousels return multiple items — pick the first VIDEO.
+    const first = d.picker.find(p => p.type === 'video') || d.picker[0];
+    return { videoUrl: first.url, thumbnailUrl: first.thumb || null, title: null };
+  }
+  throw new Error(`Cobalt returned no usable media (status=${d.status})`);
+}
+
 // ─── Instagram: import selected posts ────────────────────────────────────────
 // Per-post insert + dedupe by (merchant_id, source_url). Without this,
 // re-clicking Import on the same selection ballooned the feed with

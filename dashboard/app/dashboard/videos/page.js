@@ -502,6 +502,120 @@ function InstagramImporter({ merchantId, defaultHandle, onImported }) {
   );
 }
 
+// ─── Paste-a-URL importer ────────────────────────────────────────────────────
+// Works for any platform Cobalt supports — TikTok, Facebook (including
+// recorded Lives), YouTube, Twitter/X, Vimeo, Reddit, plus an IG fast-path
+// and raw .mp4. Sidesteps every Meta/TikTok official-API approval cycle.
+function UrlImporter({ merchantId, onImported }) {
+  const [url, setUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);    // { type: 'success'|'error'|'duplicate', message, platform? }
+
+  function detectPlatform(u) {
+    const s = String(u).toLowerCase();
+    if (/instagram\.com\/(reel|reels|p|tv)\//.test(s))       return 'Instagram';
+    if (/(?:^|\.)tiktok\.com|vm\.tiktok\.com/.test(s))       return 'TikTok';
+    if (/(?:^|\.)facebook\.com|fb\.watch|fb\.com/.test(s))   return 'Facebook';
+    if (/(?:^|\.)youtube\.com|youtu\.be/.test(s))            return 'YouTube';
+    if (/\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(s))             return 'Direct video';
+    return s.startsWith('http') ? 'Other (will try Cobalt)' : null;
+  }
+
+  const platform = url ? detectPlatform(url) : null;
+
+  async function doImport() {
+    const trimmed = url.trim();
+    if (!trimmed || !merchantId || importing) return;
+    setImporting(true);
+    setResult(null);
+    try {
+      const r = await fetch(`${API}/api/merchants/${merchantId}/videos/import-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setResult({ type: 'error', message: data.detail || data.error || `HTTP ${r.status}`, platform: data.platform });
+      } else if (data.status === 'duplicate') {
+        setResult({ type: 'duplicate', message: 'Already imported.', platform: data.platform });
+      } else {
+        setResult({ type: 'success', message: 'Imported! Auto-tagger will pick it up shortly.', platform: data.platform });
+        setUrl('');
+        if (onImported) {
+          onImported({
+            id: data.video_id,
+            source: data.platform,
+            source_url: trimmed,
+            status: 'active',
+            title: null,
+            thumbnail_url: null,
+          });
+        }
+      }
+    } catch (err) {
+      setResult({ type: 'error', message: err.message });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-5 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            📥 Import a video by URL
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Paste any Instagram, TikTok, Facebook (including recorded Lives), YouTube, or direct .mp4 URL.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !importing) doImport(); }}
+          placeholder="https://www.instagram.com/reel/... or https://www.tiktok.com/@..."
+          disabled={importing}
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 disabled:bg-gray-50"
+        />
+        <button
+          onClick={doImport}
+          disabled={importing || !url.trim()}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg whitespace-nowrap"
+        >
+          {importing ? 'Importing…' : 'Import'}
+        </button>
+      </div>
+
+      {/* Platform detection hint while typing */}
+      {platform && !result && (
+        <div className="text-xs text-gray-500 mt-2">
+          Detected: <span className="font-medium text-gray-700">{platform}</span>
+        </div>
+      )}
+
+      {/* Result feedback */}
+      {result && (
+        <div
+          className={`text-xs mt-2 px-3 py-2 rounded-lg ${
+            result.type === 'success'   ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
+            result.type === 'duplicate' ? 'bg-amber-50 text-amber-900 border border-amber-100'   :
+                                          'bg-red-50 text-red-800 border border-red-100'
+          }`}
+        >
+          {result.platform && <span className="font-medium">[{result.platform}] </span>}
+          {result.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Upload zone ─────────────────────────────────────────────────────────────
 function UploadZone({ merchantId, onUploaded }) {
   const [dragging, setDragging] = useState(false);
@@ -1606,6 +1720,16 @@ export default function VideosPage() {
                     setVideos(payload.videos);
                   } else if (Array.isArray(payload) && payload.length > 0) {
                     setVideos(prev => [...payload.map(v => ({ ...v, video_product_tags: [] })), ...prev]);
+                  }
+                }}
+              />
+            )}
+            {merchantId && (
+              <UrlImporter
+                merchantId={merchantId}
+                onImported={newVideo => {
+                  if (newVideo) {
+                    setVideos(prev => [{ ...newVideo, video_product_tags: [] }, ...prev]);
                   }
                 }}
               />
