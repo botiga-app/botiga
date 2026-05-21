@@ -5,6 +5,30 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 ---
 
+## 🚀 Recently shipped — 2026-05-13 → 2026-05-20
+
+This window closed most of the GTM gap. The big architectural change was **moving negotiation inside the concierge bubble** (one surface, two entry points) — every storefront entry point (PDP CTA, video card, story grid, in-chat chip, `?btg_neg=1` deep link) now routes the haggle through the same chat with the same brand voice. The legacy `Make-an-offer` modal is no longer called from anywhere.
+
+| Slice | What |
+|---|---|
+| **Round A** | Training Data dashboard (`/dashboard/training`) · Test AI page (`/dashboard/test-ai`) with Review-sources panel + inline product cards |
+| **Round E** | REP AI parity — inline variant picker · per-merchant theming + self-serve editor · hamburger menu · cart drawer attribution badge · PDP contextual openers · italic "catalog" loading state |
+| **Test AI fixes** | Inline product cards under bot replies · capture timing gated to buying-intent (no email ask on discovery query) · holiday hallucination guardrail |
+| **Slice A** | In-chat negotiation engine (`_btgvStartChatNegotiation`) — concierge chip rewired |
+| **Slice B** | Video CTAs (bottom zone · in-feed icon · grid card) all routed to in-chat flow |
+| **Slice C** | Per-product eligibility — bot politely refuses on non-negotiable products, no row created |
+| **Slice D** | Bold negotiation visual mode — animated glow border · warm ambient tint · "🤝 Negotiating <product>" pill |
+| **Slice E** | Airbnb-style offer card — image · was/now · save $X badge · final-offer timer |
+| **Slice F** | Polished chips — [✓ Accept $X] (green prominent) · [💬 Counter] · [Pass for now] |
+| **Slice G** | Proactive haggle on negotiable PDPs — no `?btg_neg=1` required |
+| **Slice H** | Page-level celebration overlay — full-screen confetti + gradient price + 1.8s hold → /checkout |
+| **Stripe direct billing** | Checkout Session · Customer Portal · webhook lifecycle · /status · /plans · 80%-warning + hard-stop banners |
+| **Migration 037** | `subscription_status` + `plan_period_end` columns on merchants |
+
+**Smoke tests still pending:** in-chat negotiation end-to-end on `botiga-6380.myshopify.com` (Slices A-H were never user-verified after 5/14 push), Stripe upgrade flow (gated on manual env config + Stripe Dashboard setup — see *Pricing*).
+
+---
+
 ## Strategic Pillars
 
 > Three product pillars frame the build. Each pillar maps to one or more detailed sections further down. Use this as the strategic-priority view; use the per-section tables for execution detail.
@@ -13,39 +37,54 @@ Origin: **Discussed** = user requested or reported · **Suggested** = Claude pro
 
 > Proactive AI rep that greets shoppers, qualifies intent, and routes to the right tool (video / negotiate / search). The unifying surface — every other capability lives behind it.
 
-**Status: ~45% built (substrate + persona, brain still missing)**
+**Status: ~80% built (substrate + persona + REP AI parity + negotiation handoff done; intent classification + returning-customer brain still missing)**
 
 - ✅ Widget shell, proactive open trigger, button + bubble modes — see *Shopify Widget*
-- ✅ Product context fetch + lead capture
+- ✅ Product context fetch + lead capture (capture gated to buying-intent moments — never on discovery query)
 - ✅ `storeContext` service — bot reads live collections, active promos, and brand voice from any public Shopify storefront. Same path works for clone targets and real merchants.
 - ✅ Bot persona (name + avatar + greeting) — set during onboarding, persisted to `merchant_settings`
+- ✅ **Per-merchant brand theming** — `widget_theme` JSONB, self-serve dashboard editor with 5 presets + 8 color pickers + live preview (Round E)
+- ✅ **Inline variant picker in chat** — "add size 6" renders size/color carousel + add-to-cart without leaving the bubble (Round E)
+- ✅ **Hamburger utility menu** — New Conversation · Promotions · Track order · Recent Conversations · View cart · Checkout (Round E)
+- ✅ **Cart drawer attribution badge** — "🤝 This order was assisted by {BotName}" in Shopify cart drawer (Round E)
+- ✅ **Product-page contextual openers + chips** — In stock sizes / Fabric / Details & silhouette (Round E)
+- ✅ **Training Data dashboard** — `/dashboard/training` shows counts per source + refresh-from-store (Round A)
+- ✅ **Test AI page** — `/dashboard/test-ai` chat surface + Review-sources panel + inline product cards (Round A + 5/13 fixes)
+- ✅ **Negotiation handoff in-chat** — "Push for a better price" and PDP/video Make-an-offer CTAs all start negotiation in the SAME bubble with anchored counter, bold visual mode, Airbnb offer cards, polished chips (Slices A-H)
 - ❌ Intent classification (just-browsing / compare / haggle / support)
-- ❌ 3-path routing UI — chips that hand off to video / negotiate / search
+- ❌ 3-path routing UI — chips that hand off to video / negotiate / search on first impression
 - ❌ Returning customer recognition + loyalty tiers (also feeds Pillar 2)
 - ❌ Behavioral triggers beyond dwell-time (scroll depth, exit-intent, cart value)
-- ❌ **Brand-story auto-write** — scrape About Us / IG bio / FB about page → distill into a brand-voice paragraph the concierge bot uses when greeting / answering. Today the merchant has to write this manually if they want it.
+- ❌ **Brand-story auto-write** — scrape About Us / IG bio / FB about page → distill into a brand-voice paragraph. Today the merchant has to write this manually if they want it.
 
-**Critical next:** Concierge V1 — proactive pop-up + 3 intent chips + routing. Listed in *What to Build Next → Tier 1*.
+**Critical next:** Intent classification chips on first open + returning-customer recognition. The remaining 20% is mostly memory + first-impression routing.
 
 ---
 
 ### Pillar 2 — Negotiation Engine
 
-> Customer makes an offer, AI counter-offers along an adaptive price ladder until deal or floor. Most mature pillar.
+> Customer makes an offer, AI counter-offers along an adaptive price ladder until deal or floor. Lives **inside the concierge bubble** — no separate modal.
 
-**Status: ~85% built**
+**Status: ~95% built (architecture unified, polish layer complete, missing items are now in justifications + loyalty)**
 
 - ✅ Core `POST /negotiate`, price ladder, 4-moment deal screen — see *Negotiation API*
 - ✅ Adaptive spread tiers by price point, tone-matched escalation
 - ✅ Lead capture, recovery flow, cart bundle negotiation, per-product rules
 - ✅ Plan enforcement, rate limiting, API key auth
 - ✅ Shopify expiring offline tokens + refresh-on-use helper (May 2026 — required by Shopify deprecation of non-expiring tokens)
+- ✅ **Negotiation inside the concierge bubble** — kills the legacy Make-an-offer modal. One surface, two entry points (PDP CTA + in-chat chip). Same brand voice, same theme, same continuous context. (Slices A-H, 2026-05-14/15)
+- ✅ **Per-product eligibility gate** — non-negotiable products → polite refuse ("this one's at fixed price 💌") with [Show me similar] chip, no negotiation row created (Slice C)
+- ✅ **Bold negotiation visual mode** — animated amber/pink glow border, warm ambient tint, "🤝 Negotiating <product>" pill in header (Slice D)
+- ✅ **Airbnb-style offer card** — image · was/now · "Save $X · Y%" badge · "⏳ My best — yours for 10 min" timer on final offer (Slice E)
+- ✅ **Polished offer chips** — [✓ Accept $X] (green prominent) · [💬 Counter] · [Pass for now] (graceful exit) (Slice F)
+- ✅ **Proactive haggle on negotiable PDPs** — concierge auto-stages product context on every negotiable PDP, no `?btg_neg=1` required (Slice G)
+- ✅ **Page-level celebration overlay** — full-screen takeover on deal accept: bouncing 🎉, "DEAL LOCKED", gradient price, code pill, triple confetti burst, 1.8s hold → /checkout (Slice H)
 - ❌ **Full-price justifications** — 3-5 merchant-supplied (or auto-distilled from About Us / IG) reasons the bot uses to defend price during haggling. e.g. "I can do $199 — hand-finished by artisans, not mass produced." Today the bot only has tone + ladder; no narrative anchor for *why* the price holds.
 - ❌ Returning customer recognition + loyalty tiers (Next — see *Customer Loyalty & Retention*)
 - ❌ Counter-offer floor warnings, exit-intent trigger
 - ❌ Klaviyo / Postscript connectors
 
-**Critical next:** Loyalty / returning customer recognition.
+**Critical next:** Full-price justifications + loyalty / returning customer recognition. These are the highest-ROI remaining adds — turn warm pitches into closes.
 
 ---
 
@@ -525,11 +564,20 @@ The first three (B1, B2, B3) plus I1+I2 are ~½ day combined and lift the moat f
 
 | Feature | Status | Size |
 |---|---|---|
-| Plan enforcement in API (free 100 / starter 500 / growth 2K / pro unlimited) | Shipped (partial) | S |
-| Billing page in dashboard — Stripe checkout for Starter/Growth/Pro | Backlog | M |
-| Shopify Billing API integration (for App Store distribution) | Later | L |
-| Usage meter — show conversations used this month on dashboard | Backlog | S |
-| Upgrade prompt when limit approached (80% warning + hard stop) | Backlog | S |
+| Plan enforcement in API (free 50 / starter 500 / growth + pro unlimited) | Shipped | S |
+| Stripe direct billing — Checkout Session + Customer Portal + webhook | **Shipped 2026-05-20** (code; awaiting manual Stripe Dashboard config) | M |
+| Billing page in dashboard — current plan, usage meter, upgrade CTAs, Manage Subscription | **Shipped 2026-05-20** | M |
+| Migration 037 — `subscription_status` + `plan_period_end` on merchants | **Shipped 2026-05-20** (awaiting `supabase migration apply`) | S |
+| Usage meter — show conversations used this month on dashboard | **Shipped 2026-05-20** | S |
+| Upgrade prompt when limit approached (80% warning + hard stop banners) | **Shipped 2026-05-20** | S |
+| Shopify Billing API integration (for App Store distribution) | Later (after Shopify Partner embedded app ships) | L |
+
+**Manual config needed before billing is live** (one-time, ~25 min):
+1. Apply `supabase/migrations/037_subscription_state.sql` in Supabase SQL editor
+2. Create Stripe Product "Botiga" with 3 recurring monthly Prices ($29 / $79 / $199)
+3. Set env vars in Vercel: `STRIPE_SECRET_KEY` · `STRIPE_WEBHOOK_SECRET` · `STRIPE_PRICE_STARTER/GROWTH/PRO`
+4. Register webhook at `https://botiga-api-two.vercel.app/api/billing/webhook` for: `checkout.session.completed`, `customer.subscription.{created,updated,deleted}`, `invoice.payment_failed`
+5. Enable Customer Portal in Stripe Dashboard → Settings → Billing
 
 ---
 
@@ -731,26 +779,35 @@ Heaviest lift, **and the original ~10h estimate was light** — once Meta app re
 
 ## What to Build Next
 
-> Prioritised by: merchant friction removed, revenue impact, and strategic positioning. April 2026.
+> Prioritised by: merchant friction removed, revenue impact, and strategic positioning. **Updated 2026-05-20.**
 
-### Tier 1 — Build now (unblocks everything else)
+### Tier 0 — Ship before any new merchant lands (5/20-5/22)
+
+| Feature | State | Why blocking |
+|---|---|---|
+| **Stripe Dashboard config + migration 037 + env vars** | ⏸ Code shipped, manual config pending | Without this, "Upgrade to Starter" returns 503. No paying merchants possible. ~25 min. |
+| **Smoke-test Slices A-H end-to-end on demo store** | ⏸ Code shipped 5/14, never user-verified | The cold-email Loom demos this flow. If anything is broken (offer card not rendering, page celebration z-index, etc.) we'll find out from a prospect. ~30 min. |
+| **Smoke-test Stripe upgrade flow** | ⏸ Awaiting Dashboard config | Subscribe → Checkout → webhook fires → plan updates → portal works. ~10 min. |
+
+### Tier 1 — Build next (highest revenue / wedge leverage)
 
 | Feature | Why now | Section |
 |---|---|---|
-| **IG Ad Funnel buyer-side V1** — B1+B2+B3+I1+I2 (deep-link source video, welcome banner, "as low as" price hint, concierge context) | Highest-leverage funnel; solves the "shoppers from IG don't know they can negotiate" problem in ~½ day total. Merchants run IG ads daily — every day this is unfixed is bounced ad spend. | IG Ad Funnel |
-| **Floating video launcher** | Removes the only reason merchants hesitate. Zero homepage changes. Transforms video widget install story from "edit your theme" to "paste one tag." Prerequisite for the concierge. | Shoppable Video |
-| **Concierge V1** — proactive pop-up, 3 intent chips, routes to video/negotiate/search | The product that unifies everything. Differentiates from every competitor. Rep AI proves the category works. V1 just needs: trigger timing, 3 paths, handoff to existing tools. Pairs with IG Ad Funnel B5 (bubble surface). | New |
-| **Product page auto-inject** | Script detects `/products/` URLs, injects video shelf + negotiate button automatically. Merchants never touch a template. Second-lowest friction install after the launcher. | Shoppable Video |
+| **Full-price justifications** | Top-of-mind missing piece on the most-mature pillar. Per merchant-pain research (May 2026), price defense matters most when CAC is high — bot needs "*why* this price holds", not just *that* it holds. Pairs with brand-story auto-write. | Negotiation API |
+| **Intent classification + 3-path routing chips** on first concierge open (browse / haggle / support) | The remaining 20% of Pillar 1. Cold IG-ad shoppers don't know what they want — give them three paths and let them self-select. | Pillar 1 |
+| **Returning customer recognition** — bot greets by name, surfaces deal history, unlocks deeper floor | Rep AI's wedge feature. Loyalty memory changes the conversation from cold to warm on every return. Highest-ROI add for repeat-purchase merchants. | Customer Loyalty |
+| **IG Ad Funnel buyer-side V1** — B1+B2+B3+I1+I2 (deep-link source video, welcome banner, "as low as" price hint, concierge context) | Still unshipped. Highest-leverage funnel — every day this is unfixed is bounced IG ad spend. ~½ day total. | IG Ad Funnel |
+| **Product page auto-inject** | Script detects `/products/` URLs, injects video shelf + negotiate button automatically. Merchants never touch a template. Lowest-friction install. | Shoppable Video |
 
-### Tier 2 — Build soon (conversion + FOMO)
+### Tier 2 — Build soon (conversion + FOMO + retention)
 
 | Feature | Why | Section |
 |---|---|---|
-| **Brand-story auto-write** — onboarding scrapes About Us / IG bio / FB about → drafts the brand voice paragraph + 3-5 full-price justifications, merchant edits & approves | Removes the "stare at empty textarea" moment from onboarding — same data flows into both Concierge greeting AND Negotiation defense. Nothing else gives one scrape this much downstream leverage. | Pillar 1 + Pillar 2 |
-| **Full-price justifications** — bot uses these as defense lines when offers get aggressive | Today bot only has tone + ladder; no narrative for *why* price holds. Sales-coach-grade negotiation needs reasons, not just numbers. | Negotiation API |
-| **Add-to-cart counter on video** — "🛒 23 people added this" | Data already in DB. One API call. Highest-trust social proof signal — purchase intent, not passive views. | Social Proof |
+| **Brand-story auto-write** — onboarding scrapes About Us / IG bio / FB about → drafts the brand voice paragraph + 3-5 full-price justifications, merchant edits & approves | Removes the "stare at empty textarea" moment. Same data flows into both Concierge greeting AND Negotiation defense. One scrape = downstream leverage. | Pillar 1 + Pillar 2 |
+| **Loyalty tiers in bot** — 1st / 3rd / 5th+ purchase unlocks progressively better deal floors | Returning customers cost 5–7x less to close. Once the loyalty memory lands, this is a tiny add. | Customer Loyalty |
+| **Add-to-cart counter on video** — "🛒 23 people added this" | Data already in DB. One API call. Highest-trust social proof — purchase intent, not passive views. | Social Proof |
 | **Scarcity badge from Shopify inventory** — "⚡ Only 4 left" | One Shopify API call per product. Real urgency. Nibble and Tolstoy don't do this. | Social Proof |
-| **Returning customer recognition in concierge** | Rep AI's biggest selling point. Loyalty memory changes the conversation from cold to warm on every return visit. | Customer Loyalty |
+| **WhatsApp video → product create** | Pillar 3 plumbing is committed in working tree (uncommitted services: `whatsapp-inbound.js`, `transcribe.js`, `imageToVideo.js`, `messenger.js`, `shopifyResolve.js`, `extractFields.js`). Last 20% to wire. | Content Engine |
 
 ### Tier 3 — Plan but don't start yet
 
@@ -763,4 +820,4 @@ Heaviest lift, **and the original ~10h estimate was light** — once Meta app re
 
 ---
 
-*Last updated: 2026-05-08 — **Round A shipped** (~6h): Training Data dashboard at `/dashboard/training` with X-of-Y counts per source + Refresh-from-store; Test AI page at `/dashboard/test-ai` with chat surface + Review-sources panel; sidebar nav updated. Onboarding wizard already existed at `/onboarding`. Earlier 2026-05-08: **Round E shipped end-to-end**: all 6 REP AI parity features (inline variant picker in chat, per-merchant theming with self-serve dashboard editor + 5 presets + live preview, hamburger utility menu w/ Promotions + Recent Conversations, cart drawer attribution badge, PDP contextual openers + product-specific chips, "Searching the *catalog*…" loading state). Migration 036_widget_theme.sql added. Decisions remaining: Round A (Chatty polish) vs Round D (Intercom takeover) next. Earlier 2026-05-08: added Round E spec after live observation of REP AI on couturecandy.com + bluecorncandles.com. 2026-05-07: added Tidio (Lyro) + Intercom (Fin) competitor rows, expanded Round C with realistic 30-60h estimate, added Round D — Live Conversations & Human Takeover (~6.5h). Previously (2026-05-05): Chatty (AVADA) competitive polish-gap analysis with Round A/B/C plan, IG Ad Funnel section as user stories (Maya the shopper, Rachel the merchant), buyer-side V1 promoted to Tier 1, brand-story auto-write + full-price justifications (Tier 2), onboarding wizard, Floating Feed auto-provision, background auto-tag continuation, sidebar reorder, Agentic Flows section.*
+*Last updated: 2026-05-20 (GTM day). **Negotiation merged into concierge** (Slices A-H, 5/14-5/15) — single chat surface, two entry points (PDP CTA + in-chat chip). Per-product eligibility gate, bold visual mode, Airbnb offer cards, polished chips, proactive haggle on negotiable PDPs, page-level celebration overlay. Legacy `openNegotiateModal` no longer called from anywhere (kept in source for Slice I cleanup post-5/20). **Stripe direct billing shipped** (5/20) — Checkout, Customer Portal, webhook lifecycle, /status, /plans, 80%-warning + hard-stop banners. Migration 037 adds `subscription_status` + `plan_period_end`. Manual Stripe Dashboard config + Vercel env vars needed before payments work. Pillar 1 jumped from 45% → 80%, Pillar 2 from 85% → 95%. Smoke tests pending: end-to-end negotiation flow + Stripe upgrade. 2026-05-13 earlier: Test AI page bug fixes (inline product cards, capture timing gated to buying intent, holiday hallucination guardrail). 2026-05-08: Round A shipped (~6h) — Training Data + Test AI dashboard pages. 2026-05-08: Round E shipped end-to-end — 6 REP AI parity features (inline variant picker, per-merchant theming, hamburger menu, cart attribution, PDP contextual openers, italic catalog loading). Migration 036_widget_theme.sql added. 2026-05-07: added Tidio (Lyro) + Intercom (Fin) competitor rows, expanded Round C with realistic 30-60h estimate, added Round D — Live Conversations & Human Takeover. 2026-05-05: Chatty (AVADA) competitive polish-gap analysis with Round A/B/C plan, IG Ad Funnel section as user stories, brand-story auto-write + full-price justifications (Tier 2), onboarding wizard, Floating Feed auto-provision, sidebar reorder, Agentic Flows section.*
