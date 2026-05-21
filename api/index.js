@@ -49,6 +49,11 @@ safeMount('/', 'routes/webhooks', () => require('./routes/webhooks'));
 app.use('/api/inbound', express.urlencoded({ extended: false }));
 safeMount('/api', 'routes/whatsapp-inbound', () => require('./routes/whatsapp-inbound'));
 
+// Stripe webhook needs raw body for signature verification (constructEvent
+// hashes the exact bytes Stripe sent). Apply express.raw to ONLY this path
+// so the rest of the API keeps getting parsed JSON.
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 
 // Handle CORS preflight for all routes — must be before route definitions
